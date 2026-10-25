@@ -350,6 +350,9 @@ gfx_poll :: proc() {
 	gfx.density = max(sdl.GetWindowPixelDensity(gfx.win), 0.01)
 	e: sdl.Event
 	for sdl.PollEvent(&e) {
+		when ODIN_OS != .Windows {
+			pen_handle_event(&e)
+		}
 		#partial switch e.type {
 		case .QUIT, .WINDOW_CLOSE_REQUESTED:
 			gfx.quit = true

@@ -7,7 +7,8 @@ package pangolin
 // SDL reports the pen as a mouse here, so on Windows the window procedure is
 // hooked to read the WM_POINTER messages (Windows Ink: Wacom, Huion, Surface, ...)
 // that carry pressure, tilt and the eraser end. SDL's own window procedure still runs
-// afterwards, so its mouse handling keeps working.
+// afterwards, so its mouse handling keeps working. Elsewhere (Linux) pen_sdl.odin
+// fills the same struct from SDL's native pen events.
 // ---------------------------------------------------------------------------
 
 Pen :: struct {

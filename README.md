@@ -35,6 +35,8 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
 - **Text**: a text tool (Shift+T) that makes editable text layers: click the canvas and type. Pick any bundled or installed
   font, size, colour, alignment, line and letter spacing. Text stays live (click it to edit, Move tool repositions it),
   is saved in `.ppnt` projects, and turns into ordinary pixels the moment you paint or filter the layer.
+- **Pen tablets**: pressure, tilt and the eraser end work with Wacom/Huion-style tablets on Windows (Windows Ink) and
+  Linux (SDL pen events). Set `PANGOLIN_PEN_DEBUG=1` on Linux to print pen events.
 - **Layers**: unlimited layers with opacity and 17 blend modes (multiply, screen, overlay, soft/hard light,
   dodge/burn, hue, saturation, colour, luminosity, ...), lock, lock transparency, layer masks (paint black to hide,
   white to reveal; from selection; apply or delete), merge down, flatten, layer via copy/cut, thumbnails.

@@ -3,7 +3,7 @@ package pangolin
 import "core:fmt"
 import "core:os"
 import "core:strings"
-import rl "vendor:raylib"
+import "core:image/qoi"
 
 // ---------------------------------------------------------------------------
 // Project format (.ppnt)
@@ -15,13 +15,14 @@ import rl "vendor:raylib"
 // ---------------------------------------------------------------------------
 
 PPNT_MAGIC :: "PPNT"
-PPNT_VERSION :: 1
+PPNT_VERSION :: 2
 
 LF_VISIBLE :: 1
 LF_LOCKED :: 2
 LF_LOCK_ALPHA :: 4
 LF_HAS_MASK :: 8
 LF_MASK_ON :: 16
+LF_TEXT :: 32
 
 @(private = "file")
 write_tiles :: proc(w: ^Writer, g: ^Tiles) {
@@ -30,19 +31,15 @@ write_tiles :: proc(w: ^Writer, g: ^Tiles) {
 		if t == nil do continue
 		w32(w, u32(i))
 		raw := ([^]u8)(&t.pix[0])[:size_of(t.pix)]
-		n: i32
-		comp := rl.CompressData(raw_data(raw), i32(len(raw)), &n)
-		if comp != nil && n > 0 && int(n) < len(raw) {
+		comp, cok := deflate_raw(raw)
+		if cok && len(comp) > 0 && len(comp) < len(raw) {
 			w8(w, 1)
-			w32(w, u32(n))
-			append(&w.b, ..comp[:n])
+			w32(w, u32(len(comp)))
+			append(&w.b, ..comp)
 		} else {
 			w8(w, 0)
 			w32(w, u32(len(raw)))
 			append(&w.b, ..raw)
-		}
-		if comp != nil {
-			rl.MemFree(comp)
 		}
 	}
 }
@@ -71,16 +68,11 @@ read_tiles :: proc(r: ^Reader, g: ^Tiles) {
 			}
 			copy(dst, data)
 		} else {
-			out_n: i32
-			out := rl.DecompressData(raw_data(data), i32(size), &out_n)
-			if out == nil || int(out_n) != len(dst) {
-				if out != nil do rl.MemFree(out)
+			if !inflate_raw(data, dst) {
 				r.bad = true
 				free(t)
 				return
 			}
-			copy(dst, out[:out_n])
-			rl.MemFree(out)
 		}
 		tile_release(g.t[idx])
 		g.t[idx] = t
@@ -104,12 +96,16 @@ project_encode :: proc(d: ^Doc) -> []u8 {
 		if l.lock_alpha do flags |= LF_LOCK_ALPHA
 		if l.has_mask do flags |= LF_HAS_MASK
 		if l.mask_on do flags |= LF_MASK_ON
+		if l.text.on do flags |= LF_TEXT
 		w8(&w, flags)
 		w8(&w, l.opacity)
 		w8(&w, u8(l.blend))
 		write_tiles(&w, &l.pix)
 		if l.has_mask {
 			write_tiles(&w, &l.mask)
+		}
+		if l.text.on {
+			write_text(&w, &l.text)
 		}
 	}
 	return w.b[:]
@@ -154,6 +150,9 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 			l.mask = tiles_make(w, h)
 			read_tiles(&r, &l.mask)
 		}
+		if flags & LF_TEXT != 0 && ver >= 2 {
+			read_text(&r, &l.text)
+		}
 		append(&nd.layers, l)
 		if r.bad do break
 	}
@@ -172,7 +171,7 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 // ---------------------------------------------------------------------------
 
 load_image_pixels :: proc(path: string) -> (pix: []Color, w, h: int, ok: bool) {
-	// core:os handles UTF-8 paths on every platform (raylib's fopen does not on Windows)
+	// core:os handles UTF-8 paths on every platform
 	data, err := os.read_entire_file_from_path(path, context.allocator)
 	if err != nil {
 		return
@@ -181,34 +180,28 @@ load_image_pixels :: proc(path: string) -> (pix: []Color, w, h: int, ok: bool) {
 	return decode_image(data, lower_ext(path))
 }
 
-// Decodes image file bytes. JPEGs use our own decoder (raylib is built without JPG);
-// everything else goes through raylib, picked by content rather than file extension.
+// Decodes image file bytes: our own JPEG decoder, core:image for QOI, stb_image for the rest
+// (PNG, BMP, TGA, GIF, ...), picked by content rather than file extension.
 decode_image :: proc(data: []u8, ext: string) -> (pix: []Color, w, h: int, ok: bool) {
 	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
 		return jpeg_decode(data)
 	}
-	kind := ext
-	switch {
-	case len(data) >= 4 && data[0] == 0x89 && string(data[1:4]) == "PNG":
-		kind = ".png"
-	case len(data) >= 4 && string(data[:4]) == "GIF8":
-		kind = ".gif"
-	case len(data) >= 4 && string(data[:4]) == "qoif":
-		kind = ".qoi"
-	case len(data) >= 2 && string(data[:2]) == "BM":
-		kind = ".bmp"
-	}
-	img := rl.LoadImageFromMemory(strings.clone_to_cstring(kind, context.temp_allocator), raw_data(data), i32(len(data)))
-	if img.data == nil || img.width <= 0 || img.height <= 0 {
+	if len(data) >= 4 && string(data[:4]) == "qoif" {
+		img, err := qoi.load_from_bytes(data, {.alpha_add_if_missing})
+		if err != nil || img == nil {
+			return
+		}
+		defer qoi.destroy(img)
+		w, h = img.width, img.height
+		if img.channels != 4 || len(img.pixels.buf) < w * h * 4 {
+			return
+		}
+		pix = make([]Color, w * h)
+		copy(pix, ([^]Color)(raw_data(img.pixels.buf))[:w * h])
+		ok = true
 		return
 	}
-	defer rl.UnloadImage(img)
-	rl.ImageFormat(&img, .UNCOMPRESSED_R8G8B8A8)
-	w, h = int(img.width), int(img.height)
-	pix = make([]Color, w * h)
-	copy(pix, ([^]Color)(img.data)[:w * h])
-	ok = true
-	return
+	return stb_decode(data)
 }
 
 doc_from_image :: proc(path: string) -> (d: ^Doc, ok: bool) {
@@ -419,22 +412,7 @@ export_encode :: proc(pix: []Color, w, h: int, f: Export_Format, quality: int) -
 		return qoi_encode(pix, w, h)
 	case .PNG:
 	}
-	img := rl.Image {
-		data    = raw_data(pix),
-		width   = i32(w),
-		height  = i32(h),
-		mipmaps = 1,
-		format  = .UNCOMPRESSED_R8G8B8A8,
-	}
-	n: i32
-	mem := rl.ExportImageToMemory(img, ".png", &n)
-	if mem == nil || n <= 0 {
-		return nil
-	}
-	out := make([]u8, int(n), context.temp_allocator)
-	copy(out, ([^]u8)(mem)[:n])
-	rl.MemFree(mem)
-	return out
+	return encode_png(pix, w, h)
 }
 
 // 32-bit BMP with an alpha channel (BITMAPV4 header so alpha survives).
@@ -569,4 +547,45 @@ export_run :: proc(f: Export_Format, quality, scale_pct: int) {
 		return
 	}
 	set_statusf("Exported %s (%d KB)", path_basename(p), len(data) / 1024)
+}
+
+// Text layers: the settings the pixels were rendered from.
+write_text :: proc(w: ^Writer, t: ^Text_Info) {
+	wstr(w, name_str(&t.font))
+	w32(w, u32(t.size))
+	wcol(w, t.color)
+	w8(w, t.align)
+	w32(w, u32(t.line_pct))
+	w32(w, transmute(u32)i32(t.track))
+	w32(w, transmute(u32)t.x)
+	w32(w, transmute(u32)t.y)
+	for v in ([4]int{t.bx.x0, t.bx.y0, t.bx.x1, t.bx.y1}) do w32(w, transmute(u32)i32(v))
+	w32(w, u32(t.n))
+	append(&w.b, ..t.buf[:t.n])
+}
+
+read_text :: proc(r: ^Reader, t: ^Text_Info) {
+	t.on = true
+	name_set(&t.font, rstr(r))
+	t.size = int(r32(r))
+	t.color = rcol(r)
+	t.align = min(r8(r), 2)
+	t.line_pct = int(r32(r))
+	t.track = int(transmute(i32)r32(r))
+	t.x = transmute(f32)r32(r)
+	t.y = transmute(f32)r32(r)
+	t.bx.x0 = int(transmute(i32)r32(r))
+	t.bx.y0 = int(transmute(i32)r32(r))
+	t.bx.x1 = int(transmute(i32)r32(r))
+	t.bx.y1 = int(transmute(i32)r32(r))
+	n := int(r32(r))
+	if n < 0 || n > TEXT_MAX || r.pos + n > len(r.d) {
+		r.bad = true
+		return
+	}
+	copy(t.buf[:n], r.d[r.pos:r.pos + n])
+	t.n = n
+	r.pos += n
+	t.size = clamp(t.size, 1, 4000)
+	t.line_pct = clamp(t.line_pct, 10, 1000)
 }

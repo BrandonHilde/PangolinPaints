@@ -2,7 +2,7 @@ package pangolin
 
 import "core:math"
 
-// Pure-Odin JPEG decoder, identical on every platform. raylib is built without JPG and
+// Pure-Odin JPEG decoder, identical on every platform. stb_image has no CMYK support and
 // Odin's core:image/jpeg is baseline-only, so photos (often progressive) need this.
 // Supports baseline + progressive Huffman coding, 8-bit precision, 1/3/4 components
 // (grey, YCbCr/RGB, CMYK/YCCK), any sampling factors, restart markers and EXIF

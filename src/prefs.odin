@@ -3,12 +3,12 @@ package pangolin
 import "core:fmt"
 import "core:strconv"
 import "core:strings"
-import rl "vendor:raylib"
+import "core:os"
 
 // Tiny key=value preferences file stored next to the executable.
 
 prefs_path :: proc() -> string {
-	return fmt.tprintf("%spaints.cfg", string(rl.GetApplicationDirectory()))
+	return fmt.tprintf("%spaints.cfg", gfx_app_dir())
 }
 
 prefs_save :: proc() {
@@ -41,7 +41,7 @@ prefs_save :: proc() {
 
 prefs_load :: proc() {
 	path := prefs_path()
-	if !rl.FileExists(strings.clone_to_cstring(path, context.temp_allocator)) {
+	if !os.exists(path) {
 		return
 	}
 	data, ok := read_file(path)

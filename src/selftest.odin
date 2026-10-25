@@ -4,7 +4,6 @@ import "core:fmt"
 import "core:math"
 import "core:strings"
 import "core:time"
-import rl "vendor:raylib"
 
 // Headless tests: `PangolinPaints --selftest`. Returns the number of failures.
 
@@ -235,6 +234,42 @@ selftest :: proc() -> int {
 		check(!bad, "truncated project is rejected")
 	}
 
+	// --- text layers ----------------------------------------------------------------
+	{
+		d := fresh(300, 120, Color{255, 255, 255, 255})
+		doc = d
+		l := layer_make("Text", 300, 120)
+		l.text = Text_Info{on = true, size = 40, color = Color{200, 30, 30, 255}, line_pct = 100, x = 10, y = 10}
+		name_set(&l.text.font, DEFAULT_FONT)
+		msg := "Hello\nWorld"
+		copy(l.text.buf[:], msg)
+		l.text.n = len(msg)
+		append(&d.layers, l)
+		text_render_layer(d, 1)
+		tl := &d.layers[1]
+		check(!box_empty(tl.text.bx), "text renders a block")
+		inked := 0
+		for y in tl.text.bx.y0 ..< tl.text.bx.y1 {
+			for x in tl.text.bx.x0 ..< tl.text.bx.x1 {
+				if tiles_get(&tl.pix, x, y, {}).a > 0 do inked += 1
+			}
+		}
+		check(inked > 200, fmt.tprintf("text paints pixels (%d)", inked))
+		check(tl.text.bx.y1 - tl.text.bx.y0 > 70, "two lines are taller than one")
+		cx, cy, _ := text_caret_xy(&tl.text, 6)
+		check(cx == tl.text.x && cy > tl.text.y + 30, "caret on the second line")
+		data := project_encode(d)
+		nd, ok := project_decode(data)
+		check(ok, "text project decodes")
+		if ok {
+			nt := &nd.layers[1].text
+			check(nt.on && text_str(nt) == msg && nt.size == 40 && nt.color == Color{200, 30, 30, 255}, "text settings survive saving")
+			check(tiles_get(&nd.layers[1].pix, tl.text.bx.x0 + 20, tl.text.bx.y0 + 25, {}) == tiles_get(&tl.pix, tl.text.bx.x0 + 20, tl.text.bx.y0 + 25, {}), "text pixels survive saving")
+			doc_destroy(nd)
+		}
+		doc = nil
+	}
+
 	// --- image codecs -----------------------------------------------------------
 	{
 		w, h := 97, 61
@@ -343,15 +378,14 @@ brush_sheet :: proc(path: string) -> int {
 	}
 	doc_dirty_all(d)
 	doc_refresh_comp(d)
-	// labels are drawn by raylib text in an image
-	img := rl.Image{data = raw_data(d.comp), width = i32(w), height = i32(h), mipmaps = 1, format = .UNCOMPRESSED_R8G8B8A8}
-	cp := rl.ImageCopy(img)
+	// labels are rasterised straight into the image
+	cp := make([]Color, w * h)
+	defer delete(cp)
+	copy(cp, d.comp)
 	for p, i in presets {
-		rl.ImageDrawText(&cp, strings.clone_to_cstring(fmt.tprintf("%v: %s", p.tool, p.name), context.temp_allocator), 8, i32(i * row_h + row_h / 2 - 5), 10, rl.BLACK)
+		image_draw_text(cp, w, h, 8, i * row_h + row_h / 2 - 5, fmt.tprintf("%v: %s", p.tool, p.name), 14, BLACK)
 	}
-	ok := rl.ExportImage(cp, strings.clone_to_cstring(path, context.temp_allocator))
-	rl.UnloadImage(cp)
-	return ok ? 0 : 1
+	return write_file(path, encode_png(cp, w, h)) ? 0 : 1
 }
 
 // Rough timings for big canvases (`--bench`).

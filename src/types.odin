@@ -1,8 +1,6 @@
 package pangolin
 
-import rl "vendor:raylib"
 
-Color :: rl.Color
 IVec :: [2]int
 Vec2 :: [2]f32
 
@@ -112,6 +110,24 @@ Tiles :: struct {
 	t:      []^Tile, // tw*th, nil = empty
 }
 
+// Editable text layer. The pixels in `Layer.pix` are a rendering of this; any operation that edits
+// the pixels directly turns `on` off ("rasterised") so the two can never disagree.
+TEXT_MAX :: 2048
+
+Text_Info :: struct {
+	on:        bool,
+	buf:       [TEXT_MAX]u8, // UTF-8
+	n:         int,
+	font:      Name, // key of a font in the font list
+	size:      int, // em size in canvas pixels
+	color:     Color,
+	align:     u8, // 0 left, 1 centre, 2 right
+	line_pct:  int, // line height as a percentage of the font's natural line height
+	track:     int, // extra letter spacing, 1/100 em
+	x, y:      f32, // top-left corner of the text block on the canvas
+	bx:        Box, // where it was last rendered
+}
+
 Layer :: struct {
 	name:       Name,
 	visible:    bool,
@@ -123,6 +139,7 @@ Layer :: struct {
 	has_mask:   bool,
 	mask:       Tiles, // grey in .r; nil tile = 255 (fully revealed)
 	mask_on:    bool, // mask applied when compositing
+	text:       Text_Info, // text.on: this is a text layer
 }
 
 // Soft selection mask, shared between undo snapshots. Never modified in place.
@@ -181,6 +198,7 @@ Tool :: enum {
 	Bucket,
 	Gradient,
 	Picker,
+	Text,
 	Select_Rect,
 	Select_Ellipse,
 	Lasso,
@@ -203,6 +221,7 @@ TOOL_NAMES := [Tool]string {
 	.Bucket         = "Paint Bucket (G)",
 	.Gradient       = "Gradient (Shift+G)",
 	.Picker         = "Eyedropper (I)",
+	.Text           = "Text (Shift+T)",
 	.Select_Rect    = "Rectangular Marquee (M)",
 	.Select_Ellipse = "Elliptical Marquee (Shift+M)",
 	.Lasso          = "Lasso (L)",

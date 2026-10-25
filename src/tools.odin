@@ -2,7 +2,6 @@ package pangolin
 
 import "core:math"
 import "core:slice"
-import rl "vendor:raylib"
 
 canvas_vp: Rect
 
@@ -59,6 +58,8 @@ Drag :: struct {
 	orig:       []Color, // flat copy of the target (gradient / move)
 	orig_sel:   ^Mask,
 	moved:      bool,
+	text_move:  bool, // the Move tool is dragging a text layer by its position
+	text_start: Vec2,
 	pan_active: bool,
 }
 
@@ -72,8 +73,11 @@ eff_tool :: proc() -> Tool {
 	if drag.active {
 		return drag.tool
 	}
-	if rl.IsKeyDown(.SPACE) && ui.focus_id == 0 && dialog.kind == .None {
+	if IsKeyDown(.SPACE) && ui.focus_id == 0 && dialog.kind == .None && !text_edit.active {
 		return .Hand
+	}
+	if pen_eraser_active() && (cur_tool == .Brush || cur_tool == .Oil) {
+		return .Eraser // the eraser end of the pen
 	}
 	if ui.alt && (paint_tool(cur_tool) || cur_tool == .Bucket || cur_tool == .Gradient) && cur_tool != .Clone && cur_tool != .Eraser {
 		return .Picker
@@ -196,6 +200,11 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		g, empty, _ := doc_target(d)
 		drag.orig = make([]Color, d.w * d.h)
 		tiles_to_buf(g, d.w, d.h, drag.orig, empty)
+	case .Text:
+		drag.active = false
+		if pt_in_doc(p) || text_edit.active {
+			text_click(p)
+		}
 	case .Picker:
 		pick_color(p, btn)
 	case .Select_Rect, .Select_Ellipse, .Lasso:
@@ -228,6 +237,13 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		history_push(d)
 		doc_sel_set(d, nm)
 	case .Move:
+		if tl := &d.layers[d.active_layer]; tl.text.on && d.sel == nil && !tl.locked && tl.visible {
+			// text layers move by their position, so they stay editable
+			history_push(d)
+			drag.text_move = true
+			drag.text_start = {tl.text.x, tl.text.y}
+			return
+		}
 		if !can_edit() {
 			drag.active = false
 			return
@@ -307,7 +323,7 @@ update_drag :: proc(p: Vec2) {
 				append(&drag.lasso, p)
 			}
 			shape = sel_polygon(w, h, drag.lasso[:])
-		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Bucket, .Gradient, .Picker, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom:
+		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Bucket, .Gradient, .Picker, .Text, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom:
 		}
 		if topts.feather > 0 {
 			mask_blur(shape, w, h, f32(topts.feather))
@@ -316,12 +332,19 @@ update_drag :: proc(p: Vec2) {
 		delete(shape)
 		doc_sel_set(d, nm)
 	case .Move:
+		if drag.text_move {
+			tl := &d.layers[d.active_layer]
+			tl.text.x = drag.text_start.x + math.round(p.x - drag.start.x)
+			tl.text.y = drag.text_start.y + math.round(p.y - drag.start.y)
+			text_render_layer(d, d.active_layer)
+			return
+		}
 		move_render(int(math.round(p.x - drag.start.x)), int(math.round(p.y - drag.start.y)))
 	case .Transform:
 		xform_mouse_drag(p)
 	case .Crop:
 		crop_mouse_drag(p)
-	case .Bucket, .Wand, .Hand, .Zoom:
+	case .Bucket, .Text, .Wand, .Hand, .Zoom:
 	}
 }
 
@@ -352,6 +375,14 @@ end_drag :: proc() {
 			drag.sel_base = nil
 		}
 	case .Move:
+		if drag.text_move {
+			if !drag.moved {
+				history_discard(d)
+			}
+			drag.text_move = false
+			d.thumb_dirty = true
+			break
+		}
 		if !drag.moved {
 			history_discard(d)
 		}
@@ -364,7 +395,7 @@ end_drag :: proc() {
 		xform.grab = .None
 	case .Crop:
 		crop_mouse_up()
-	case .Picker, .Bucket, .Wand, .Hand, .Zoom:
+	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom:
 	}
 	drag.active = false
 }
@@ -377,8 +408,8 @@ canvas_update :: proc(vp: Rect) {
 		view_fit(d)
 	}
 	over := ui.layer == ui.input_layer && in_rect(vp, ui.mx, ui.my)
-	mx := (f32(rl.GetMouseX()) / f32(ui.scale))
-	my := (f32(rl.GetMouseY()) / f32(ui.scale))
+	mx := ui.ptr.x / f32(ui.scale)
+	my := ui.ptr.y / f32(ui.scale)
 	p := screen_to_canvas(mx, my)
 	hover_pt = p
 	hover_valid = over
@@ -401,8 +432,8 @@ canvas_update :: proc(vp: Rect) {
 		drag.pan_active = true
 	}
 	if drag.pan_active {
-		d.ox += f32(rl.GetMouseDelta().x) / f32(ui.scale)
-		d.oy += f32(rl.GetMouseDelta().y) / f32(ui.scale)
+		d.ox += gfx.mouse_delta.x / f32(ui.scale)
+		d.oy += gfx.mouse_delta.y / f32(ui.scale)
 		ui.cursor = .RESIZE_ALL
 		if !ui.down[2] && !(t == .Hand && ui.down[0]) {
 			drag.pan_active = false
@@ -423,6 +454,8 @@ canvas_update :: proc(vp: Rect) {
 			ui.cursor = xform_cursor(p)
 		case .Move:
 			ui.cursor = .RESIZE_ALL
+		case .Text:
+			ui.cursor = .IBEAM
 		case .Bucket, .Gradient, .Picker, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Crop:
 			ui.cursor = .CROSSHAIR
 		}
@@ -888,7 +921,7 @@ xform_hit :: proc(p: Vec2) -> (grab: Xform_Grab, handle: int) {
 	return .Rotate, 0
 }
 
-xform_cursor :: proc(p: Vec2) -> rl.MouseCursor {
+xform_cursor :: proc(p: Vec2) -> MouseCursor {
 	if !xform.active {
 		return .RESIZE_ALL
 	}
@@ -1029,6 +1062,7 @@ crop_commit :: proc() {
 
 // Finish any pending tool interaction (switching tools, running commands).
 tools_commit_pending :: proc() {
+	text_end()
 	if drag.active {
 		end_drag()
 	}

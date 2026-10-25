@@ -2,7 +2,6 @@ package pangolin
 
 import "core:fmt"
 import "core:strings"
-import rl "vendor:raylib"
 
 Dialog_Kind :: enum {
 	None,
@@ -23,6 +22,7 @@ Dialog_Kind :: enum {
 	Message,
 	Shortcuts,
 	About,
+	Font,
 }
 
 Dialog :: struct {
@@ -53,7 +53,7 @@ dialog_open :: proc(k: Dialog_Kind) {
 		msg_text  = dialog.msg_text,
 	}
 	switch k {
-	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings:
+	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font:
 	case .New_Doc:
 		dialog.a, dialog.b = new_w, new_h
 		dialog.c = new_bg
@@ -106,7 +106,7 @@ dialog_close :: proc() {
 dialog_frame :: proc(title: string, w, h: i32, dim := true, docked := false) -> Rect {
 	ui.layer = 2
 	if dim && !docked {
-		fill_rect(Rect{0, 0, i32(ui.w), i32(ui.h)}, Color{0, 0, 0, 90})
+		fill_rect(Rect{0, 0, i32(ui.w), i32(ui.h)}, Color{6, 7, 10, 130})
 	}
 	x := (i32(ui.w) - w) / 2
 	y := (i32(ui.h) - h) / 2
@@ -114,33 +114,36 @@ dialog_frame :: proc(title: string, w, h: i32, dim := true, docked := false) -> 
 		x = canvas_vp.x + canvas_vp.w - w - 12
 		y = canvas_vp.y + 12
 	}
-	fill_rect(Rect{x + 3, y + 3, w, h}, Color{0, 0, 0, 100})
 	box := Rect{x, y, w, h}
-	fill_rect(box, C_PANEL)
-	outline_rect(box, C_BORDER)
-	fill_rect(Rect{x, y, w, 16}, C_PANEL_DK)
-	hline(x, y + 16, w, C_BORDER)
-	text(x + 8, y + 4, title, C_TEXT)
-	return Rect{x + 10, y + 24, w - 20, h - 34}
+	draw_shadow(f32(x), f32(y + 6), f32(w), f32(h), 7, 22, Color{0, 0, 0, 190})
+	draw_rrect(f32(x), f32(y), f32(w), f32(h), 7, C_PANEL)
+	// title bar: rounded on top only (the lower half is clipped away)
+	clip_begin(Rect{x, y, w, 20})
+	draw_rrect(f32(x), f32(y), f32(w), 40, 7, C_PANEL_DK)
+	clip_end()
+	hline(x, y + 20, w, C_BORDER)
+	draw_rrect_outline(f32(x), f32(y), f32(w), f32(h), 7, C_RING_HI)
+	text(x + 12, y + (20 - FONT_CAP) / 2, title, C_TEXT)
+	return Rect{x + 12, y + 26, w - 24, h - 34}
 }
 
 // OK / Cancel row at the bottom of the content area.
 dialog_buttons :: proc(c: Rect, ok_label := "OK", cancel_label := "Cancel") -> (ok, cancel: bool) {
-	y := c.y + c.h - 16
-	r := Rect{c.x + c.w - 60, y, 60, 16}
-	if button(r, ok_label) {
+	y := c.y + c.h - 18
+	r := Rect{c.x + c.w - 64, y, 64, 18}
+	if button_primary(r, ok_label) {
 		ok = true
 	}
 	if cancel_label != "" {
-		if button(Rect{r.x - 66, y, 60, 16}, cancel_label) {
+		if button(Rect{r.x - 70, y, 64, 18}, cancel_label) {
 			cancel = true
 		}
 	}
 	if ui.focus_id == 0 && !popup.open {
-		if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.KP_ENTER) {
+		if IsKeyPressed(.ENTER) || IsKeyPressed(.KP_ENTER) {
 			ok = true
 		}
-		if rl.IsKeyPressed(.ESCAPE) && cancel_label != "" {
+		if IsKeyPressed(.ESCAPE) && cancel_label != "" {
 			cancel = true
 		}
 	}
@@ -190,6 +193,8 @@ dialogs_run :: proc() {
 		dlg_shortcuts()
 	case .About:
 		dlg_about()
+	case .Font:
+		dlg_font()
 	}
 }
 
@@ -482,7 +487,7 @@ dlg_brush_settings :: proc() {
 
 	y = R.y
 	text(R.x, y + 3, "Pressure", C_TEXT)
-	combo_enum(Rect{R.x + 96, y, R.w - 96, 14}, PRESSURE_NAMES, &b.pressure, "Simulated pen pressure")
+	combo_enum(Rect{R.x + 96, y, R.w - 96, 14}, PRESSURE_NAMES, &b.pressure, "Pressure source (a pen on a graphics tablet replaces it with real pressure)")
 	y += 18
 	if b.pressure == .Taper {
 		row_slider(R, y, "Taper length", &b.taper, 1, 100)
@@ -538,7 +543,7 @@ dlg_brush_settings :: proc() {
 	pv := Rect{R.x, R.y + R.h - 86, R.w, 64}
 	brush_preview(pv, t)
 	ok, _ := dialog_buttons(c, "Close", "")
-	if ok || rl.IsKeyPressed(.F5) {
+	if ok || IsKeyPressed(.F5) {
 		dialog_close()
 	}
 }
@@ -616,7 +621,7 @@ dlg_confirm :: proc() {
 	if button(Rect{c.x + 76, y, 90, 16}, "Don't Save") {
 		proceed = true
 	}
-	if button(Rect{c.x + 172, y, 70, 16}, "Cancel") || rl.IsKeyPressed(.ESCAPE) {
+	if button(Rect{c.x + 172, y, 70, 16}, "Cancel") || IsKeyPressed(.ESCAPE) {
 		dialog_close()
 		return
 	}
@@ -673,7 +678,7 @@ dlg_shortcuts :: proc() {
 	put(c, &i, per_col, col_w, "Arrows", "Nudge (Move)")
 	put(c, &i, per_col, col_w, "Right drag", "Paint with BG")
 	ok, _ := dialog_buttons(c, "Close", "")
-	if ok || rl.IsKeyPressed(.ESCAPE) {
+	if ok || IsKeyPressed(.ESCAPE) {
 		dialog_close()
 	}
 }
@@ -687,7 +692,7 @@ dlg_about :: proc() {
 	text(tx, c.y + 38, "Natural brushes, wet oil paint, smudge and blend,", C_TEXT)
 	text(tx, c.y + 50, "layers with masks, adjustments and filters.", C_TEXT)
 	text(tx, c.y + 62, "A sibling of Pangolin Pixels.", C_TEXT)
-	text(tx, c.y + 80, "Written in Odin with raylib.", C_TEXT_DIM)
+	text(tx, c.y + 80, "Written in Odin with SDL3.", C_TEXT_DIM)
 	ok, _ := dialog_buttons(c, "Close", "")
 	if ok {
 		dialog_close()

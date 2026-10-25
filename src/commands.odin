@@ -1,7 +1,6 @@
 package pangolin
 
 import "core:fmt"
-import rl "vendor:raylib"
 
 Cmd :: enum {
 	None,
@@ -106,6 +105,7 @@ Cmd :: enum {
 	Tool_Bucket,
 	Tool_Gradient,
 	Tool_Picker,
+	Tool_Text,
 	Tool_Select_Rect,
 	Tool_Select_Ellipse,
 	Tool_Lasso,
@@ -122,7 +122,7 @@ Cmd :: enum {
 
 Shortcut :: struct {
 	cmd:              Cmd,
-	key:              rl.KeyboardKey,
+	key:              KeyboardKey,
 	ctrl, shift, alt: bool,
 }
 
@@ -186,6 +186,7 @@ SHORTCUTS := [?]Shortcut {
 	{.Tool_Bucket, .G, false, false, false},
 	{.Tool_Gradient, .G, false, true, false},
 	{.Tool_Picker, .I, false, false, false},
+	{.Tool_Text, .T, false, true, false},
 	{.Tool_Select_Rect, .M, false, false, false},
 	{.Tool_Select_Ellipse, .M, false, true, false},
 	{.Tool_Lasso, .L, false, false, false},
@@ -213,14 +214,14 @@ SHORTCUTS := [?]Shortcut {
 	{.Help_Keys, .F1, false, false, false},
 }
 
-key_name :: proc(k: rl.KeyboardKey) -> string {
+key_name :: proc(k: KeyboardKey) -> string {
 	#partial switch k {
 	case .A ..= .Z:
 		return fmt.tprintf("%c", rune(int(k)))
 	case .ZERO ..= .NINE:
 		return fmt.tprintf("%c", rune(int(k)))
 	case .F1 ..= .F12:
-		return fmt.tprintf("F%d", int(k) - int(rl.KeyboardKey.F1) + 1)
+		return fmt.tprintf("F%d", int(k) - int(KeyboardKey.F1) + 1)
 	case .DELETE:
 		return "Del"
 	case .BACKSPACE:
@@ -273,22 +274,22 @@ cmd_repeats :: proc(c: Cmd) -> bool {
 }
 
 shortcuts_update :: proc() {
-	if ui.focus_id != 0 || dialog.kind != .None || popup.open {
+	if ui.focus_id != 0 || dialog.kind != .None || popup.open || text_edit.active || text_end_time == ui.time {
 		return
 	}
 	// pending transform / crop: Enter applies, Esc cancels
 	if xform.active || crop.active {
-		if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.KP_ENTER) {
+		if IsKeyPressed(.ENTER) || IsKeyPressed(.KP_ENTER) {
 			if xform.active do xform_commit()
 			if crop.active do crop_commit()
 			return
 		}
-		if rl.IsKeyPressed(.ESCAPE) {
+		if IsKeyPressed(.ESCAPE) {
 			if xform.active do xform_cancel()
 			crop.active = false
 			return
 		}
-	} else if rl.IsKeyPressed(.ESCAPE) && doc.sel != nil {
+	} else if IsKeyPressed(.ESCAPE) && doc.sel != nil {
 		run_cmd(.Deselect)
 		return
 	}
@@ -296,7 +297,7 @@ shortcuts_update :: proc() {
 		return
 	}
 	for s in SHORTCUTS {
-		if !(rl.IsKeyPressed(s.key) || (cmd_repeats(s.cmd) && rl.IsKeyPressedRepeat(s.key))) {
+		if !(IsKeyPressed(s.key) || (cmd_repeats(s.cmd) && IsKeyPressedRepeat(s.key))) {
 			continue
 		}
 		if s.ctrl != ui.ctrl || s.shift != ui.shift || s.alt != ui.alt {

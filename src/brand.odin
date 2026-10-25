@@ -1,6 +1,5 @@
 package pangolin
 
-import rl "vendor:raylib"
 
 APP_NAME :: "Pangolin Paints"
 APP_TAGLINE :: "Brushstrokes, scale by scale."
@@ -54,40 +53,35 @@ logo_color :: proc(ch: u8) -> (c: Color, ok: bool) {
 	return {}, false
 }
 
-logo_tex: rl.Texture2D
+logo_tex: Texture
 
-logo_image :: proc() -> rl.Image {
-	img := rl.GenImageColor(LOGO_SIZE, LOGO_SIZE, rl.BLANK)
+logo_pixels :: proc() -> []Color {
+	pix := make([]Color, LOGO_SIZE * LOGO_SIZE, context.temp_allocator)
 	for row, y in LOGO_ART {
 		for x in 0 ..< len(row) {
 			if c, ok := logo_color(row[x]); ok {
-				rl.ImageDrawPixel(&img, i32(x), i32(y), c)
+				pix[y * LOGO_SIZE + x] = c
 			}
 		}
 	}
-	return img
+	return pix
 }
 
 // Window icon and the texture used by the About dialog.
 brand_init :: proc() {
-	img := logo_image()
-	logo_tex = rl.LoadTextureFromImage(img)
-	rl.SetTextureFilter(logo_tex, .POINT)
-	big := rl.ImageCopy(img)
-	rl.ImageResizeNN(&big, 64, 64)
-	rl.SetWindowIcon(big)
-	rl.UnloadImage(big)
-	rl.UnloadImage(img)
+	pix := logo_pixels()
+	logo_tex = tex_from_pixels(pix, LOGO_SIZE, LOGO_SIZE, .Point)
+	const_scale :: 4
+	big := make([]Color, LOGO_SIZE * const_scale * LOGO_SIZE * const_scale, context.temp_allocator)
+	for y in 0 ..< LOGO_SIZE * const_scale {
+		for x in 0 ..< LOGO_SIZE * const_scale {
+			big[y * LOGO_SIZE * const_scale + x] = pix[(y / const_scale) * LOGO_SIZE + x / const_scale]
+		}
+	}
+	gfx_set_icon(big, LOGO_SIZE * const_scale, LOGO_SIZE * const_scale)
 }
 
 // Draws the logo at an integer scale.
 logo_draw :: proc(x, y, scale: i32) {
-	rl.DrawTexturePro(
-		logo_tex,
-		{0, 0, LOGO_SIZE, LOGO_SIZE},
-		{f32(x), f32(y), f32(LOGO_SIZE * scale), f32(LOGO_SIZE * scale)},
-		{},
-		0,
-		rl.WHITE,
-	)
+	draw_tex(logo_tex, {0, 0, LOGO_SIZE, LOGO_SIZE}, {f32(x), f32(y), f32(LOGO_SIZE * scale), f32(LOGO_SIZE * scale)})
 }

@@ -2,7 +2,7 @@ package pangolin
 
 import "base:intrinsics"
 
-// Pure-Odin baseline JPEG encoder (raylib here is built without JPG export).
+// Pure-Odin baseline JPEG encoder (stb_image_write is only linked for PNG).
 // Writes JFIF: SOI, APP0, DQT, SOF0, DHT, SOS, EOI. YCbCr 4:2:0 or 4:4:4, standard IJG
 // quantization tables scaled by quality (libjpeg formula), standard Annex K Huffman
 // tables, float AAN forward DCT. Works on one MCU row at a time, so memory use is

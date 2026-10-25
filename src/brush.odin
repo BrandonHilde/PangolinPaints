@@ -24,12 +24,14 @@ Pressure :: enum u8 {
 	Off,
 	Taper, // thin start and end, like a pen lifted off the paper
 	Speed, // faster strokes are thinner
+	Pen, // real pressure from a graphics tablet (used automatically when a pen is in use)
 }
 
 PRESSURE_NAMES := [Pressure]string {
 	.Off   = "Off",
 	.Taper = "Taper ends",
 	.Speed = "Stroke speed",
+	.Pen   = "Pen pressure",
 }
 
 Brush :: struct {
@@ -348,6 +350,7 @@ Stroke :: struct {
 	total:      f32,
 	dir:        Vec2,
 	speed:      f32,
+	pen_p:      f32, // smoothed pen pressure
 	last_dab_t: f64,
 	dabs:       [dynamic]Dab,
 	// wet media
@@ -400,6 +403,11 @@ stroke_begin :: proc(t: Tool, p: Vec2, color: Color) -> bool {
 	s.active = true
 	s.tool = t
 	s.b = brushes[t]
+	if pen_active() && s.b.pressure != .Off {
+		// a real pen replaces the simulated pressure
+		s.b.pressure = .Pen
+		s.pen_p = max(pen.pressure, 0.05)
+	}
 	s.target, s.empty, s.is_mask = doc_target(d)
 	s.lock_alpha = !s.is_mask && d.layers[d.active_layer].lock_alpha
 	s.orig = tiles_share(s.target)
@@ -482,6 +490,9 @@ stroke_move :: proc(p: Vec2) {
 		return
 	}
 	s.raw = p
+	if s.b.pressure == .Pen {
+		s.pen_p += (max(pen.pressure, 0.05) - s.pen_p) * 0.5
+	}
 	k := 1 - f32(s.b.smoothing) / 100 * 0.93
 	prev := s.sm
 	s.sm += (s.raw - s.sm) * k
@@ -586,6 +597,8 @@ stroke_pressure :: proc(s: ^Stroke, dist: f32) -> f32 {
 	case .Speed:
 		v := s.speed / max(f32(s.b.size) * 0.35, 2)
 		return clamp(1.15 - v * 0.6, 0.2, 1)
+	case .Pen:
+		return s.pen_p
 	}
 	return 1
 }
@@ -805,7 +818,7 @@ dab_apply :: proc(s: ^Stroke, dab: Dab) {
 		dab_blur(s, &e, box, alpha)
 	case .Dodge:
 		dab_dodge(s, &e, box, alpha)
-	case .Bucket, .Gradient, .Picker, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom:
+	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom:
 	}
 	doc_dirty(d, box)
 }

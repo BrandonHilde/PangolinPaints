@@ -1,6 +1,5 @@
 package pangolin
 
-import rl "vendor:raylib"
 
 ICON_SIZE :: 12
 
@@ -57,6 +56,7 @@ Icon :: enum {
 	Crop,
 	Mask,
 	Lock_Alpha,
+	Text,
 }
 
 ICON_ART := [Icon][ICON_SIZE]string {
@@ -775,6 +775,20 @@ ICON_ART := [Icon][ICON_SIZE]string {
 		"............",
 		"............",
 	},
+	.Text = {
+		"............",
+		".##########.",
+		".##########.",
+		".....##.....",
+		".....##.....",
+		".....##.....",
+		".....##.....",
+		".....##.....",
+		".....##.....",
+		".....##.....",
+		"....####....",
+		"............",
+	},
 }
 
 icon_pixel :: proc(ic: Icon, x, y: int) -> bool {
@@ -785,20 +799,18 @@ icon_pixel :: proc(ic: Icon, x, y: int) -> bool {
 	return x < len(row) && row[x] == '#'
 }
 
-icons_build_atlas :: proc() -> rl.Texture2D {
+icons_build_atlas :: proc() -> Texture {
 	count := len(Icon)
-	img := rl.GenImageColor(i32(count * ICON_SIZE), ICON_SIZE, rl.BLANK)
+	w := count * ICON_SIZE
+	pix := make([]Color, w * ICON_SIZE, context.temp_allocator)
 	for ic in Icon {
 		for y in 0 ..< ICON_SIZE {
 			for x in 0 ..< ICON_SIZE {
 				if icon_pixel(ic, x, y) {
-					rl.ImageDrawPixel(&img, i32(int(ic) * ICON_SIZE + x), i32(y), rl.WHITE)
+					pix[y * w + int(ic) * ICON_SIZE + x] = WHITE
 				}
 			}
 		}
 	}
-	tex := rl.LoadTextureFromImage(img)
-	rl.SetTextureFilter(tex, .POINT)
-	rl.UnloadImage(img)
-	return tex
+	return tex_from_pixels(pix, w, ICON_SIZE, .Point)
 }

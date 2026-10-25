@@ -4,30 +4,39 @@ import "core:fmt"
 import "core:math"
 import "core:strconv"
 import "core:strings"
-import rl "vendor:raylib"
 
-FONT_SIZE :: 10
+FONT_SIZE :: 14 // logical em size of the UI font (Jersey 10)
+FONT_CAP :: 8 // height of its capital letters, logical px
 
 // Theme ----------------------------------------------------------------------
-C_BG :: Color{30, 30, 36, 255}
-C_PANEL :: Color{44, 44, 53, 255}
-C_PANEL_DK :: Color{28, 28, 34, 255}
-C_PANEL_LT :: Color{62, 62, 76, 255}
-C_BORDER :: Color{16, 16, 20, 255}
-C_HOVER :: Color{78, 78, 98, 255}
-C_ACTIVE :: Color{150, 88, 58, 255}
-C_ACCENT :: Color{240, 152, 96, 255}
-C_SLIDER :: Color{112, 68, 48, 255}
-C_TEXT :: Color{224, 224, 236, 255}
-C_TEXT_DIM :: Color{138, 138, 156, 255}
-C_VIEWPORT :: Color{58, 58, 68, 255}
-C_DANGER :: Color{220, 90, 90, 255}
+// Neutral charcoal surfaces in three steps (well < panel < raised control), a warm amber accent
+// taken from the pangolin logo, and hairline rings instead of heavy black outlines.
+C_BG :: Color{21, 22, 26, 255} // window and gutters
+C_PANEL :: Color{35, 37, 43, 255} // docked panels
+C_PANEL_DK :: Color{26, 27, 32, 255} // wells: inputs, lists, bars
+C_PANEL_LT :: Color{52, 55, 64, 255} // raised controls
+C_BORDER :: Color{13, 14, 17, 255} // separators and outer edges
+C_RING :: Color{255, 255, 255, 18} // hairline ring around controls
+C_RING_HI :: Color{255, 255, 255, 40}
+C_HOVER :: Color{68, 72, 85, 255}
+C_ACTIVE :: Color{178, 100, 56, 255} // selected rows, pressed
+C_ACCENT :: Color{246, 170, 104, 255}
+C_ACCENT_TINT :: Color{246, 170, 104, 52} // toggled-on fill
+C_SLIDER :: Color{108, 70, 46, 255}
+C_TEXT :: Color{229, 231, 237, 255}
+C_TEXT_DIM :: Color{140, 145, 160, 255}
+C_TEXT_OFF :: Color{88, 92, 106, 255}
+C_VIEWPORT :: Color{45, 47, 53, 255}
+C_DANGER :: Color{230, 98, 98, 255}
+
+RADIUS :: 3
 
 UI :: struct {
 	w, h:                int, // logical window size
 	scale:               i32,
 	mx, my:              i32,
 	pmx, pmy:            i32,
+	ptr:                 Vec2, // pointer in window pixels at full precision (the pen tip while it touches)
 	down, pressed, released: [3]bool,
 	wheel:               f32,
 	wheel_h:             f32,
@@ -41,9 +50,9 @@ UI :: struct {
 	dt:                  f32,
 	time:                f64,
 	tip:                 string,
-	cursor:              rl.MouseCursor,
-	font:                rl.Font,
-	icons:               rl.Texture2D,
+	cursor:              MouseCursor,
+
+	icons:               Texture,
 	caret:               int,
 	sel_all:             bool,
 	edit:                Name,
@@ -94,42 +103,36 @@ cut_bottom :: proc(r: ^Rect, h: i32) -> Rect {
 	return out
 }
 
-to_rl :: proc(r: Rect) -> rl.Rectangle {
-	return rl.Rectangle{f32(r.x), f32(r.y), f32(r.w), f32(r.h)}
-}
-
 // Drawing helpers --------------------------------------------------------------
 
 fill_rect :: proc(r: Rect, c: Color) {
-	rl.DrawRectangle(r.x, r.y, r.w, r.h, c)
+	draw_rect(f32(r.x), f32(r.y), f32(r.w), f32(r.h), c)
 }
 
+// One physical pixel wide border just inside `r`.
 outline_rect :: proc(r: Rect, c: Color) {
-	rl.DrawRectangleLines(r.x, r.y, r.w, r.h, c)
+	x, y, w, h := f32(r.x), f32(r.y), f32(r.w), f32(r.h)
+	t := hair()
+	draw_rect(x, y, w, t, c)
+	draw_rect(x, y + h - t, w, t, c)
+	draw_rect(x, y + t, t, h - 2 * t, c)
+	draw_rect(x + w - t, y + t, t, h - 2 * t, c)
 }
 
 hline :: proc(x, y, w: i32, c: Color) {
-	rl.DrawRectangle(x, y, w, 1, c)
+	draw_rect(f32(x), f32(y), f32(w), hair(), c)
 }
 
 vline :: proc(x, y, h: i32, c: Color) {
-	rl.DrawRectangle(x, y, 1, h, c)
+	draw_rect(f32(x), f32(y), hair(), f32(h), c)
 }
 
 text :: proc(x, y: i32, s: string, c: Color) {
-	if len(s) == 0 {
-		return
-	}
-	cs := strings.clone_to_cstring(s, context.temp_allocator)
-	rl.DrawTextEx(ui.font, cs, {f32(x), f32(y)}, FONT_SIZE, 1, c)
+	draw_text(f32(x), f32(y), s, c)
 }
 
 text_w :: proc(s: string) -> i32 {
-	if len(s) == 0 {
-		return 0
-	}
-	cs := strings.clone_to_cstring(s, context.temp_allocator)
-	return i32(rl.MeasureTextEx(ui.font, cs, FONT_SIZE, 1).x)
+	return i32(math.ceil(text_width(s)))
 }
 
 textf :: proc(x, y: i32, c: Color, format: string, args: ..any) {
@@ -138,25 +141,46 @@ textf :: proc(x, y: i32, c: Color, format: string, args: ..any) {
 
 text_centered :: proc(r: Rect, s: string, c: Color) {
 	tw := text_w(s)
-	text(r.x + (r.w - tw) / 2, r.y + (r.h - 8) / 2, s, c)
+	text(r.x + (r.w - tw) / 2, r.y + (r.h - FONT_CAP) / 2, s, c)
 }
 
 text_clipped :: proc(r: Rect, s: string, c: Color) {
 	clip_begin(r)
-	text(r.x, r.y + (r.h - 8) / 2, s, c)
+	text(r.x, r.y + (r.h - FONT_CAP) / 2, s, c)
 	clip_end()
 }
 
+// Nested clips intersect, as scissor modes never did.
+clip_stack: [8]Rect
+clip_depth: int
+
 clip_begin :: proc(r: Rect) {
-	rl.BeginScissorMode(r.x, r.y, r.w, r.h)
+	n := r
+	if clip_depth > 0 {
+		p := clip_stack[clip_depth - 1]
+		x0, y0 := max(n.x, p.x), max(n.y, p.y)
+		x1, y1 := min(n.x + n.w, p.x + p.w), min(n.y + n.h, p.y + p.h)
+		n = Rect{x0, y0, max(x1 - x0, 0), max(y1 - y0, 0)}
+	}
+	if clip_depth < len(clip_stack) {
+		clip_stack[clip_depth] = n
+	}
+	clip_depth += 1
+	clip_set(n.x, n.y, n.w, n.h)
 }
 
 clip_end :: proc() {
-	rl.EndScissorMode()
+	clip_depth -= 1
+	if clip_depth > 0 && clip_depth <= len(clip_stack) {
+		p := clip_stack[clip_depth - 1]
+		clip_set(p.x, p.y, p.w, p.h)
+	} else {
+		clip_clear()
+	}
 }
 
 icon :: proc(ic: Icon, x, y: i32, c: Color) {
-	rl.DrawTextureRec(ui.icons, {f32(int(ic) * ICON_SIZE), 0, ICON_SIZE, ICON_SIZE}, {f32(x), f32(y)}, c)
+	draw_tex(ui.icons, {f32(int(ic) * ICON_SIZE), 0, ICON_SIZE, ICON_SIZE}, {f32(x), f32(y), ICON_SIZE, ICON_SIZE}, c)
 }
 
 icon_centered :: proc(ic: Icon, r: Rect, c: Color) {
@@ -167,45 +191,49 @@ icon_centered :: proc(ic: Icon, r: Rect, c: Color) {
 icon_badge :: proc(x, y: i32, plus: bool, c: Color) {
 	bx := x + 8
 	by := y + 0
-	rl.DrawRectangle(bx, by + 2, 5, 1, c)
+	fill_rect({bx, by + 2, 5, 1}, c)
 	if plus {
-		rl.DrawRectangle(bx + 2, by, 1, 5, c)
+		fill_rect({bx + 2, by, 1, 5}, c)
 	}
 }
 
 // Frame / input ------------------------------------------------------------------
 
 ui_begin_frame :: proc() {
-	m := rl.GetMousePosition()
+	m := gfx.mouse
+	pen_tip := pen.touching || pen.down_evt
+	if pen_tip {
+		m = pen.pos
+	}
+	ui.ptr = m
 	ui.pmx, ui.pmy = ui.mx, ui.my
 	ui.mx = i32(m.x) / ui.scale
 	ui.my = i32(m.y) / ui.scale
-	btns := [3]rl.MouseButton{.LEFT, .RIGHT, .MIDDLE}
-	for b, i in btns {
-		ui.down[i] = rl.IsMouseButtonDown(b)
-		ui.pressed[i] = rl.IsMouseButtonPressed(b)
-		ui.released[i] = rl.IsMouseButtonReleased(b)
+	for i in 0 ..< 3 {
+		ui.down[i] = gfx.m_down[i]
+		ui.pressed[i] = gfx.m_pressed[i]
+		ui.released[i] = gfx.m_released[i]
 	}
-	wh := rl.GetMouseWheelMoveV()
-	ui.wheel = wh.y
-	ui.wheel_h = wh.x
+	if pen_active() {
+		// the pen tip is the left button: read straight from the pen, the synthesised mouse events arrive late
+		ui.down[0] = pen_tip
+		ui.pressed[0] = pen.down_evt
+		ui.released[0] = pen.up_evt
+	}
+	pen.down_evt, pen.up_evt = false, false
+	ui.wheel = gfx.wheel.y
+	ui.wheel_h = gfx.wheel.x
 	clear(&ui.chars)
-	for {
-		c := rl.GetCharPressed()
-		if c == 0 {
-			break
-		}
-		append(&ui.chars, c)
-	}
-	ui.dt = rl.GetFrameTime()
-	ui.time = rl.GetTime()
+	append(&ui.chars, ..gfx.chars[:])
+	ui.dt = gfx.dt
+	ui.time = gfx_time()
 	ui.cursor = .DEFAULT
 	ui.hide_cursor = false
 	ui.tip = ""
 	ui.hover_seen = false
-	ui.ctrl = rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL)
-	ui.shift = rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
-	ui.alt = rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT)
+	ui.ctrl = IsKeyDown(.LEFT_CONTROL) || IsKeyDown(.RIGHT_CONTROL)
+	ui.shift = IsKeyDown(.LEFT_SHIFT) || IsKeyDown(.RIGHT_SHIFT)
+	ui.alt = IsKeyDown(.LEFT_ALT) || IsKeyDown(.RIGHT_ALT)
 	ui.dbl_click = false
 	if ui.pressed[0] {
 		if ui.time - ui.last_click_t < 0.35 {
@@ -226,14 +254,14 @@ ui_end_frame :: proc() {
 	if !ui.down[0] && !ui.down[1] {
 		ui.active_id = 0
 	}
-	rl.SetMouseCursor(ui.cursor)
+	gfx_set_cursor(ui.cursor)
 	@(static) hidden: bool
 	if ui.hide_cursor != hidden {
 		hidden = ui.hide_cursor
 		if hidden {
-			rl.HideCursor()
+			gfx_show_cursor(false)
 		} else {
-			rl.ShowCursor()
+			gfx_show_cursor(true)
 		}
 	}
 }
@@ -263,8 +291,8 @@ tooltip_hover :: proc(id: u32, tip: string) {
 	}
 }
 
-key_hit :: proc(k: rl.KeyboardKey) -> bool {
-	return rl.IsKeyPressed(k) || rl.IsKeyPressedRepeat(k)
+key_hit :: proc(k: KeyboardKey) -> bool {
+	return IsKeyPressed(k) || IsKeyPressedRepeat(k)
 }
 
 // Generic press/hold/click behaviour.
@@ -290,25 +318,62 @@ button_behavior :: proc(id: u32, r: Rect, tip: string) -> (clicked, held, hover:
 
 // Widgets ----------------------------------------------------------------------
 
+// Rounded control surface with a hairline ring.
+ctl_surface :: proc(r: Rect, fill, ring: Color) {
+	draw_rrect(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, fill)
+	draw_rrect_outline(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, ring)
+}
+
+// Sunken field (inputs, sliders, lists).
+ctl_well :: proc(r: Rect, ring: Color = C_RING) {
+	draw_rrect(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, C_PANEL_DK)
+	draw_rrect_outline(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, ring)
+}
+
+// Raised surface for the current interaction state; returns the foreground colour to use on it.
+ctl_state :: proc(r: Rect, hover, held, on, enabled: bool) -> Color {
+	fill, ring, fg := C_PANEL_LT, C_RING, C_TEXT
+	switch {
+	case !enabled:
+		fill, fg = C_PANEL, C_TEXT_OFF
+	case held:
+		fill, ring = C_PANEL_DK, C_RING_HI
+		if on do fg = C_ACCENT
+	case on:
+		fill, ring, fg = C_ACCENT_TINT, Color{246, 170, 104, 150}, C_ACCENT
+		if hover do fill = Color{246, 170, 104, 78}
+	case hover:
+		fill, ring = C_HOVER, C_RING_HI
+	}
+	if on && !enabled do fg = C_TEXT_OFF
+	// the tinted fills are translucent: lay them on the plain surface first
+	if on && enabled {
+		draw_rrect(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, C_PANEL_LT)
+	}
+	ctl_surface(r, fill, ring)
+	return fg
+}
+
 button :: proc(r: Rect, label: string, tip := "", enabled := true, highlight := false) -> bool {
 	id := make_id(r, label)
 	clicked, held, hover := button_behavior(id, r, tip)
 	if !enabled {
 		clicked, held, hover = false, false, false
 	}
-	bg := C_PANEL_LT
-	if highlight {
-		bg = C_ACTIVE
-	}
-	if hover {
-		bg = C_HOVER
-	}
-	if held {
-		bg = C_ACTIVE
-	}
-	fill_rect(r, bg)
-	outline_rect(r, C_BORDER)
-	text_centered(r, label, enabled ? C_TEXT : C_TEXT_DIM)
+	fg := ctl_state(r, hover, held, highlight, enabled)
+	text_centered(r, label, fg)
+	return clicked
+}
+
+// Filled call-to-action button (dialog OK).
+button_primary :: proc(r: Rect, label: string, tip := "") -> bool {
+	id := make_id(r, label)
+	clicked, held, hover := button_behavior(id, r, tip)
+	fill := C_ACTIVE
+	if hover do fill = Color{200, 116, 68, 255}
+	if held do fill = Color{150, 82, 44, 255}
+	ctl_surface(r, fill, Color{255, 255, 255, 46})
+	text_centered(r, label, WHITE)
 	return clicked
 }
 
@@ -318,19 +383,8 @@ icon_button :: proc(r: Rect, ic: Icon, tip := "", active := false, enabled := tr
 	if !enabled {
 		clicked, held, hover = false, false, false
 	}
-	bg := C_PANEL_LT
-	if active {
-		bg = C_ACTIVE
-	}
-	if hover {
-		bg = active ? C_ACCENT : C_HOVER
-	}
-	if held {
-		bg = C_ACTIVE
-	}
-	fill_rect(r, bg)
-	outline_rect(r, C_BORDER)
-	icon_centered(ic, r, enabled ? C_TEXT : C_TEXT_DIM)
+	fg := ctl_state(r, hover, held, active, enabled)
+	icon_centered(ic, r, fg)
 	return clicked
 }
 
@@ -339,7 +393,7 @@ badge_button :: proc(r: Rect, ic: Icon, plus: bool, tip := "", enabled := true) 
 	clicked := icon_button(r, ic, tip, false, enabled)
 	x := r.x + (r.w - ICON_SIZE) / 2
 	y := r.y + (r.h - ICON_SIZE) / 2
-	icon_badge(x, y, plus, enabled ? C_ACCENT : C_TEXT_DIM)
+	icon_badge(x, y, plus, enabled ? C_ACCENT : C_TEXT_OFF)
 	return clicked
 }
 
@@ -352,16 +406,19 @@ toggle_button :: proc(r: Rect, ic: Icon, v: ^bool, tip := "") -> bool {
 }
 
 checkbox :: proc(x, y: i32, label: string, v: ^bool, tip := "") -> bool {
-	r := Rect{x, y, 14 + text_w(label), 12}
+	r := Rect{x, y, 18 + text_w(label), 12}
 	id := make_id(r, label)
-	clicked, _, hover := button_behavior(id, r, tip)
-	box := Rect{x, y + 1, 10, 10}
-	fill_rect(box, C_PANEL_DK)
-	outline_rect(box, hover ? C_ACCENT : C_BORDER)
+	clicked, held, hover := button_behavior(id, r, tip)
+	box := Rect{x, y, 12, 12}
 	if v^ {
-		icon(.Check, box.x - 1, box.y - 1, C_ACCENT)
+		draw_rrect(f32(box.x), f32(box.y), 12, 12, 2, C_ACCENT_TINT)
+		draw_rrect_outline(f32(box.x), f32(box.y), 12, 12, 2, Color{246, 170, 104, 170})
+		icon(.Check, box.x, box.y, C_ACCENT)
+	} else {
+		draw_rrect(f32(box.x), f32(box.y), 12, 12, 2, held ? C_PANEL : C_PANEL_DK)
+		draw_rrect_outline(f32(box.x), f32(box.y), 12, 12, 2, hover ? C_RING_HI : C_RING)
 	}
-	text(x + 14, y + 1, label, C_TEXT)
+	text(x + 17, y + 2, label, hover ? WHITE : C_TEXT)
 	if clicked {
 		v^ = !v^
 		return true
@@ -398,13 +455,15 @@ slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix :
 			changed = true
 		}
 	}
-	fill_rect(r, C_PANEL_DK)
+	ctl_well(r, hover || held ? C_RING_HI : C_RING)
 	frac := f32(v^ - lo) / f32(max(hi - lo, 1))
 	if curve != 1 {
 		frac = math.pow(clamp(frac, 0, 1), 1 / curve)
 	}
-	fill_rect(Rect{r.x, r.y, i32(f32(r.w) * frac), r.h}, hover || held ? C_ACTIVE : C_SLIDER)
-	outline_rect(r, C_BORDER)
+	if fw := f32(r.w) * frac; fw >= 1 {
+		draw_rrect(f32(r.x), f32(r.y), fw, f32(r.h), RADIUS, hover || held ? C_ACTIVE : C_SLIDER)
+		draw_rrect_outline(f32(r.x), f32(r.y), fw, f32(r.h), RADIUS, C_RING)
+	}
 	vs := div > 1 ? fmt.tprintf("%.*f", div >= 100 ? 2 : 1, f32(v^) / f32(div)) : fmt.tprintf("%d", v^)
 	s := label == "" ? fmt.tprintf("%s%s", vs, suffix) : fmt.tprintf("%s: %s%s", label, vs, suffix)
 	text_centered(r, s, C_TEXT)
@@ -460,16 +519,13 @@ edit_core :: proc(buf: ^Name, r: Rect, id: u32, ascii_only := true) -> (submitte
 			insert(buf, string(tmp[:]))
 		}
 	}
-	if ui.ctrl && rl.IsKeyPressed(.V) {
-		cb := rl.GetClipboardText()
-		if cb != nil {
-			insert(buf, string(cb))
-		}
+	if ui.ctrl && IsKeyPressed(.V) {
+		insert(buf, gfx_clipboard_get())
 	}
-	if ui.ctrl && rl.IsKeyPressed(.C) {
-		rl.SetClipboardText(strings.clone_to_cstring(name_str(buf), context.temp_allocator))
+	if ui.ctrl && IsKeyPressed(.C) {
+		gfx_clipboard_set(name_str(buf))
 	}
-	if ui.ctrl && rl.IsKeyPressed(.A) {
+	if ui.ctrl && IsKeyPressed(.A) {
 		ui.sel_all = true
 	}
 	if key_hit(.BACKSPACE) {
@@ -501,19 +557,19 @@ edit_core :: proc(buf: ^Name, r: Rect, id: u32, ascii_only := true) -> (submitte
 		ui.sel_all = false
 		ui.caret = min(ui.caret + 1, buf.n)
 	}
-	if rl.IsKeyPressed(.HOME) {
+	if IsKeyPressed(.HOME) {
 		ui.sel_all = false
 		ui.caret = 0
 	}
-	if rl.IsKeyPressed(.END) {
+	if IsKeyPressed(.END) {
 		ui.sel_all = false
 		ui.caret = buf.n
 	}
-	if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.KP_ENTER) {
+	if IsKeyPressed(.ENTER) || IsKeyPressed(.KP_ENTER) {
 		ui.focus_id = 0
 		submitted = true
 	}
-	if rl.IsKeyPressed(.ESCAPE) {
+	if IsKeyPressed(.ESCAPE) {
 		ui.focus_id = 0
 		cancelled = true
 	}
@@ -521,21 +577,20 @@ edit_core :: proc(buf: ^Name, r: Rect, id: u32, ascii_only := true) -> (submitte
 }
 
 draw_edit_box :: proc(r: Rect, buf: ^Name, focused: bool) {
-	fill_rect(r, C_PANEL_DK)
-	outline_rect(r, focused ? C_ACCENT : C_BORDER)
+	ctl_well(r, focused ? C_ACCENT : C_RING)
 	s := name_str(buf)
-	clip_begin(rect_inset(r, 1))
+	clip_begin(rect_inset(r, 2))
 	off: i32 = 0
 	cw := text_w(string(buf.b[:clamp(ui.caret, 0, buf.n)]))
-	if focused && cw > r.w - 8 {
-		off = cw - (r.w - 8)
+	if focused && cw > r.w - 10 {
+		off = cw - (r.w - 10)
 	}
 	if focused && ui.sel_all && buf.n > 0 {
-		fill_rect(Rect{r.x + 2 - off, r.y + 2, text_w(s) + 2, r.h - 4}, C_ACTIVE)
+		fill_rect(Rect{r.x + 3 - off, r.y + 2, text_w(s) + 2, r.h - 4}, C_ACTIVE)
 	}
-	text(r.x + 3 - off, r.y + (r.h - 8) / 2, s, C_TEXT)
+	text(r.x + 4 - off, r.y + (r.h - FONT_CAP) / 2, s, C_TEXT)
 	if focused && !ui.sel_all && i32(ui.time * 2) % 2 == 0 {
-		vline(r.x + 3 - off + cw, r.y + 3, r.h - 6, C_TEXT)
+		fill_rect(Rect{r.x + 4 - off + cw, r.y + 3, 1, r.h - 6}, C_TEXT)
 	}
 	clip_end()
 }
@@ -604,10 +659,9 @@ field_int :: proc(r: Rect, v: ^int, lo, hi: int, tip := "") -> bool {
 				changed = true
 			}
 		}
-		fill_rect(r, C_PANEL_DK)
-		outline_rect(r, hover ? C_ACCENT : C_BORDER)
+		ctl_well(r, hover ? C_RING_HI : C_RING)
 		s := fmt.tprintf("%d", v^)
-		text(r.x + 3, r.y + (r.h - 8) / 2, s, C_TEXT)
+		text(r.x + 4, r.y + (r.h - FONT_CAP) / 2, s, C_TEXT)
 	}
 	return changed
 }
@@ -671,7 +725,7 @@ popup_close :: proc() {
 	clear(&popup.items)
 }
 
-POPUP_ITEM_H :: 14
+POPUP_ITEM_H :: 16
 
 popup_run :: proc() {
 	if !popup.open {
@@ -679,13 +733,13 @@ popup_run :: proc() {
 	}
 	ui.layer = ui.input_layer
 	w := popup.min_w
-	h: i32 = 4
+	h: i32 = 8
 	for &it in popup.items {
 		if it.sep {
-			h += 5
+			h += 7
 			continue
 		}
-		iw := text_w(name_str(&it.label)) + 28
+		iw := text_w(name_str(&it.label)) + 34
 		if it.cmd != .None {
 			sc := shortcut_text(it.cmd)
 			if sc != "" {
@@ -712,30 +766,30 @@ popup_run :: proc() {
 	}
 	box := Rect{x, y, w, h}
 	// shadow + frame
-	fill_rect(Rect{box.x + 2, box.y + 2, box.w, box.h}, Color{0, 0, 0, 90})
-	fill_rect(box, C_PANEL)
-	outline_rect(box, C_BORDER)
-	cy := box.y + 2
+	draw_shadow(f32(box.x), f32(box.y + 3), f32(box.w), f32(box.h), 6, 10, Color{0, 0, 0, 150})
+	draw_rrect(f32(box.x), f32(box.y), f32(box.w), f32(box.h), 6, C_PANEL)
+	draw_rrect_outline(f32(box.x), f32(box.y), f32(box.w), f32(box.h), 6, C_RING_HI)
+	cy := box.y + 4
 	for &it in popup.items {
 		if it.sep {
-			hline(box.x + 4, cy + 2, box.w - 8, C_PANEL_LT)
-			cy += 5
+			hline(box.x + 8, cy + 3, box.w - 16, C_RING_HI)
+			cy += 7
 			continue
 		}
-		ir := Rect{box.x + 2, cy, box.w - 4, POPUP_ITEM_H}
+		ir := Rect{box.x + 4, cy, box.w - 8, POPUP_ITEM_H}
 		hover := ui_hover(ir) && it.enabled
 		if hover {
-			fill_rect(ir, C_ACTIVE)
+			draw_rrect(f32(ir.x), f32(ir.y), f32(ir.w), f32(ir.h), RADIUS, C_ACTIVE)
 		}
-		col := it.enabled ? C_TEXT : C_TEXT_DIM
+		col := it.enabled ? (hover ? WHITE : C_TEXT) : C_TEXT_OFF
 		if it.checked {
-			icon(.Check, ir.x + 1, ir.y + 1, col)
+			icon(.Check, ir.x + 2, ir.y + 2, hover ? WHITE : C_ACCENT)
 		}
-		text(ir.x + 14, ir.y + 3, name_str(&it.label), col)
+		text(ir.x + 17, ir.y + (POPUP_ITEM_H - FONT_CAP) / 2, name_str(&it.label), col)
 		if it.cmd != .None {
 			sc := shortcut_text(it.cmd)
 			if sc != "" {
-				text(ir.x + ir.w - text_w(sc) - 6, ir.y + 3, sc, C_TEXT_DIM)
+				text(ir.x + ir.w - text_w(sc) - 7, ir.y + (POPUP_ITEM_H - FONT_CAP) / 2, sc, hover ? C_TEXT : C_TEXT_DIM)
 			}
 		}
 		if hover && ui.pressed[0] {
@@ -758,7 +812,7 @@ popup_run :: proc() {
 			popup_close()
 		}
 	}
-	if rl.IsKeyPressed(.ESCAPE) {
+	if IsKeyPressed(.ESCAPE) {
 		popup_close()
 	}
 }
@@ -767,17 +821,9 @@ popup_run :: proc() {
 combo :: proc(r: Rect, items: []string, cur: int, tip := "") -> (new_val: int, changed: bool) {
 	id := make_id(r, "combo")
 	clicked, held, hover := button_behavior(id, r, tip)
-	bg := C_PANEL_LT
-	if hover {
-		bg = C_HOVER
-	}
-	if held {
-		bg = C_ACTIVE
-	}
-	fill_rect(r, bg)
-	outline_rect(r, C_BORDER)
+	fg := ctl_state(r, hover, held || popup.open && popup.owner == id, false, true)
 	s := cur >= 0 && cur < len(items) ? items[cur] : ""
-	text_clipped(Rect{r.x + 4, r.y, r.w - 18, r.h}, s, C_TEXT)
+	text_clipped(Rect{r.x + 5, r.y, r.w - 20, r.h}, s, fg)
 	icon(.Down, r.x + r.w - 14, r.y + (r.h - ICON_SIZE) / 2, C_TEXT_DIM)
 	if ui.popup_result_id == id {
 		new_val = ui.popup_result_val
@@ -812,8 +858,8 @@ tooltip_draw :: proc() {
 		return
 	}
 	tw := text_w(ui.tip)
-	w := tw + 8
-	h: i32 = 14
+	w := tw + 14
+	h: i32 = 18
 	x := ui.mx + 10
 	y := ui.my + 14
 	if x + w > i32(ui.w) {
@@ -822,7 +868,8 @@ tooltip_draw :: proc() {
 	if y + h > i32(ui.h) {
 		y = ui.my - h - 4
 	}
-	fill_rect(Rect{x, y, w, h}, Color{20, 20, 26, 245})
-	outline_rect(Rect{x, y, w, h}, C_ACCENT)
-	text(x + 4, y + 3, ui.tip, C_TEXT)
+	draw_shadow(f32(x), f32(y + 2), f32(w), f32(h), 4, 6, Color{0, 0, 0, 130})
+	draw_rrect(f32(x), f32(y), f32(w), f32(h), 4, Color{14, 15, 19, 248})
+	draw_rrect_outline(f32(x), f32(y), f32(w), f32(h), 4, C_RING_HI)
+	text(x + 7, y + (h - FONT_CAP) / 2, ui.tip, C_TEXT)
 }

@@ -2,14 +2,13 @@ package pangolin
 
 import "core:fmt"
 import "core:math"
-import rl "vendor:raylib"
 
-MENU_H :: 16
-OPT_H :: 22
-TAB_H :: 16
-STATUS_H :: 14
-TOOLBAR_W :: 54
-RIGHT_W :: 220
+MENU_H :: 24
+OPT_H :: 30
+TAB_H :: 26
+STATUS_H :: 20
+TOOLBAR_W :: 62
+RIGHT_W :: 236
 
 SWATCH_PRESET_ID :: u32(0x5A7C4E51)
 PRESET_ID :: u32(0xB2A5E7E1)
@@ -199,17 +198,19 @@ panel_menubar :: proc(r: Rect) {
 	}
 	fill_rect(r, C_PANEL_DK)
 	hline(r.x, r.y + r.h - 1, r.w, C_BORDER)
-	x := r.x + 4
+	logo_draw(r.x + 7, r.y + (r.h - LOGO_SIZE) / 2, 1)
+	x := r.x + 30
 	for title, i in MENU_TITLES {
-		w := text_w(title) + 14
+		w := text_w(title) + 18
 		br := Rect{x, r.y, w, r.h - 1}
 		id := make_id(br, title)
 		hover := ui_hover(br)
 		is_open := popup.open && popup.menu_idx == i
 		if hover || is_open {
-			fill_rect(br, is_open ? C_ACTIVE : C_HOVER)
+			pill := Rect{br.x + 1, br.y + 3, br.w - 2, br.h - 6}
+			draw_rrect(f32(pill.x), f32(pill.y), f32(pill.w), f32(pill.h), RADIUS, is_open ? C_ACTIVE : C_HOVER)
 		}
-		text(br.x + 7, br.y + 4, title, C_TEXT)
+		text(br.x + 9, br.y + (br.h - FONT_CAP) / 2, title, hover || is_open ? WHITE : C_TEXT)
 		if hover {
 			if ui.pressed[0] {
 				if is_open {
@@ -226,7 +227,7 @@ panel_menubar :: proc(r: Rect) {
 		x += w
 	}
 	t := doc_display_name(doc)
-	text(r.x + r.w - text_w(t) - 8, r.y + 4, t, C_TEXT_DIM)
+	text(r.x + r.w - text_w(t) - 12, r.y + (r.h - 1 - FONT_CAP) / 2, t, C_TEXT_DIM)
 }
 
 // ---------------------------------------------------------------------------
@@ -237,25 +238,32 @@ panel_tabs :: proc(r: Rect) {
 	ui.layer = 0
 	fill_rect(r, C_PANEL_DK)
 	hline(r.x, r.y + r.h - 1, r.w, C_BORDER)
-	x := r.x + 2
+	x := r.x + 6
 	close_idx := -1
 	switch_idx := -1
+	clip_begin(r)
 	for d, i in docs {
 		name := doc_display_name(d)
-		w := text_w(name) + 34
-		tr := Rect{x, r.y + 1, w, r.h - 1}
-		if x + w > r.x + r.w - 20 {
+		w := text_w(name) + 40
+		tr := Rect{x, r.y + 4, w, r.h - 4}
+		if x + w > r.x + r.w - 28 {
 			break
 		}
 		active := d == doc
 		hover := ui_hover(tr)
-		fill_rect(tr, active ? C_PANEL : (hover ? C_HOVER : C_PANEL_DK))
+		// rounded on top only: the lower corners run off the clip
 		if active {
-			hline(tr.x, tr.y, tr.w, C_ACCENT)
+			draw_rrect(f32(tr.x), f32(tr.y), f32(tr.w), f32(tr.h + 6), 5, C_VIEWPORT)
+			draw_rrect(f32(tr.x + 6), f32(tr.y), f32(tr.w - 12), 2, 1, C_ACCENT)
+		} else if hover {
+			draw_rrect(f32(tr.x), f32(tr.y + 2), f32(tr.w), f32(tr.h + 6), 5, C_PANEL)
 		}
-		text(tr.x + 6, tr.y + 4, name, active ? C_TEXT : C_TEXT_DIM)
-		cr := Rect{tr.x + tr.w - 16, tr.y + 2, 12, 12}
+		text(tr.x + 10, tr.y + (tr.h - FONT_CAP) / 2, name, active ? C_TEXT : C_TEXT_DIM)
+		cr := Rect{tr.x + tr.w - 18, tr.y + (tr.h - 12) / 2, 12, 12}
 		chover := ui_hover(cr)
+		if chover {
+			draw_rrect(f32(cr.x), f32(cr.y), 12, 12, 3, C_HOVER)
+		}
 		icon(.Close, cr.x, cr.y, chover ? C_DANGER : C_TEXT_DIM)
 		if ui.pressed[0] && hover {
 			if chover {
@@ -267,14 +275,15 @@ panel_tabs :: proc(r: Rect) {
 		if ui.pressed[2] && hover {
 			close_idx = i
 		}
-		x += w + 1
+		x += w + 2
 	}
+	clip_end()
 	if close_idx >= 0 {
 		request_close(docs[close_idx])
 	} else if switch_idx >= 0 {
 		switch_doc(switch_idx)
 	}
-	if icon_button(Rect{r.x + r.w - 18, r.y + 2, 16, 13}, .Plus, "New painting") {
+	if icon_button(Rect{r.x + r.w - 24, r.y + 5, 18, 17}, .Plus, "New painting") {
 		run_cmd(.New)
 	}
 }
@@ -294,6 +303,7 @@ TOOL_ICONS := [Tool]Icon {
 	.Bucket         = .Bucket,
 	.Gradient       = .Gradient,
 	.Picker         = .Picker,
+	.Text           = .Text,
 	.Select_Rect    = .Sel_Rect,
 	.Select_Ellipse = .Sel_Ellipse,
 	.Lasso          = .Lasso,
@@ -310,31 +320,37 @@ panel_toolbar :: proc(r: Rect) {
 	fill_rect(r, C_PANEL)
 	vline(r.x + r.w - 1, r.y, r.h, C_BORDER)
 	t := eff_tool()
-	y := r.y + 4
+	y := r.y + 8
 	i: i32 = 0
+	BTN :: 26
 	for tool in Tool {
-		// small gaps between groups: painting, fill, selection, transform, view
+		// separators between groups: painting, fill, selection, transform, view
 		if tool == .Bucket || tool == .Select_Rect || tool == .Move || tool == .Hand {
 			if i % 2 == 1 do i += 1
-			y += 4
+			y += 9
+			hline(r.x + 10, y + (i / 2) * (BTN + 1) - 5, r.w - 21, C_RING_HI)
 		}
-		br := Rect{r.x + 3 + (i % 2) * 25, y + (i / 2) * 25, 24, 24}
+		br := Rect{r.x + 3 + (i % 2) * (BTN + 1), y + (i / 2) * (BTN + 1), BTN, BTN}
 		if icon_button(br, TOOL_ICONS[tool], TOOL_NAMES[tool], t == tool) {
 			select_tool(tool)
 		}
 		i += 1
 	}
-	// fg / bg chips at the bottom of the toolbar
-	cy := y + ((i + 1) / 2) * 25 + 8
-	bgr := Rect{r.x + 18, cy + 12, 22, 22}
-	fgr := Rect{r.x + 6, cy, 22, 22}
-	fill_rect(bgr, bg)
-	outline_rect(bgr, C_BORDER)
-	fill_rect(fgr, fg)
-	outline_rect(fgr, rl.WHITE)
-	outline_rect(rect_inset(fgr, -1), C_BORDER)
-	if ui_hover(bgr) && !ui_hover(fgr) && ui.pressed[0] {
-		run_cmd(.Swap_Colors)
+	// foreground / background chips at the bottom of the toolbar
+	cy := y + ((i + 1) / 2) * (BTN + 1) + 12
+	hline(r.x + 10, cy - 7, r.w - 21, C_RING_HI)
+	bgr := Rect{r.x + 22, cy + 14, 24, 24}
+	fgr := Rect{r.x + 9, cy, 24, 24}
+	draw_rrect(f32(bgr.x), f32(bgr.y), 24, 24, 4, bg)
+	draw_rrect_outline(f32(bgr.x), f32(bgr.y), 24, 24, 4, ui_hover(bgr) && !ui_hover(fgr) ? WHITE : C_RING_HI)
+	draw_shadow(f32(fgr.x), f32(fgr.y + 1), 24, 24, 4, 5, Color{0, 0, 0, 140})
+	draw_rrect(f32(fgr.x), f32(fgr.y), 24, 24, 4, fg)
+	draw_rrect_outline(f32(fgr.x), f32(fgr.y), 24, 24, 4, WHITE)
+	if ui_hover(bgr) && !ui_hover(fgr) {
+		tooltip_hover(make_id(bgr, "bgchip"), "Background colour (click to swap)")
+		if ui.pressed[0] {
+			run_cmd(.Swap_Colors)
+		}
 	}
 }
 
@@ -346,8 +362,8 @@ panel_options :: proc(r: Rect) {
 	ui.layer = 0
 	fill_rect(r, C_PANEL)
 	hline(r.x, r.y + r.h - 1, r.w, C_BORDER)
-	x := r.x + 6
-	y := r.y + 4
+	x := r.x + 8
+	y := r.y + (r.h - 1 - 14) / 2
 	t := eff_tool()
 	if paint_tool(t) {
 		options_brush(&x, y, t)
@@ -356,14 +372,14 @@ panel_options :: proc(r: Rect) {
 	}
 	// right side: layer state
 	l := &doc.layers[doc.active_layer]
-	rx := r.x + r.w - 6
-	rx -= 16
-	if icon_button(Rect{rx, y, 16, 14}, .Lock_Alpha, "Lock layer transparency (/)", l.lock_alpha) {
+	rx := r.x + r.w - 8
+	rx -= 18
+	if icon_button(Rect{rx, y, 18, 14}, .Lock_Alpha, "Lock layer transparency (/)", l.lock_alpha) {
 		run_cmd(.Layer_Lock_Alpha)
 	}
 	if l.has_mask {
-		rx -= 17
-		if icon_button(Rect{rx, y, 16, 14}, .Mask, "Paint on the layer mask (\\)", doc.edit_mask) {
+		rx -= 20
+		if icon_button(Rect{rx, y, 18, 14}, .Mask, "Paint on the layer mask (\\)", doc.edit_mask) {
 			run_cmd(.Mask_Edit)
 		}
 	}
@@ -488,6 +504,8 @@ options_other :: proc(x: ^i32, y: i32, t: Tool) {
 		x^ += 72
 		checkbox(x^, y + 1, "Smooth edge", &topts.antialias)
 		x^ += 84
+	case .Text:
+		options_text(x, y)
 	case .Move:
 		hint(x, y, "Drag to move the selection (or the whole layer). Alt: copy. Arrows nudge, Shift x10.")
 	case .Transform:
@@ -529,54 +547,64 @@ drag_area :: proc(r: Rect, id: u32) -> (active: bool, fx, fy: f32) {
 
 hex_buf: Name
 
+// Section heading: a dim caption with a hairline running to the right edge (minus `reserve`).
+section_header :: proc(x, y, w: i32, title: string, reserve: i32 = 0) {
+	tw := text_w(title)
+	text(x, y + 4, title, C_TEXT_DIM)
+	hline(x + tw + 8, y + 8, w - tw - 8 - reserve, C_RING)
+}
+
 panel_right :: proc(r: Rect) {
 	ui.layer = 0
 	fill_rect(r, C_PANEL)
 	vline(r.x, r.y, r.h, C_BORDER)
-	area := rect_inset(r, 6)
+	area := Rect{r.x + 10, r.y + 6, r.w - 20, r.h - 10}
 	x, y := area.x, area.y
 
 	// --- colour picker ---------------------------------------------------
-	sv := Rect{x, y, area.w - 18, 92}
-	hue := Rect{x + area.w - 12, y, 12, 92}
-	rl.DrawRectangleGradientH(sv.x, sv.y, sv.w, sv.h, rl.WHITE, hsv_to_rgb(fg_h, 1, 1))
-	rl.DrawRectangleGradientV(sv.x, sv.y, sv.w, sv.h, Color{0, 0, 0, 0}, Color{0, 0, 0, 255})
-	outline_rect(sv, C_BORDER)
+	section_header(x, y, area.w, "Color")
+	y += 20
+	SV_H :: 100
+	sv := Rect{x, y, area.w - 20, SV_H}
+	hue := Rect{x + area.w - 12, y, 12, SV_H}
+	draw_gradient(f32(sv.x), f32(sv.y), f32(sv.w), f32(sv.h), WHITE, hsv_to_rgb(fg_h, 1, 1), false)
+	draw_gradient(f32(sv.x), f32(sv.y), f32(sv.w), f32(sv.h), Color{0, 0, 0, 0}, Color{0, 0, 0, 255})
+	outline_rect(sv, C_RING_HI)
 	if act, fx, fy := drag_area(sv, make_id(sv, "sv")); act {
 		set_fg_hsv(fg_h, fx, 1 - fy)
 	}
 	cx := sv.x + i32(fg_s * f32(sv.w - 1))
 	cy := sv.y + i32((1 - fg_v) * f32(sv.h - 1))
-	rl.DrawCircleLines(cx, cy, 3, rl.BLACK)
-	rl.DrawCircleLines(cx, cy, 4, rl.WHITE)
+	draw_circle_outline(f32(cx) + 0.5, f32(cy) + 0.5, 4, BLACK)
+	draw_circle_outline(f32(cx) + 0.5, f32(cy) + 0.5, 5, WHITE)
 	for i in 0 ..< 6 {
 		seg_h := hue.h / 6
 		c0 := hsv_to_rgb(f32(i) * 60, 1, 1)
 		c1 := hsv_to_rgb(f32(i + 1) * 60, 1, 1)
-		rl.DrawRectangleGradientV(hue.x, hue.y + i32(i) * seg_h, hue.w, seg_h + 1, c0, c1)
+		draw_gradient(f32(hue.x), f32(hue.y + i32(i) * seg_h), f32(hue.w), f32(seg_h + 1), c0, c1)
 	}
-	outline_rect(hue, C_BORDER)
+	outline_rect(hue, C_RING_HI)
 	if act, _, fy := drag_area(hue, make_id(hue, "hue")); act {
 		set_fg_hsv(fy * 359.9, fg_s, fg_v)
 	}
 	hy := hue.y + i32(fg_h / 360 * f32(hue.h - 1))
-	hline(hue.x - 2, hy, hue.w + 4, rl.WHITE)
-	hline(hue.x - 2, hy + 1, hue.w + 4, rl.BLACK)
-	y += 96
+	draw_rrect(f32(hue.x - 3), f32(hy - 2), f32(hue.w + 6), 5, 2, WHITE)
+	draw_rrect_outline(f32(hue.x - 3), f32(hy - 2), f32(hue.w + 6), 5, 2, Color{0, 0, 0, 160})
+	y += SV_H + 8
 
-	fgr := Rect{x, y, 30, 16}
-	bgr := Rect{x + 34, y, 30, 16}
-	fill_rect(fgr, fg)
-	outline_rect(fgr, C_BORDER)
-	fill_rect(bgr, bg)
-	outline_rect(bgr, C_BORDER)
+	fgr := Rect{x, y, 30, 18}
+	bgr := Rect{x + 34, y, 30, 18}
+	draw_rrect(f32(fgr.x), f32(fgr.y), 30, 18, RADIUS, fg)
+	draw_rrect_outline(f32(fgr.x), f32(fgr.y), 30, 18, RADIUS, C_RING_HI)
+	draw_rrect(f32(bgr.x), f32(bgr.y), 30, 18, RADIUS, bg)
+	draw_rrect_outline(f32(bgr.x), f32(bgr.y), 30, 18, RADIUS, C_RING_HI)
 	if ui_hover(bgr) && ui.pressed[0] {
 		run_cmd(.Swap_Colors)
 	}
-	if icon_button(Rect{x + 68, y, 16, 16}, .Swap, "Swap colors (X)") {
+	if icon_button(Rect{x + 68, y, 18, 18}, .Swap, "Swap colors (X)") {
 		run_cmd(.Swap_Colors)
 	}
-	hr := Rect{x + 90, y, 58, 16}
+	hr := Rect{x + 92, y, 62, 18}
 	hid := make_id(hr, "text")
 	if ui.focus_id != hid {
 		name_set(&hex_buf, color_hex(fg))
@@ -587,36 +615,34 @@ panel_right :: proc(r: Rect) {
 		}
 	}
 	h, s, v := int(fg_h + 0.5), int(fg_s * 100 + 0.5), int(fg_v * 100 + 0.5)
-	text(x + 152, y + 4, fmt.tprintf("%d %d %d", h, s, v), C_TEXT_DIM)
-	y += 20
+	text(x + 160, y + 5, fmt.tprintf("%d %d %d", h, s, v), C_TEXT_DIM)
+	y += 24
 	rgb := [3]int{int(fg.r), int(fg.g), int(fg.b)}
 	names := [3]string{"R", "G", "B"}
 	for i in 0 ..< 3 {
-		if slider(Rect{x, y + i32(i) * 15, area.w, 13}, &rgb[i], 0, 255, names[i]) {
+		if slider(Rect{x, y + i32(i) * 17, area.w, 14}, &rgb[i], 0, 255, names[i]) {
 			set_fg(Color{u8(rgb[0]), u8(rgb[1]), u8(rgb[2]), 255})
 		}
 	}
-	y += 48
+	y += 56
 
 	// --- swatches ----------------------------------------------------------
-	hline(r.x + 1, y, r.w - 1, C_BORDER)
-	y += 4
-	text(x, y + 3, "Swatches", C_TEXT_DIM)
-	bx := area.x + area.w - 16
-	if icon_button(Rect{bx, y, 16, 14}, .Minus, "Remove selected swatch", false, len(swatches) > 1) {
+	text(x, y + 4, "Swatches", C_TEXT_DIM)
+	bx := area.x + area.w - 18
+	if icon_button(Rect{bx, y, 18, 16}, .Minus, "Remove selected swatch", false, len(swatches) > 1) {
 		if swatch_sel >= 0 && swatch_sel < len(swatches) {
 			ordered_remove(&swatches, swatch_sel)
 			swatch_sel = clamp(swatch_sel, 0, len(swatches) - 1)
 		}
 	}
-	bx -= 17
-	if icon_button(Rect{bx, y, 16, 14}, .Plus, "Add foreground colour") {
+	bx -= 20
+	if icon_button(Rect{bx, y, 18, 16}, .Plus, "Add foreground colour") {
 		append(&swatches, fg)
 		swatch_sel = len(swatches) - 1
 	}
-	bx -= 52
-	if button(Rect{bx, y, 50, 14}, "Presets", "Load a swatch set") {
-		popup_begin(SWATCH_PRESET_ID, Rect{bx, y, 50, 14}, 110)
+	bx -= 56
+	if button(Rect{bx, y, 54, 16}, "Presets", "Load a swatch set") {
+		popup_begin(SWATCH_PRESET_ID, Rect{bx, y, 54, 16}, 110)
 		for p in Swatch_Preset {
 			popup_item(SWATCH_PRESET_NAMES[p], int(p))
 		}
@@ -625,26 +651,26 @@ panel_right :: proc(r: Rect) {
 		swatches_set_preset(Swatch_Preset(ui.popup_result_val))
 		ui.popup_result_id = 0
 	}
-	y += 17
-	cell: i32 = 13
-	cols := max(area.w / cell, 1)
+	y += 21
+	cell: i32 = 14
+	cols := max((area.w - 4) / cell, 1)
 	rows := i32((len(swatches) + int(cols) - 1) / int(cols))
 	rows = min(rows, 3)
-	pal := Rect{x, y, area.w, max(rows, 1) * cell}
+	pal := Rect{x, y, area.w, max(rows, 1) * cell + 4}
 	@(static) pal_scroll: i32
 	all_rows := i32((len(swatches) + int(cols) - 1) / int(cols))
 	if ui_hover(pal) && ui.wheel != 0 {
 		pal_scroll -= i32(ui.wheel) * cell
 	}
-	pal_scroll = clamp(pal_scroll, 0, max(all_rows * cell - pal.h, 0))
-	fill_rect(pal, C_PANEL_DK)
-	clip_begin(pal)
+	pal_scroll = clamp(pal_scroll, 0, max(all_rows * cell + 4 - pal.h, 0))
+	ctl_well(pal)
+	clip_begin(rect_inset(pal, 1))
 	for c, i in swatches {
-		sr := Rect{pal.x + i32(i % int(cols)) * cell, pal.y + i32(i / int(cols)) * cell - pal_scroll, cell, cell}
+		sr := Rect{pal.x + 2 + i32(i % int(cols)) * cell, pal.y + 2 + i32(i / int(cols)) * cell - pal_scroll, cell, cell}
 		if sr.y + cell < pal.y || sr.y > pal.y + pal.h do continue
-		fill_rect(Rect{sr.x, sr.y, sr.w - 1, sr.h - 1}, c)
+		draw_rrect(f32(sr.x), f32(sr.y), f32(sr.w - 2), f32(sr.h - 2), 2, c)
 		if i == swatch_sel {
-			outline_rect(Rect{sr.x, sr.y, sr.w - 1, sr.h - 1}, C_ACCENT)
+			draw_rrect_outline(f32(sr.x - 1), f32(sr.y - 1), f32(sr.w), f32(sr.h), 3, C_ACCENT)
 		}
 		if ui_hover(sr) && ui_hover(pal) {
 			tooltip_hover(make_id(sr, "sw"), color_hex(c))
@@ -658,33 +684,38 @@ panel_right :: proc(r: Rect) {
 		}
 	}
 	clip_end()
-	y += pal.h + 3
+	y += pal.h + 6
 	// recently used colours
-	text(x, y + 1, "Recent", C_TEXT_DIM)
-	rx := x + 38
+	text(x, y + 2, "Recent", C_TEXT_DIM)
+	rx := x + 46
 	for c in recent {
-		if rx + 11 > area.x + area.w do break
-		sr := Rect{rx, y, 10, 10}
-		fill_rect(sr, c)
-		outline_rect(sr, C_BORDER)
+		if rx + 12 > area.x + area.w do break
+		sr := Rect{rx, y, 12, 12}
+		draw_rrect(f32(sr.x), f32(sr.y), 12, 12, 2, c)
+		draw_rrect_outline(f32(sr.x), f32(sr.y), 12, 12, 2, C_RING_HI)
 		if ui_hover(sr) {
 			tooltip_hover(make_id(sr, "rc"), color_hex(c))
 			if ui.pressed[0] do set_fg(c)
 			if ui.pressed[1] do bg = c
 		}
-		rx += 11
+		rx += 14
 	}
-	y += 14
+	y += 20
 
 	// --- layers --------------------------------------------------------------
-	hline(r.x + 1, y, r.w - 1, C_BORDER)
-	y += 4
-	nav_h: i32 = show_navigator ? 104 : 0
-	lr := Rect{x, y, area.w, area.y + area.h - y - nav_h}
+	section_header(x, y, area.w, "Layers")
+	y += 20
+	avail := area.y + area.h - y
+	nav_h: i32 = 0
+	if show_navigator && avail - 200 >= 70 {
+		nav_h = min(avail - 200, 130)
+	}
+	lr := Rect{x, y, area.w, avail - (nav_h > 0 ? nav_h + 26 : 0)}
 	panel_layers(lr)
-	if show_navigator {
-		y = lr.y + lr.h + 4
-		hline(r.x + 1, y - 2, r.w - 1, C_BORDER)
+	if nav_h > 0 {
+		y = lr.y + lr.h + 6
+		section_header(x, y, area.w, "Navigator")
+		y += 20
 		panel_navigator(Rect{x, y, area.w, area.y + area.h - y})
 	}
 }
@@ -697,7 +728,7 @@ THUMB_W :: 36
 THUMB_H :: 24
 
 Thumb :: struct {
-	tex:  rl.Texture2D,
+	tex:  Texture,
 	used: bool,
 }
 
@@ -716,10 +747,7 @@ thumbs_refresh :: proc(d: ^Doc) {
 	d.thumb_dirty = false
 	thumbs_doc = d
 	for len(thumbs) < len(d.layers) * 2 {
-		img := rl.GenImageColor(THUMB_W, THUMB_H, rl.BLANK)
-		t := rl.LoadTextureFromImage(img)
-		rl.UnloadImage(img)
-		rl.SetTextureFilter(t, .BILINEAR)
+		t := tex_create(THUMB_W, THUMB_H, .Linear)
 		append(&thumbs, Thumb{tex = t})
 	}
 	buf: [THUMB_W * THUMB_H]Color
@@ -754,12 +782,12 @@ thumbs_refresh :: proc(d: ^Doc) {
 					buf[ty * THUMB_W + tx] = c
 				}
 			}
-			rl.UpdateTexture(thumbs[li * 2 + k].tex, &buf[0])
+			tex_update(thumbs[li * 2 + k].tex, buf[:])
 		}
 	}
 }
 
-LAYER_ROW_H :: 28
+LAYER_ROW_H :: 32
 layers_scroll: i32
 
 panel_layers :: proc(r: Rect) {
@@ -768,13 +796,13 @@ panel_layers :: proc(r: Rect) {
 	thumbs_refresh(d)
 	x, y := r.x, r.y
 	// active layer blend + opacity
-	if nv, ch := combo(Rect{x, y, 86, 14}, blend_names_slice(), int(l.blend), "Blend mode"); ch {
+	if nv, ch := combo(Rect{x, y, 92, 16}, blend_names_slice(), int(l.blend), "Blend mode"); ch {
 		history_push(d)
 		l.blend = Blend(nv)
 		doc_touch_all(d)
 	}
 	op := int(l.opacity) * 100 / 255
-	orr := Rect{x + 90, y, r.w - 90, 14}
+	orr := Rect{x + 96, y, r.w - 96, 16}
 	@(static) op_pushed: bool
 	if ui_hover(orr) && (ui.pressed[0] || ui.wheel != 0) && !op_pushed {
 		history_push(d)
@@ -787,15 +815,15 @@ panel_layers :: proc(r: Rect) {
 	if op_pushed && !ui.down[0] && ui.wheel == 0 {
 		op_pushed = false
 	}
-	y += 18
+	y += 22
 
 	// buttons along the bottom
-	by := r.y + r.h - 16
-	list := Rect{x, y, r.w, by - y - 3}
+	by := r.y + r.h - 18
+	list := Rect{x, y, r.w, by - y - 5}
 	bx := x
 	b :: proc(x: ^i32, y: i32) -> Rect {
-		rc := Rect{x^, y, 22, 16}
-		x^ += 23
+		rc := Rect{x^, y, 26, 18}
+		x^ += 28
 		return rc
 	}
 	if badge_button(b(&bx, by), .Layer, true, "New layer (Ctrl+Shift+N)") do run_cmd(.Layer_New)
@@ -813,60 +841,66 @@ panel_layers :: proc(r: Rect) {
 	}
 
 	// list, top layer first
-	fill_rect(list, C_PANEL_DK)
+	ctl_well(list)
 	n := i32(len(d.layers))
 	content := n * LAYER_ROW_H
+	inner := rect_inset(list, 1)
 	if ui_hover(list) && ui.wheel != 0 {
 		layers_scroll -= i32(ui.wheel) * LAYER_ROW_H
 	}
-	layers_scroll = clamp(layers_scroll, 0, max(content - list.h, 0))
-	clip_begin(list)
+	layers_scroll = clamp(layers_scroll, 0, max(content - inner.h, 0))
+	clip_begin(inner)
 	for i in 0 ..< n {
 		li := int(n - 1 - i)
-		ry := list.y + i * LAYER_ROW_H - layers_scroll
-		if ry + LAYER_ROW_H < list.y || ry > list.y + list.h do continue
+		ry := inner.y + i * LAYER_ROW_H - layers_scroll
+		if ry + LAYER_ROW_H < inner.y || ry > inner.y + inner.h do continue
 		ly := &d.layers[li]
-		row := Rect{list.x, ry, list.w, LAYER_ROW_H}
+		row := Rect{inner.x, ry, inner.w, LAYER_ROW_H}
 		active := li == d.active_layer
 		if active {
-			fill_rect(row, C_ACTIVE)
+			fill_rect(row, C_ACCENT_TINT)
+			fill_rect(Rect{row.x, row.y, 2, row.h}, C_ACCENT)
 		} else if ui_hover(row) && ui_hover(list) {
-			fill_rect(row, C_PANEL_LT)
+			fill_rect(row, Color{255, 255, 255, 12})
 		}
-		hline(row.x, ry + LAYER_ROW_H - 1, row.w, C_BORDER)
-		eye := Rect{row.x + 2, ry + 8, 12, 12}
-		icon(.Eye, eye.x, eye.y, ly.visible ? C_TEXT : Color{80, 80, 96, 255})
-		th := Rect{row.x + 17, ry + 2, THUMB_W, THUMB_H}
+		hline(row.x, ry + LAYER_ROW_H - 1, row.w, C_RING)
+		eye := Rect{row.x + 5, ry + (LAYER_ROW_H - 12) / 2, 12, 12}
+		icon(.Eye, eye.x, eye.y, ly.visible ? C_TEXT : C_TEXT_OFF)
+		th := Rect{row.x + 22, ry + (LAYER_ROW_H - THUMB_H) / 2, THUMB_W, THUMB_H}
 		draw_checker(th, 3)
 		if li * 2 < len(thumbs) {
-			rl.DrawTexture(thumbs[li * 2].tex, th.x, th.y, rl.WHITE)
+			draw_tex_at(thumbs[li * 2].tex, th.x, th.y)
 		}
-		outline_rect(rect_inset(th, -1), active && !d.edit_mask ? rl.WHITE : C_BORDER)
-		tx := th.x + THUMB_W + 4
-		mr := Rect{tx, ry + 2, THUMB_W, THUMB_H}
+		outline_rect(rect_inset(th, -1), active && !d.edit_mask ? C_ACCENT : C_RING_HI)
+		tx := th.x + THUMB_W + 6
+		mr := Rect{tx, th.y, THUMB_W, THUMB_H}
 		if ly.has_mask {
 			if li * 2 + 1 < len(thumbs) {
-				rl.DrawTexture(thumbs[li * 2 + 1].tex, mr.x, mr.y, rl.WHITE)
+				draw_tex_at(thumbs[li * 2 + 1].tex, mr.x, mr.y)
 			}
 			if !ly.mask_on {
-				rl.DrawLine(mr.x, mr.y, mr.x + mr.w, mr.y + mr.h, C_DANGER)
+				draw_line_i(mr.x, mr.y, mr.x + mr.w, mr.y + mr.h, C_DANGER)
 			}
-			outline_rect(rect_inset(mr, -1), active && d.edit_mask ? rl.WHITE : C_BORDER)
-			tx += THUMB_W + 4
+			outline_rect(rect_inset(mr, -1), active && d.edit_mask ? C_ACCENT : C_RING_HI)
+			tx += THUMB_W + 6
 		}
-		name_r := Rect{tx, ry + 3, row.x + row.w - tx - 2, 10}
+		name_r := Rect{tx, ry + 5, row.x + row.w - tx - 4, 10}
 		text_clipped(name_r, name_str(&ly.name), ly.visible ? C_TEXT : C_TEXT_DIM)
 		info := ""
 		if ly.blend != .Normal do info = BLEND_NAMES[ly.blend]
 		if ly.opacity < 255 do info = fmt.tprintf("%s %d%%", info, int(ly.opacity) * 100 / 255)
-		text_clipped(Rect{tx, ry + 15, name_r.w - 28, 10}, info, C_TEXT_DIM)
-		ix := row.x + row.w - 14
+		text_clipped(Rect{tx, ry + 17, name_r.w - 28, 10}, info, C_TEXT_DIM)
+		ix := row.x + row.w - 16
+		if ly.text.on {
+			icon(.Text, ix, ry + 17, C_TEXT_DIM)
+			ix -= 13
+		}
 		if ly.locked {
-			icon(.Lock, ix, ry + 14, C_ACCENT)
+			icon(.Lock, ix, ry + 17, C_ACCENT)
 			ix -= 13
 		}
 		if ly.lock_alpha {
-			icon(.Lock_Alpha, ix, ry + 14, C_ACCENT)
+			icon(.Lock_Alpha, ix, ry + 17, C_ACCENT)
 		}
 		if ui_hover(row) && ui_hover(list) && ui.pressed[0] {
 			switch {
@@ -893,7 +927,6 @@ panel_layers :: proc(r: Rect) {
 		}
 	}
 	clip_end()
-	outline_rect(list, C_BORDER)
 }
 
 // ---------------------------------------------------------------------------
@@ -902,24 +935,24 @@ panel_layers :: proc(r: Rect) {
 
 panel_navigator :: proc(r: Rect) {
 	d := doc
-	fill_rect(r, C_PANEL_DK)
-	outline_rect(r, C_BORDER)
-	if tex_canvas.id == 0 || tex_doc != d {
+	ctl_well(r)
+	if !tex_valid(tex_canvas) || tex_doc != d {
 		return
 	}
-	z := min(f32(r.w - 6) / f32(d.w), f32(r.h - 6) / f32(d.h))
+	z := min(f32(r.w - 8) / f32(d.w), f32(r.h - 8) / f32(d.h))
 	w, h := f32(d.w) * z, f32(d.h) * z
-	dst := rl.Rectangle{math.floor(f32(r.x) + (f32(r.w) - w) / 2), math.floor(f32(r.y) + (f32(r.h) - h) / 2), w, h}
+	dst := FRect{math.floor(f32(r.x) + (f32(r.w) - w) / 2), math.floor(f32(r.y) + (f32(r.h) - h) / 2), w, h}
 	draw_canvas_bg(dst)
-	rl.DrawTexturePro(tex_canvas, {0, 0, f32(d.w), f32(d.h)}, dst, {}, 0, rl.WHITE)
+	draw_canvas_tex(d, dst)
 	vp := canvas_vp
 	vx := (f32(vp.x) - d.ox) / d.zoom
 	vy := (f32(vp.y) - d.oy) / d.zoom
 	vw := f32(vp.w) / d.zoom
 	vh := f32(vp.h) / d.zoom
-	vr := rl.Rectangle{dst.x + vx * z, dst.y + vy * z, vw * z, vh * z}
+	vr := FRect{dst.x + vx * z, dst.y + vy * z, vw * z, vh * z}
 	clip_begin(r)
-	rl.DrawRectangleLinesEx(vr, 1, C_ACCENT)
+	draw_rect_outline(vr, C_ACCENT)
+	draw_rect_outline({vr.x + hair(), vr.y + hair(), vr.w - 2 * hair(), vr.h - 2 * hair()}, Color{0, 0, 0, 120})
 	clip_end()
 	if act, fx, fy := drag_area(r, make_id(r, "nav")); act {
 		// centre the view on the clicked point
@@ -935,7 +968,7 @@ panel_navigator :: proc(r: Rect) {
 // ---------------------------------------------------------------------------
 
 preview_doc: ^Doc
-preview_tex: rl.Texture2D
+preview_tex: Texture
 preview_brush: Brush
 preview_tool: Tool
 preview_color: Color
@@ -948,14 +981,11 @@ brush_preview :: proc(r: Rect, t: Tool) {
 		if preview_doc != nil {
 			doc_destroy(preview_doc)
 		}
-		if preview_tex.id != 0 && (int(preview_tex.width) != w || int(preview_tex.height) != h) {
-			rl.UnloadTexture(preview_tex)
-			preview_tex = {}
+		if tex_valid(preview_tex) && (int(preview_tex.w) != w || int(preview_tex.h) != h) {
+			tex_destroy(&preview_tex)
 		}
-		if preview_tex.id == 0 {
-			img := rl.GenImageColor(i32(w), i32(h), rl.BLANK)
-			preview_tex = rl.LoadTextureFromImage(img)
-			rl.UnloadImage(img)
+		if !tex_valid(preview_tex) {
+			preview_tex = tex_create(w, h, .Point)
 		}
 		pd := doc_new_filled(w, h, "preview", Color{250, 248, 242, 255})
 		// a few vertical colour bands so blending tools have something to work on
@@ -1003,10 +1033,10 @@ brush_preview :: proc(r: Rect, t: Tool) {
 		brushes[t] = saved_brush
 		doc = saved_doc
 		doc_refresh_comp(pd)
-		rl.UpdateTexture(preview_tex, raw_data(pd.comp))
+		tex_update(preview_tex, pd.comp)
 	}
 	draw_checker(r, 4)
-	rl.DrawTexture(preview_tex, r.x, r.y, rl.WHITE)
+	draw_tex_at(preview_tex, r.x, r.y)
 	outline_rect(r, C_BORDER)
 }
 
@@ -1019,29 +1049,45 @@ panel_status :: proc(r: Rect) {
 	d := doc
 	fill_rect(r, C_PANEL_DK)
 	hline(r.x, r.y, r.w, C_BORDER)
-	ty := r.y + 3
-	if status_t > 0 {
-		text(r.x + 6, ty, name_str(&status_msg), C_ACCENT)
-	} else {
-		text(r.x + 6, ty, TOOL_NAMES[cur_tool], C_TEXT_DIM)
+	ty := r.y + (r.h - FONT_CAP) / 2
+	sep :: proc(x: i32, r: Rect) {
+		vline(x, r.y + 5, r.h - 9, C_RING_HI)
 	}
-	x := r.x + 280
+	if status_t > 0 {
+		text(r.x + 10, ty, name_str(&status_msg), C_ACCENT)
+	} else {
+		text(r.x + 10, ty, TOOL_NAMES[cur_tool], C_TEXT_DIM)
+	}
+	x := r.x + 300
+	sep(x - 12, r)
 	if hover_valid && pt_in_doc(hover_pt) {
 		q := ipt(hover_pt)
 		doc_refresh_comp(d)
 		c := d.comp[q.y * d.w + q.x]
 		textf(x, ty, C_TEXT, "%d, %d", q.x, q.y)
-		swr := Rect{x + 64, r.y + 3, 8, 8}
-		fill_rect(swr, c)
-		outline_rect(swr, C_BORDER)
-		text(x + 76, ty, color_hex(c), C_TEXT_DIM)
+		swr := Rect{x + 74, r.y + (r.h - 10) / 2, 10, 10}
+		draw_rrect(f32(swr.x), f32(swr.y), 10, 10, 2, c)
+		draw_rrect_outline(f32(swr.x), f32(swr.y), 10, 10, 2, C_RING_HI)
+		text(x + 90, ty, color_hex(c), C_TEXT_DIM)
 	}
 	if d.sel != nil {
 		b := d.sel.bbox
-		textf(x + 130, ty, C_TEXT_DIM, "Sel %dx%d", b.x1 - b.x0, b.y1 - b.y0)
+		sep(x + 148, r)
+		textf(x + 160, ty, C_TEXT_DIM, "Sel %dx%d", b.x1 - b.x0, b.y1 - b.y0)
 	}
 	l := &d.layers[d.active_layer]
 	target := d.edit_mask ? fmt.tprintf("%s (mask)", name_str(&l.name)) : name_str(&l.name)
-	info := fmt.tprintf("%s   %dx%d   %d%%", target, d.w, d.h, int(d.zoom * 100 + 0.5))
-	text(r.x + r.w - text_w(info) - 8, ty, info, C_TEXT_DIM)
+	zoom := fmt.tprintf("%d%%", int(d.zoom * 100 + 0.5))
+	size := fmt.tprintf("%d x %d", d.w, d.h)
+	rx := r.x + r.w - 10
+	rx -= text_w(zoom)
+	text(rx, ty, zoom, C_TEXT)
+	rx -= 14
+	sep(rx + 6, r)
+	rx -= text_w(size)
+	text(rx, ty, size, C_TEXT_DIM)
+	rx -= 14
+	sep(rx + 6, r)
+	rx -= text_w(target)
+	text(rx, ty, target, C_TEXT_DIM)
 }

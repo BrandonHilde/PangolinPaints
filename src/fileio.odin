@@ -5,7 +5,6 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import win "core:sys/windows"
-import rl "vendor:raylib"
 
 // ---------------------------------------------------------------------------
 // Native file dialogs
@@ -26,6 +25,7 @@ FILTERS_IMG := [?]Filter{{"Images", "*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.tga;*.gif
 FILTERS_GPL := [?]Filter{{"GIMP palette (*.gpl)", "*.gpl"}, {"All files", "*.*"}}
 
 native_dialog :: proc(save: bool, title: string, filters: []Filter, def_ext, initial: string) -> (path: string, ok: bool) {
+	defer gfx_reset_input()
 	when ODIN_OS == .Windows {
 		return native_dialog_windows(save, title, filters, def_ext, initial)
 	} else {
@@ -52,7 +52,7 @@ when ODIN_OS == .Windows {
 
 		ofn := win.OPENFILENAMEW {
 			lStructSize  = size_of(win.OPENFILENAMEW),
-			hwndOwner    = win.HWND(rl.GetWindowHandle()),
+			hwndOwner    = win.HWND(gfx_hwnd()),
 			lpstrFilter  = win.wstring(raw_data(fbuf)),
 			lpstrFile    = raw_data(buf),
 			nMaxFile     = u32(len(buf)),

@@ -262,6 +262,7 @@ can_edit :: proc() -> bool {
 		set_status("Layer is hidden")
 		return false
 	}
+	l.text.on = false // editing the pixels directly rasterises a text layer
 	return true
 }
 
@@ -614,6 +615,7 @@ doc_merge_down :: proc(d: ^Doc) -> bool {
 		lo.has_mask = false
 	}
 	tiles_from_buf(&lo.pix, d.w, d.h, dst, {})
+	lo.text.on = false
 	layer_destroy(up)
 	ordered_remove(&d.layers, i)
 	d.active_layer = i - 1
@@ -675,6 +677,7 @@ doc_delete_mask :: proc(d: ^Doc, apply: bool) -> bool {
 		px := layer_masked(d, l)
 		l.mask_on = on
 		tiles_from_buf(&l.pix, d.w, d.h, px, {})
+		l.text.on = false
 	}
 	tiles_destroy(&l.mask)
 	l.has_mask = false
@@ -699,6 +702,7 @@ doc_remap :: proc(d: ^Doc, nw, nh: int, f: proc(src: []Color, sw, sh: int, dst: 
 		tiles_to_buf(&l.pix, d.w, d.h, src, {})
 		f(src, d.w, d.h, dst, nw, nh, ctx, {})
 		tiles_destroy(&l.pix)
+		l.text.on = false
 		l.pix = tiles_make(nw, nh)
 		tiles_from_buf(&l.pix, nw, nh, dst, {})
 		if l.has_mask {

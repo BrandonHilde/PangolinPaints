@@ -1,7 +1,6 @@
 package pangolin
 
 import "core:fmt"
-import rl "vendor:raylib"
 
 // ---------------------------------------------------------------------------
 // Adjustments (Adjust menu) and filters (Filter menu), applied to the active
@@ -345,7 +344,7 @@ dlg_curves :: proc() {
 		vline(g.x + i32(i) * 64, g.y, g.h, Color{60, 60, 72, 255})
 		hline(g.x, g.y + i32(i) * 64, g.w, Color{60, 60, 72, 255})
 	}
-	rl.DrawLine(g.x, g.y + g.h, g.x + g.w, g.y, Color{90, 90, 104, 255})
+	draw_line_i(g.x, g.y + g.h, g.x + g.w, g.y, Color{90, 90, 104, 255})
 	pts := &curves.pts[curves.channel]
 	to_scr :: proc(g: Rect, p: Vec2) -> Vec2 {
 		return Vec2{f32(g.x) + p.x, f32(g.y + g.h) - p.y}
@@ -399,12 +398,12 @@ dlg_curves :: proc() {
 	for x in 1 ..< 256 {
 		a := to_scr(g, Vec2{f32(x - 1), f32(lut[x - 1])})
 		b := to_scr(g, Vec2{f32(x), f32(lut[x])})
-		rl.DrawLineV(a, b, CC[curves.channel])
+		draw_line(a, b, CC[curves.channel])
 	}
 	for p in pts {
 		s := to_scr(g, p)
-		rl.DrawRectangleRec({s.x - 3, s.y - 3, 6, 6}, rl.BLACK)
-		rl.DrawRectangleRec({s.x - 2, s.y - 2, 4, 4}, rl.WHITE)
+		draw_frect({s.x - 3, s.y - 3, 6, 6}, BLACK)
+		draw_frect({s.x - 2, s.y - 2, 4, 4}, WHITE)
 	}
 	outline_rect(g, C_BORDER)
 	text(c.x, g.y + g.h + 6, "Click: add point   Drag: shape   Right click: remove", C_TEXT_DIM)

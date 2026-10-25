@@ -5,13 +5,12 @@ import "core:math"
 import "core:os"
 import "core:strconv"
 import "core:strings"
-import rl "vendor:raylib"
 
 choose_scale :: proc() -> i32 {
 	if ui_scale_pref > 0 {
 		return i32(ui_scale_pref)
 	}
-	mh := rl.GetMonitorHeight(rl.GetCurrentMonitor())
+	mh := gfx_monitor_height()
 	switch {
 	case mh >= 2000:
 		return 3
@@ -92,6 +91,8 @@ demo_setup :: proc() {
 
 main :: proc() {
 	shot_path := ""
+	win_w, win_h := 0, 0
+	shot_frame := 8
 	demo := false
 	dlg_arg := -1
 	menu_arg := -1
@@ -103,6 +104,28 @@ main :: proc() {
 		case a == "--shot" && i + 1 < len(args):
 			shot_path = args[i + 1]
 			i += 1
+		case a == "--scale" && i + 1 < len(args):
+			ui_scale_pref, _ = strconv.parse_int(args[i + 1])
+			i += 1
+		case a == "--size" && i + 1 < len(args):
+			wh := strings.split(args[i + 1], "x", context.temp_allocator)
+			if len(wh) == 2 {
+				win_w, _ = strconv.parse_int(wh[0])
+				win_h, _ = strconv.parse_int(wh[1])
+			}
+			i += 1
+		case a == "--crop" && i + 1 < len(args):
+			v := strings.split(args[i + 1], ",", context.temp_allocator)
+			if len(v) == 4 {
+				for k in 0 ..< 4 {
+					gfx.shot_rect[k], _ = strconv.parse_int(v[k])
+				}
+				gfx.shot_crop = true
+			}
+			i += 1
+		case a == "--shot-frame" && i + 1 < len(args):
+			shot_frame, _ = strconv.parse_int(args[i + 1])
+			i += 1
 		case a == "--demo":
 			demo = true
 		case a == "--dialog" && i + 1 < len(args):
@@ -112,38 +135,27 @@ main :: proc() {
 			menu_arg, _ = strconv.parse_int(args[i + 1])
 			i += 1
 		case a == "--brush-sheet" && i + 1 < len(args):
-			rl.SetTraceLogLevel(.WARNING)
 			os.exit(brush_sheet(args[i + 1]))
 		case a == "--bench":
-			rl.SetTraceLogLevel(.WARNING)
 			os.exit(bench())
 		case a == "--selftest":
-			rl.SetTraceLogLevel(.WARNING)
 			os.exit(selftest())
 		case:
 			append(&open_args, a)
 		}
 	}
 
-	rl.SetTraceLogLevel(.WARNING)
-	rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
-	rl.InitWindow(1280, 800, APP_NAME)
-	defer rl.CloseWindow()
-	rl.SetExitKey(.KEY_NULL)
-	rl.SetWindowMinSize(900, 560)
-	mon := rl.GetCurrentMonitor()
-	mw, mh := rl.GetMonitorWidth(mon), rl.GetMonitorHeight(mon)
-	if mw > 0 && mh > 0 && shot_path == "" {
-		ww, wh := mw * 85 / 100, mh * 85 / 100
-		rl.SetWindowSize(ww, wh)
-		rl.SetWindowPosition((mw - ww) / 2, max((mh - wh) / 2, 30))
+	if !gfx_init(APP_NAME, shot_path != "", win_w, win_h) {
+		fmt.eprintln("could not start SDL:", gfx_error())
+		os.exit(1)
 	}
+	defer gfx_shutdown()
+	pen_init()
 
 	brush_init()
 	swatches_set_preset(.Oil_Paints)
 	set_fg(fg)
 	prefs_load()
-	ui.font = rl.GetFontDefault()
 	ui.icons = icons_build_atlas()
 	render_init()
 	brand_init()
@@ -167,51 +179,39 @@ main :: proc() {
 			dialog_open(k)
 		}
 	}
-	rt: rl.RenderTexture2D
-	rt_w, rt_h: i32
 	frame_no := 0
 	last_title: string
 
 	for !want_quit {
-		if rl.WindowShouldClose() {
+		free_all(context.temp_allocator)
+		gfx_poll()
+		if gfx.quit {
+			gfx.quit = false
 			request_quit()
 		}
-		free_all(context.temp_allocator)
 
-		sw, sh := rl.GetScreenWidth(), rl.GetScreenHeight()
+		sw, sh := int(gfx.pw), int(gfx.ph)
 		ui.scale = choose_scale()
 		// never let the logical resolution drop below what the layout needs
-		for ui.scale > 1 && (sw / ui.scale < 900 || sh / ui.scale < 560) {
+		for ui.scale > 1 && (sw / int(ui.scale) < 900 || sh / int(ui.scale) < 560) {
 			ui.scale -= 1
 		}
-		lw, lh := max(sw / ui.scale, 1), max(sh / ui.scale, 1)
-		ui.w, ui.h = int(lw), int(lh)
-		if rt.id == 0 || rt_w != lw || rt_h != lh {
-			if rt.id != 0 {
-				rl.UnloadRenderTexture(rt)
-			}
-			rt = rl.LoadRenderTexture(lw, lh)
-			rl.SetTextureFilter(rt.texture, .POINT)
-			rt_w, rt_h = lw, lh
-		}
+		gfx_set_scale(ui.scale)
+		ui.w, ui.h = max(sw / int(ui.scale), 1), max(sh / int(ui.scale), 1)
 
 		ui_begin_frame()
 		ui.input_layer = (dialog.kind != .None ? 2 : 0) + (popup.open ? 1 : 0)
 
-		if rl.IsFileDropped() {
-			files := rl.LoadDroppedFiles()
-			for i in 0 ..< int(files.count) {
-				p := string(files.paths[i])
-				// Shift while dropping places images as layers in the open painting
-				if ui.shift && lower_ext(p) != ".ppnt" && lower_ext(p) != ".gpl" {
-					place_image(p)
-				} else {
-					open_path(p)
-				}
+		for p in gfx.dropped {
+			// Shift while dropping places images as layers in the open painting
+			if ui.shift && lower_ext(p) != ".ppnt" && lower_ext(p) != ".gpl" {
+				place_image(p)
+			} else {
+				open_path(p)
 			}
-			rl.UnloadDroppedFiles(files)
 		}
 
+		text_update()
 		shortcuts_update()
 		if status_t > 0 {
 			status_t -= ui.dt
@@ -220,35 +220,27 @@ main :: proc() {
 			popup_begin(1, Rect{4 + i32(menu_arg) * 44, 0, 40, 15}, 0, menu_arg)
 			menu_build(menu_arg)
 		}
-		rl.BeginTextureMode(rt)
-		rl.ClearBackground(C_BG)
+		gfx_begin(C_BG)
 		main_ui()
 		dialogs_run()
 		popup_run()
 		tooltip_draw()
-		rl.EndTextureMode()
-
-		rl.BeginDrawing()
-		rl.ClearBackground(rl.BLACK)
-		rl.DrawTexturePro(rt.texture, {0, 0, f32(lw), -f32(lh)}, {0, 0, f32(lw * ui.scale), f32(lh * ui.scale)}, {}, 0, rl.WHITE)
-		rl.EndDrawing()
+		if shot_path != "" && frame_no == shot_frame {
+			gfx.screenshot = shot_path
+		}
+		gfx_present()
 		ui_end_frame()
 
 		title := fmt.tprintf("%s - %s", doc_display_name(doc), APP_NAME)
 		if title != last_title {
-			rl.SetWindowTitle(strings.clone_to_cstring(title, context.temp_allocator))
+			gfx_set_title(title)
 			delete(last_title)
 			last_title = strings.clone(title)
 		}
 
 		frame_no += 1
-		if shot_path != "" {
-			if frame_no == 8 {
-				rl.TakeScreenshot(strings.clone_to_cstring(shot_path, context.temp_allocator))
-			}
-			if frame_no == 12 {
-				break
-			}
+		if shot_path != "" && frame_no == shot_frame + 4 {
+			break
 		}
 	}
 	if shot_path == "" {

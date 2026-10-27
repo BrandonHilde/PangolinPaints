@@ -36,7 +36,7 @@ UI :: struct {
 	scale:               i32,
 	mx, my:              i32,
 	pmx, pmy:            i32,
-	ptr:                 Vec2, // pointer in window pixels at full precision (the pen tip while it touches)
+	ptr:                 Vec2, // pointer in window pixels at full precision (the pen tip while the pen drives)
 	down, pressed, released: [3]bool,
 	wheel:               f32,
 	wheel_h:             f32,
@@ -199,10 +199,40 @@ icon_badge :: proc(x, y: i32, plus: bool, c: Color) {
 
 // Frame / input ------------------------------------------------------------------
 
+PEN_MOUSE_GRACE :: 0.25 // seconds: Windows' synthesised mouse events trail the pen by a moment
+
+@(private = "file")
+pen_drives_ptr: bool // the pen, not the mouse, is the pointer this frame
+@(private = "file")
+pen_contact_t: f64 // gfx_time() of the last frame the pen touched or lifted
+
+// The pen owns the pointer while it hovers or touches, including the frame it lifts on, so a
+// stroke ends where the pen did. A mouse button press hands the pointer to the mouse until it is up.
+ui_pick_pointer :: proc() {
+	mouse_pressed := gfx.m_pressed[0] || gfx.m_pressed[1] || gfx.m_pressed[2]
+	mouse_held := gfx.m_down[0] || gfx.m_down[1] || gfx.m_down[2]
+	mouse_released := gfx.m_released[0] || gfx.m_released[1] || gfx.m_released[2]
+	switch {
+	case pen.down_evt || pen.touching || pen.up_evt:
+		pen_drives_ptr = true
+		pen_contact_t = gfx_time()
+	case gfx_time() - pen_contact_t < PEN_MOUSE_GRACE:
+		// keep the current owner while the pen's synthesised mouse press is still on its way
+	case mouse_pressed:
+		pen_drives_ptr = false
+	case pen.in_range:
+		// hovering: the pen takes over again once the mouse button is up
+		if !mouse_held && !mouse_released do pen_drives_ptr = true
+	case:
+		pen_drives_ptr = false
+	}
+}
+
 ui_begin_frame :: proc() {
+	ui_pick_pointer()
 	m := gfx.mouse
 	pen_tip := pen.touching || pen.down_evt
-	if pen_tip {
+	if pen_drives_ptr {
 		m = pen.pos
 	}
 	ui.ptr = m
@@ -214,7 +244,7 @@ ui_begin_frame :: proc() {
 		ui.pressed[i] = gfx.m_pressed[i]
 		ui.released[i] = gfx.m_released[i]
 	}
-	if pen_active() {
+	if pen_drives_ptr {
 		// the pen tip is the left button: read straight from the pen, the synthesised mouse events arrive late
 		ui.down[0] = pen_tip
 		ui.pressed[0] = pen.down_evt

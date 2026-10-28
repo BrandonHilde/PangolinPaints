@@ -709,6 +709,14 @@ Popup_Item :: struct {
 	checked: bool,
 	enabled: bool,
 	sep:     bool,
+	// grid popups only
+	icon:     Icon,
+	has_icon: bool,
+	color:    Color, // swatch shown beside the label
+	has_color: bool,
+	pal:      Swatch_Preset, // palette preview strip
+	has_pal:  bool,
+	half:     bool, // text item taking half a row
 }
 
 Popup :: struct {
@@ -720,6 +728,8 @@ Popup :: struct {
 	items:     [dynamic]Popup_Item,
 	above:     bool,
 	side:      bool, // open to the right of the anchor
+	grid:      bool, // visual picker: icon items in a grid, other items as full-width rows
+	cols:      int,
 }
 
 popup: Popup
@@ -732,7 +742,37 @@ popup_begin :: proc(owner: u32, anchor: Rect, min_w: i32 = 0, menu_idx := -1) {
 	popup.menu_idx = menu_idx
 	popup.above = false
 	popup.side = false
+	popup.grid = false
 	clear(&popup.items)
+}
+
+// Turns the popup just begun into an icon grid.
+popup_grid :: proc(cols: int) {
+	popup.grid = true
+	popup.cols = cols
+}
+
+popup_item_icon :: proc(label: string, value: int, ic: Icon) {
+	popup_item(label, value)
+	popup.items[len(popup.items) - 1].icon = ic
+	popup.items[len(popup.items) - 1].has_icon = true
+}
+
+popup_item_half :: proc(label: string, value: int) {
+	popup_item(label, value)
+	popup.items[len(popup.items) - 1].half = true
+}
+
+popup_item_swatch :: proc(label: string, value: int, c: Color) {
+	popup_item(label, value)
+	popup.items[len(popup.items) - 1].color = c
+	popup.items[len(popup.items) - 1].has_color = true
+}
+
+popup_item_palette :: proc(label: string, value: int, p: Swatch_Preset) {
+	popup_item(label, value)
+	popup.items[len(popup.items) - 1].pal = p
+	popup.items[len(popup.items) - 1].has_pal = true
 }
 
 popup_item :: proc(label: string, value := 0, cmd := Cmd.None, checked := false, enabled := true) {
@@ -762,6 +802,10 @@ popup_run :: proc() {
 		return
 	}
 	ui.layer = ui.input_layer
+	if popup.grid {
+		popup_run_grid()
+		return
+	}
 	w := popup.min_w
 	h: i32 = 8
 	for &it in popup.items {
@@ -847,6 +891,136 @@ popup_run :: proc() {
 	}
 }
 
+GRID_CELL :: 28
+GRID_GAP :: 2
+GRID_ROW_H :: 20
+GRID_FOOT_H :: 18
+
+// Visual picker: icon items flow in a grid, a separator or a plain item starts a new row.
+popup_run_grid :: proc() {
+	cols := max(popup.cols, 1)
+	pitch := i32(GRID_CELL + GRID_GAP)
+	w := i32(cols) * pitch - GRID_GAP + 8
+	rects := make([]Rect, len(popup.items), context.temp_allocator)
+	cy: i32 = 4
+	col := 0
+	hcol := 0
+	hw := (w - 8 - GRID_GAP) / 2
+	for &it, i in popup.items {
+		if it.half {
+			if col > 0 {
+				col = 0
+				cy += pitch
+			}
+			rects[i] = Rect{4 + i32(hcol) * (hw + GRID_GAP), cy, hw, GRID_ROW_H}
+			hcol += 1
+			if hcol == 2 {
+				hcol = 0
+				cy += GRID_ROW_H + GRID_GAP
+			}
+			continue
+		}
+		if hcol > 0 {
+			hcol = 0
+			cy += GRID_ROW_H + GRID_GAP
+		}
+		if it.has_icon {
+			rects[i] = Rect{4 + i32(col) * pitch, cy, GRID_CELL, GRID_CELL}
+			col += 1
+			if col == cols {
+				col = 0
+				cy += pitch
+			}
+			continue
+		}
+		if col > 0 {
+			col = 0
+			cy += pitch
+		}
+		if it.sep {
+			rects[i] = Rect{4, cy + 2, w - 8, 1}
+			cy += 7
+		} else {
+			rects[i] = Rect{4, cy, w - 8, GRID_ROW_H}
+			cy += GRID_ROW_H + GRID_GAP
+		}
+	}
+	if col > 0 {
+		cy += pitch
+	}
+	if hcol > 0 {
+		cy += GRID_ROW_H + GRID_GAP
+	}
+	h := cy + 2 + GRID_FOOT_H
+
+	x := popup.anchor.x
+	y := popup.anchor.y + popup.anchor.h
+	if x + w > i32(ui.w) {
+		x = i32(ui.w) - w
+	}
+	if y + h > i32(ui.h) {
+		y = max(i32(ui.h) - h, 0)
+	}
+	box := Rect{x, y, w, h}
+	draw_shadow(f32(box.x), f32(box.y + 3), f32(box.w), f32(box.h), 6, 10, Color{0, 0, 0, 150})
+	draw_rrect(f32(box.x), f32(box.y), f32(box.w), f32(box.h), 6, C_PANEL)
+	draw_rrect_outline(f32(box.x), f32(box.y), f32(box.w), f32(box.h), 6, C_RING_HI)
+
+	hovered := -1
+	for &it, i in popup.items {
+		ir := rects[i]
+		ir.x += box.x
+		ir.y += box.y
+		if it.sep {
+			hline(ir.x, ir.y, ir.w, C_RING_HI)
+			continue
+		}
+		hover := ui_hover(ir) && it.enabled
+		if hover {
+			hovered = i
+		}
+		ctl_surface(ir, hover ? C_HOVER : C_PANEL_LT, hover ? C_RING_HI : C_RING)
+		if it.has_icon {
+			icon_centered(it.icon, ir, hover ? WHITE : C_TEXT)
+		} else {
+			tx := ir.x + 8
+			if it.has_color {
+				sw := Rect{ir.x + 5, ir.y + 4, 12, ir.h - 8}
+				draw_rrect(f32(sw.x), f32(sw.y), f32(sw.w), f32(sw.h), 2, it.color)
+				draw_rrect_outline(f32(sw.x), f32(sw.y), f32(sw.w), f32(sw.h), 2, C_RING_HI)
+				tx = sw.x + sw.w + 6
+			}
+			text(tx, ir.y + (ir.h - FONT_CAP) / 2, name_str(&it.label), hover ? WHITE : C_TEXT)
+			if it.has_pal {
+				// strip of the palette's colours at the right edge
+				cs := swatch_preset_colors(it.pal)
+				n := min(len(cs), 8)
+				cw := i32(7)
+				sx := ir.x + ir.w - i32(n) * cw - 6
+				for k in 0 ..< n {
+					fill_rect(Rect{sx + i32(k) * cw, ir.y + 4, cw, ir.h - 8}, cs[k * len(cs) / n])
+				}
+			}
+		}
+		if hover && ui.pressed[0] {
+			ui.popup_result_id = popup.owner
+			ui.popup_result_val = it.value
+			popup_close()
+			return
+		}
+	}
+	// the hovered item's name in the footer
+	if hovered >= 0 {
+		text(box.x + 8, box.y + box.h - GRID_FOOT_H + (GRID_FOOT_H - FONT_CAP) / 2 - 1, name_str(&popup.items[hovered].label), C_TEXT_DIM)
+	}
+	if (ui.pressed[0] || ui.pressed[1]) && !in_rect(box, ui.mx, ui.my) {
+		popup_close()
+	}
+	if IsKeyPressed(.ESCAPE) {
+		popup_close()
+	}
+}
+
 // Drop-down selector. Returns the newly picked index (one frame after the click).
 combo :: proc(r: Rect, items: []string, cur: int, tip := "") -> (new_val: int, changed: bool) {
 	id := make_id(r, "combo")
@@ -859,6 +1033,30 @@ combo :: proc(r: Rect, items: []string, cur: int, tip := "") -> (new_val: int, c
 		new_val = ui.popup_result_val
 		changed = true
 		ui.popup_result_id = 0
+	}
+	// Cycle through the options with the mouse wheel or up/down arrows.
+	if !changed && len(items) > 1 {
+		is_open := popup.open && popup.owner == id
+		dir := 0
+		if hover && ui.wheel != 0 {
+			dir = ui.wheel > 0 ? -1 : 1
+		} else if hover || is_open {
+			if IsKeyPressed(.UP) {
+				dir = -1
+			} else if IsKeyPressed(.DOWN) {
+				dir = 1
+			}
+		}
+		if dir != 0 {
+			nv := clamp(cur + dir, 0, len(items) - 1)
+			if is_open {
+				popup_close()
+			}
+			if nv != cur {
+				return nv, true
+			}
+			return
+		}
 	}
 	if clicked {
 		popup_begin(id, r, r.w)

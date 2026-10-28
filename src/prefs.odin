@@ -31,6 +31,7 @@ prefs_save :: proc() {
 		b := &brushes[t]
 		fmt.sbprintf(&sb, "size_%d=%d\nopacity_%d=%d\npreset_%d=%d\n", int(t), b.size, int(t), b.opacity, int(t), brush_preset_idx[t])
 	}
+	fmt.sbprintf(&sb, "groups=%s\n", tool_groups_serialize())
 	fmt.sbprintf(&sb, "swatches=")
 	for c, i in swatches {
 		fmt.sbprintf(&sb, "%s%s", i > 0 ? "," : "", color_hex(c))
@@ -57,6 +58,10 @@ prefs_load :: proc() {
 		}
 		key := strings.trim_space(line[:eq])
 		sval := strings.trim_space(line[eq + 1:])
+		if key == "groups" {
+			tool_groups_parse(sval)
+			continue
+		}
 		if key == "swatches" {
 			list := make([dynamic]Color, context.temp_allocator)
 			for part in strings.split(sval, ",", context.temp_allocator) {

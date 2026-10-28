@@ -7,7 +7,7 @@ MENU_H :: 24
 OPT_H :: 30
 TAB_H :: 26
 STATUS_H :: 20
-TOOLBAR_W :: 62
+TOOLBAR_W :: 148
 RIGHT_W :: 236
 
 SWATCH_PRESET_ID :: u32(0x5A7C4E51)
@@ -25,21 +25,38 @@ main_ui :: proc() {
 	optbar := Rect{0, MENU_H, W, OPT_H}
 	status := Rect{0, H - STATUS_H, W, STATUS_H}
 	body := Rect{0, MENU_H + OPT_H, W, H - MENU_H - OPT_H - STATUS_H}
+	if canvas_mode {
+		body.h += STATUS_H
+	}
 
-	right := cut_right(&body, RIGHT_W)
-	toolbar := cut_left(&body, TOOLBAR_W)
-	tabs := cut_top(&body, TAB_H)
+	right, toolbar, tabs: Rect
+	if !canvas_mode {
+		right = cut_right(&body, RIGHT_W)
+		toolbar = cut_left(&body, TOOLBAR_W)
+		tabs = cut_top(&body, TAB_H)
+	}
 	viewport := body
+
+	// keep the picture where it was on screen when the viewport changes size
+	@(static) prev_mode := false
+	@(static) prev_vp: Rect
+	if canvas_mode != prev_mode && doc.view_init && prev_vp.w > 0 {
+		doc.ox += f32(viewport.x + viewport.w / 2 - prev_vp.x - prev_vp.w / 2)
+		doc.oy += f32(viewport.y + viewport.h / 2 - prev_vp.y - prev_vp.h / 2)
+	}
+	prev_mode, prev_vp = canvas_mode, viewport
 
 	// canvas first so that panels can overdraw its borders
 	canvas_update(viewport)
 	render_canvas(viewport)
 
-	panel_tabs(tabs)
-	panel_toolbar(toolbar)
+	if !canvas_mode {
+		panel_tabs(tabs)
+		panel_toolbar(toolbar)
+		panel_right(right)
+		panel_status(status)
+	}
 	panel_options(optbar)
-	panel_right(right)
-	panel_status(status)
 	panel_menubar(menubar)
 }
 
@@ -180,6 +197,7 @@ menu_build :: proc(idx: int) {
 		item("Pixel Grid", cmd = .Toggle_Pixel_Grid, checked = show_pixel_grid)
 		item("Rule of Thirds", cmd = .Toggle_Thirds, checked = show_thirds)
 		item("Navigator", cmd = .Toggle_Navigator, checked = show_navigator)
+		item("Canvas Mode", cmd = .Toggle_Canvas_Mode, checked = canvas_mode)
 		item("Cycle Transparency Display", cmd = .Cycle_Canvas_Bg)
 		popup_sep()
 		item("Preferences...", cmd = .Preferences)
@@ -227,7 +245,11 @@ panel_menubar :: proc(r: Rect) {
 		x += w
 	}
 	t := doc_display_name(doc)
-	text(r.x + r.w - text_w(t) - 12, r.y + (r.h - 1 - FONT_CAP) / 2, t, C_TEXT_DIM)
+	tx := r.x + r.w - text_w(t) - 12
+	text(tx, r.y + (r.h - 1 - FONT_CAP) / 2, t, C_TEXT_DIM)
+	if icon_button(Rect{tx - 28, r.y + 3, 20, r.h - 7}, .Canvas_Mode, "Canvas mode (Tab)", canvas_mode) {
+		run_cmd(.Toggle_Canvas_Mode)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -321,23 +343,175 @@ panel_toolbar :: proc(r: Rect) {
 	vline(r.x + r.w - 1, r.y, r.h, C_BORDER)
 	t := eff_tool()
 	y := r.y + 8
-	i: i32 = 0
-	BTN :: 26
-	for tool in Tool {
-		// separators between groups: painting, fill, selection, transform, view
-		if tool == .Bucket || tool == .Select_Rect || tool == .Move || tool == .Hand {
-			if i % 2 == 1 do i += 1
-			y += 9
-			hline(r.x + 10, y + (i / 2) * (BTN + 1) - 5, r.w - 21, C_RING_HI)
+	BTN :: 24
+	PITCH :: BTN + 2
+	COLS :: 5
+	gx := r.x + 10
+	rem_g, rem_t := -1, -1
+	for &g, gi in tool_groups {
+		// header: "Group" + hotkey badge (click to assign the key or remove the group)
+		top := y
+		y += 4
+		text(r.x + 11, y + (20 - FONT_CAP) / 2, "Group", C_TEXT_DIM)
+		badge := Rect{r.x + 11 + text_w("Group") + 8, y, 28, 20}
+		waiting := group_key_wait == gi
+		label := waiting ? "..." : (g.key == .KEY_NULL ? "-" : key_name(g.key))
+		bid := make_id(badge, "grpbadge")
+		if button(badge, label, "Group hotkey (click to change)", true, waiting) {
+			popup_begin(bid, badge, 120)
+			popup_item("Assign hotkey...", 0)
+			popup_item("Remove group", 1)
 		}
-		br := Rect{r.x + 3 + (i % 2) * (BTN + 1), y + (i / 2) * (BTN + 1), BTN, BTN}
-		if icon_button(br, TOOL_ICONS[tool], TOOL_NAMES[tool], t == tool) {
-			select_tool(tool)
+		if ui.popup_result_id == bid {
+			if ui.popup_result_val == 0 {
+				group_key_wait = gi
+				set_statusf("Press a key for this tool group (Esc cancels, Backspace clears)")
+			} else {
+				rem_g = gi
+			}
+			ui.popup_result_id = 0
 		}
-		i += 1
+		// right-click anywhere on the group label for a remove menu (opened on release,
+		// since a popup opened on the press would be closed by that same click)
+		hdr := Rect{r.x + 5, top, r.w - 11, 28}
+		hid := make_id(hdr, "grphdr")
+		if ui_hover(hdr) && ui.released[1] && !popup.open {
+			popup_begin(hid, Rect{ui.mx, ui.my, 1, 1}, 110)
+			popup_item("Remove group", 1)
+		}
+		if ui.popup_result_id == hid {
+			rem_g = gi
+			ui.popup_result_id = 0
+		}
+		is_colors := len(g.colors) > 0
+		is_blends := len(g.blends) > 0
+		is_tools := len(g.tools) > 0
+		n := is_colors ? len(g.colors) : (is_blends ? len(g.blends) : len(g.tools))
+		hline(r.x + 5, top + 28, r.w - 11, C_RING_HI)
+		y = top + 34
+		for tool, ti in g.tools {
+			br := Rect{gx + i32(ti % COLS) * PITCH, y + i32(ti / COLS) * PITCH, BTN, BTN}
+			if icon_button(br, TOOL_ICONS[tool], TOOL_NAMES[tool], t == tool) {
+				g.last = tool
+				select_tool(tool)
+			} else if ui_hover(br) && ui.pressed[1] && !popup.open {
+				rem_g, rem_t = gi, ti
+			}
+		}
+		for c, ci in g.colors {
+			br := Rect{gx + i32(ci % COLS) * PITCH, y + i32(ci / COLS) * PITCH, BTN, BTN}
+			clicked, _, hover := button_behavior(make_id(br, "grpcol"), br, color_hex(c))
+			draw_rrect(f32(br.x), f32(br.y), f32(br.w), f32(br.h), RADIUS, c)
+			same := c.r == fg.r && c.g == fg.g && c.b == fg.b
+			draw_rrect_outline(f32(br.x), f32(br.y), f32(br.w), f32(br.h), RADIUS, same ? WHITE : (hover ? C_RING_HI : C_RING))
+			if clicked {
+				set_fg(c)
+			} else if hover && ui.pressed[1] && !popup.open {
+				rem_g, rem_t = gi, ci
+			}
+		}
+		// blend modes are listed one per row, the active one highlighted
+		BROW :: 22
+		for b, bi in g.blends {
+			br := Rect{gx, y + i32(bi) * BROW, r.w - 20, 20}
+			clicked, held, hover := button_behavior(make_id(br, "grpblend"), br, "Brush blend mode (right-click to remove)")
+			fgc := ctl_state(br, hover, held, b == brush_blend, true)
+			text(br.x + 8, br.y + (br.h - FONT_CAP) / 2, BLEND_NAMES[b], fgc)
+			if clicked {
+				brush_blend = b
+			} else if hover && ui.pressed[1] && !popup.open {
+				rem_g, rem_t = gi, bi
+			}
+		}
+		pr := Rect{gx + i32(n % COLS) * PITCH, y + i32(n / COLS) * PITCH, BTN, BTN}
+		if is_blends {
+			pr = Rect{gx, y + i32(n) * BROW, BTN, BTN}
+		}
+		can_add := is_colors ? n < 48 : (is_blends ? n < len(Blend) : n < len(Tool))
+		if can_add {
+			pid := make_id(pr, "grpadd")
+			tip := "Add a tool, colours or brush blend modes to this group (right-click an item to remove it)"
+			if icon_button(pr, .Plus, tip) {
+				popup_begin(pid, pr)
+				popup_grid(5)
+				any_section := false
+				if !is_colors && !is_blends {
+					for tool in Tool {
+						if !tool_group_has(&g, tool) {
+							popup_item_icon(TOOL_NAMES[tool], int(tool), TOOL_ICONS[tool])
+						}
+					}
+					any_section = true
+				}
+				if !is_tools && !is_blends {
+					if any_section do popup_sep()
+					popup_item_swatch("Foreground colour", 100, fg)
+					popup_item("All current swatches", 101)
+					for p in Swatch_Preset {
+						popup_item_palette(SWATCH_PRESET_NAMES[p], 200 + int(p), p)
+					}
+					any_section = true
+				}
+				if !is_tools && !is_colors {
+					if any_section do popup_sep()
+					for b in Blend {
+						if !blend_in(g.blends[:], b) {
+							popup_item_half(BLEND_NAMES[b], 300 + int(b))
+						}
+					}
+				}
+			}
+			if ui.popup_result_id == pid {
+				v := ui.popup_result_val
+				switch {
+				case v < 100:
+					append(&g.tools, Tool(v))
+				case v == 100:
+					append(&g.colors, fg)
+				case v == 101:
+					append(&g.colors, ..swatches[:])
+				case v >= 300:
+					append(&g.blends, Blend(v - 300))
+				case:
+					append(&g.colors, ..swatch_preset_colors(Swatch_Preset(v - 200)))
+				}
+				ui.popup_result_id = 0
+			}
+		}
+		if is_blends {
+			y += i32(n) * BROW + PITCH + 4
+		} else {
+			y += i32(n / COLS + 1) * PITCH + 4
+		}
+		draw_rrect_outline(f32(r.x + 4), f32(top), f32(r.w - 9), f32(y - top), 5, C_RING_HI)
+		y += 6
 	}
-	// foreground / background chips at the bottom of the toolbar
-	cy := y + ((i + 1) / 2) * (BTN + 1) + 12
+	if rem_g >= 0 {
+		if rem_t >= 0 {
+			rg := &tool_groups[rem_g]
+			if len(rg.colors) > 0 {
+				ordered_remove(&rg.colors, rem_t)
+			} else if len(rg.blends) > 0 {
+				ordered_remove(&rg.blends, rem_t)
+			} else {
+				ordered_remove(&rg.tools, rem_t)
+			}
+		} else {
+			delete(tool_groups[rem_g].tools)
+			delete(tool_groups[rem_g].colors)
+			delete(tool_groups[rem_g].blends)
+			ordered_remove(&tool_groups, rem_g)
+			group_key_wait = -1
+		}
+	}
+	if len(tool_groups) < MAX_TOOL_GROUPS {
+		if button(Rect{r.x + 6, y, r.w - 13, 18}, "+ New Group", "Add an empty tool group") {
+			append(&tool_groups, Tool_Group{})
+		}
+	}
+	y += 18
+	// foreground / background chips below the groups
+	cy := y + 20
 	hline(r.x + 10, cy - 7, r.w - 21, C_RING_HI)
 	bgr := Rect{r.x + 22, cy + 14, 24, 24}
 	fgr := Rect{r.x + 9, cy, 24, 24}
@@ -412,7 +586,7 @@ options_brush :: proc(x: ^i32, y: i32, t: Tool) {
 		x^ += 101
 	}
 	slider_w(x, y, 92, &b.size, 1, BRUSH_MAX, "Size", "Brush size ([ and ])", "px", 2.5)
-	slider_w(x, y, 84, &b.opacity, 1, 100, "Opacity", "Opacity (number keys)")
+	slider_w(x, y, 84, &b.opacity, 1, 100, "Opacity", "Opacity (Shift+number keys)")
 	#partial switch t {
 	case .Brush, .Eraser, .Clone:
 		slider_w(x, y, 70, &b.flow, 1, 100, "Flow", "How fast paint builds up")
@@ -789,6 +963,9 @@ thumbs_refresh :: proc(d: ^Doc) {
 
 LAYER_ROW_H :: 32
 layers_scroll: i32
+layer_drag := -1 // layer being dragged in the list, or -1
+layer_drag_y0: i32
+layer_drag_on: bool
 
 panel_layers :: proc(r: Rect) {
 	d := doc
@@ -920,11 +1097,44 @@ panel_layers :: proc(r: Rect) {
 				if d.active_layer != li do tools_commit_pending()
 				d.active_layer = li
 				d.edit_mask = false
+				layer_drag, layer_drag_y0, layer_drag_on = li, ui.my, false
 				if ui.dbl_click {
 					dialog_open(.Layer_Props)
 				}
 			}
 		}
+	}
+	// drag a row up or down to reorder; the line shows where it will land
+	if layer_drag >= 0 && layer_drag < int(n) {
+		if !layer_drag_on && ui.down[0] && abs(ui.my - layer_drag_y0) > 4 {
+			layer_drag_on = true
+		}
+		if layer_drag_on {
+			ri := clamp((ui.my - inner.y + layers_scroll) / LAYER_ROW_H, 0, n - 1)
+			target := int(n - 1 - ri)
+			if target != layer_drag {
+				ly := inner.y + (target > layer_drag ? ri : ri + 1) * LAYER_ROW_H - layers_scroll
+				fill_rect(Rect{inner.x, ly - 1, inner.w, 2}, C_ACCENT)
+				if ui.released[0] {
+					history_push(d)
+					for layer_drag < target {
+						d.layers[layer_drag], d.layers[layer_drag + 1] = d.layers[layer_drag + 1], d.layers[layer_drag]
+						layer_drag += 1
+					}
+					for layer_drag > target {
+						d.layers[layer_drag], d.layers[layer_drag - 1] = d.layers[layer_drag - 1], d.layers[layer_drag]
+						layer_drag -= 1
+					}
+					d.active_layer = target
+					doc_touch_all(d)
+				}
+			}
+		}
+		if !ui.down[0] {
+			layer_drag, layer_drag_on = -1, false
+		}
+	} else {
+		layer_drag, layer_drag_on = -1, false
 	}
 	clip_end()
 }
@@ -972,12 +1182,13 @@ preview_tex: Texture
 preview_brush: Brush
 preview_tool: Tool
 preview_color: Color
+preview_blend: Blend
 
 brush_preview :: proc(r: Rect, t: Tool) {
 	w, h := int(r.w), int(r.h)
 	b := brushes[t]
-	if preview_doc == nil || preview_doc.w != w || preview_doc.h != h || preview_brush != b || preview_tool != t || preview_color != fg {
-		preview_brush, preview_tool, preview_color = b, t, fg
+	if preview_doc == nil || preview_doc.w != w || preview_doc.h != h || preview_brush != b || preview_tool != t || preview_color != fg || preview_blend != brush_blend {
+		preview_brush, preview_tool, preview_color, preview_blend = b, t, fg, brush_blend
 		if preview_doc != nil {
 			doc_destroy(preview_doc)
 		}
@@ -1056,7 +1267,11 @@ panel_status :: proc(r: Rect) {
 	if status_t > 0 {
 		text(r.x + 10, ty, name_str(&status_msg), C_ACCENT)
 	} else {
-		text(r.x + 10, ty, TOOL_NAMES[cur_tool], C_TEXT_DIM)
+		label := TOOL_NAMES[cur_tool]
+		if (cur_tool == .Brush || cur_tool == .Oil || cur_tool == .Text) && brush_blend != .Normal {
+			label = fmt.tprintf("%s - %s", label, BLEND_NAMES[brush_blend])
+		}
+		text(r.x + 10, ty, label, C_TEXT_DIM)
 	}
 	x := r.x + 300
 	sep(x - 12, r)

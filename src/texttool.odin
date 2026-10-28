@@ -148,6 +148,7 @@ text_click :: proc(p: Vec2) {
 	l.text.n = 0
 	l.text.x, l.text.y = p.x, p.y
 	l.text.color = fg
+	l.blend = brush_blend // the new text layer composites with the current brush blend mode
 	text_defaults.color = fg
 	inject_at(&d.layers, d.active_layer + 1, l)
 	d.active_layer += 1

@@ -336,6 +336,7 @@ Stroke :: struct {
 	empty:      Color,
 	is_mask:    bool,
 	lock_alpha: bool,
+	blend:      Blend, // how the brush paint combines with the layer (set from the tool groups)
 	orig:       Tiles, // shared copy of the target from before the stroke
 	clone_src:  []Color, // merged pixels for "clone merged"
 	box:        Box, // area touched so far
@@ -403,13 +404,19 @@ stroke_begin :: proc(t: Tool, p: Vec2, color: Color) -> bool {
 	s.active = true
 	s.tool = t
 	s.b = brushes[t]
-	if pen_active() && s.b.pressure != .Off {
+	if !pen_active() {
+		// pressure only exists for a pen: the mouse always paints at full pressure
+		s.b.pressure = .Off
+	} else if s.b.pressure != .Off {
 		// a real pen replaces the simulated pressure
 		s.b.pressure = .Pen
 		s.pen_p = max(pen.pressure, 0.05)
 	}
 	s.target, s.empty, s.is_mask = doc_target(d)
 	s.lock_alpha = !s.is_mask && d.layers[d.active_layer].lock_alpha
+	if t == .Brush || t == .Oil {
+		s.blend = brush_blend
+	}
 	s.orig = tiles_share(s.target)
 	s.color = color
 	if s.is_mask {
@@ -874,7 +881,14 @@ dab_masked :: proc(s: ^Stroke, e: ^Tip_Eval, box: Box, flow: f32) {
 						}
 						res = s.lock_alpha ? lock_mix(o, src, cov * f32(src.a) / 255) : over_px(o, src, cov * f32(src.a) / 255)
 					case s.lock_alpha:
-						res = lock_mix(o, s.color, cov)
+						if s.blend != .Normal {
+							res = blend_px(o, s.color, cov, s.blend)
+							res.a = o.a
+						} else {
+							res = lock_mix(o, s.color, cov)
+						}
+					case s.blend != .Normal:
+						res = blend_px(o, s.color, cov, s.blend)
 					case:
 						res = over_px(o, s.color, cov)
 					}
@@ -954,8 +968,13 @@ dab_oil :: proc(s: ^Stroke, e: ^Tip_Eval, box: Box, dab: Dab, alpha: f32) {
 					c += (paint - c) * (a * refill)
 					s.carry[ci] = c
 					k := 1 - math.pow(1 - min(a * cover * opacity, 0.999), inv_overlap)
-					np := cp + (c - cp) * k
-					res := from_pm(np)
+					res: Color
+					if s.blend != .Normal {
+						// the paint on the brush (including what it picked up) goes on with the blend mode
+						res = blend_px(cur, from_pm(c), k, s.blend)
+					} else {
+						res = from_pm(cp + (c - cp) * k)
+					}
 					if s.lock_alpha {
 						res.a = cur.a
 					}

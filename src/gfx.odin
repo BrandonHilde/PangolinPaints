@@ -96,6 +96,7 @@ KeyboardKey :: enum i32 {
 	RIGHT_BRACKET,
 	ESCAPE        = 256,
 	ENTER         = 257,
+	TAB           = 258,
 	BACKSPACE     = 259,
 	DELETE        = 261,
 	RIGHT         = 262,
@@ -270,6 +271,8 @@ key_scancode :: proc(k: KeyboardKey) -> sdl.Scancode {
 		return .ESCAPE
 	case .ENTER:
 		return .RETURN
+	case .TAB:
+		return .TAB
 	case .BACKSPACE:
 		return .BACKSPACE
 	case .DELETE:

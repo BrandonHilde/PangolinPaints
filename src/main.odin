@@ -155,6 +155,7 @@ main :: proc() {
 	brush_init()
 	swatches_set_preset(.Oil_Paints)
 	set_fg(fg)
+	tool_groups_default()
 	prefs_load()
 	ui.icons = icons_build_atlas()
 	render_init()

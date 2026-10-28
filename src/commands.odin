@@ -75,6 +75,7 @@ Cmd :: enum {
 	Toggle_Pixel_Grid,
 	Toggle_Thirds,
 	Toggle_Navigator,
+	Toggle_Canvas_Mode,
 	Cycle_Canvas_Bg,
 	// help
 	Help_Keys,
@@ -174,6 +175,7 @@ SHORTCUTS := [?]Shortcut {
 	{.Zoom_Fit, .ZERO, true, false, false},
 	{.Zoom_1, .ONE, true, false, false},
 	{.Zoom_2, .TWO, true, false, false},
+	{.Toggle_Canvas_Mode, .TAB, false, false, false},
 	{.Toggle_Pixel_Grid, .APOSTROPHE, true, true, false},
 	{.Toggle_Thirds, .APOSTROPHE, true, false, false},
 	{.Tool_Brush, .B, false, false, false},
@@ -201,16 +203,16 @@ SHORTCUTS := [?]Shortcut {
 	{.Default_Colors, .D, false, false, false},
 	{.Brush_Smaller, .LEFT_BRACKET, false, false, false},
 	{.Brush_Bigger, .RIGHT_BRACKET, false, false, false},
-	{.Opacity_10, .ONE, false, false, false},
-	{.Opacity_20, .TWO, false, false, false},
-	{.Opacity_30, .THREE, false, false, false},
-	{.Opacity_40, .FOUR, false, false, false},
-	{.Opacity_50, .FIVE, false, false, false},
-	{.Opacity_60, .SIX, false, false, false},
-	{.Opacity_70, .SEVEN, false, false, false},
-	{.Opacity_80, .EIGHT, false, false, false},
-	{.Opacity_90, .NINE, false, false, false},
-	{.Opacity_100, .ZERO, false, false, false},
+	{.Opacity_10, .ONE, false, true, false},
+	{.Opacity_20, .TWO, false, true, false},
+	{.Opacity_30, .THREE, false, true, false},
+	{.Opacity_40, .FOUR, false, true, false},
+	{.Opacity_50, .FIVE, false, true, false},
+	{.Opacity_60, .SIX, false, true, false},
+	{.Opacity_70, .SEVEN, false, true, false},
+	{.Opacity_80, .EIGHT, false, true, false},
+	{.Opacity_90, .NINE, false, true, false},
+	{.Opacity_100, .ZERO, false, true, false},
 	{.Help_Keys, .F1, false, false, false},
 }
 
@@ -224,6 +226,8 @@ key_name :: proc(k: KeyboardKey) -> string {
 		return fmt.tprintf("F%d", int(k) - int(KeyboardKey.F1) + 1)
 	case .DELETE:
 		return "Del"
+	case .TAB:
+		return "Tab"
 	case .BACKSPACE:
 		return "Backspace"
 	case .ESCAPE:
@@ -277,6 +281,9 @@ shortcuts_update :: proc() {
 	if ui.focus_id != 0 || dialog.kind != .None || popup.open || text_edit.active || text_end_time == ui.time {
 		return
 	}
+	if tool_groups_key_capture() {
+		return
+	}
 	// pending transform / crop: Enter applies, Esc cancels
 	if xform.active || crop.active {
 		if IsKeyPressed(.ENTER) || IsKeyPressed(.KP_ENTER) {
@@ -294,6 +301,9 @@ shortcuts_update :: proc() {
 		return
 	}
 	if drag.active || stroke.active {
+		return
+	}
+	if tool_groups_hotkeys() {
 		return
 	}
 	for s in SHORTCUTS {
@@ -338,7 +348,7 @@ run_cmd :: proc(cmd: Cmd) {
 	}
 	// commands below act on the document; finish pending interactions first
 	#partial switch cmd {
-	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Navigator, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
+	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Navigator, .Toggle_Canvas_Mode, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
 	case .Opacity_10 ..= .Opacity_100:
 	case:
 		tools_commit_pending()
@@ -529,6 +539,8 @@ run_cmd :: proc(cmd: Cmd) {
 		show_thirds = !show_thirds
 	case .Toggle_Navigator:
 		show_navigator = !show_navigator
+	case .Toggle_Canvas_Mode:
+		canvas_mode = !canvas_mode
 	case .Cycle_Canvas_Bg:
 		bg_mode = (bg_mode + 1) % 4
 

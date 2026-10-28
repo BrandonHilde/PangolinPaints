@@ -26,6 +26,8 @@ status_t: f32
 show_pixel_grid := true
 show_thirds := false
 show_navigator := true
+brush_blend: Blend // blend mode of the Brush tool, switched by blend-mode tool groups
+canvas_mode := false // Tab: hide the side panels, tabs and status bar, leaving only the top bars
 bg_mode := 0 // canvas transparency: 0 checker, 1 black, 2 white, 3 gray
 
 // Internal clipboard (copied pixels with their position)

@@ -76,6 +76,11 @@ eff_tool :: proc() -> Tool {
 	if IsKeyDown(.SPACE) && ui.focus_id == 0 && dialog.kind == .None && !text_edit.active {
 		return .Hand
 	}
+	if pen_eraser_active() {
+		if t, ok := pen_eraser_group_tool(); ok {
+			return t
+		}
+	}
 	if pen_eraser_active() && (cur_tool == .Brush || cur_tool == .Oil) {
 		return .Eraser // the eraser end of the pen
 	}
@@ -441,6 +446,11 @@ canvas_update :: proc(vp: Rect) {
 		return
 	}
 
+	// paint tools show the brush outline only (a small brush still gets a minimum-size ring)
+	if paint_tool(t) && (over || drag.active) && ui.focus_id == 0 {
+		ui.hide_cursor = true
+	}
+
 	if over && !drag.active {
 		switch t {
 		case .Hand:
@@ -449,7 +459,7 @@ canvas_update :: proc(vp: Rect) {
 			ui.cursor = .POINTING_HAND
 		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone:
 			// the brush outline is drawn instead (see render_cursor)
-			ui.cursor = f32(brushes[t].size) * d.zoom >= 6 ? .DEFAULT : .CROSSHAIR
+			ui.cursor = .DEFAULT
 		case .Transform:
 			ui.cursor = xform_cursor(p)
 		case .Move:
@@ -468,9 +478,6 @@ canvas_update :: proc(vp: Rect) {
 		if !btn_down || ui.released[drag.btn] {
 			end_drag()
 		}
-	}
-	if paint_tool(t) && over {
-		ui.hide_cursor = f32(brushes[t].size) * d.zoom >= 6
 	}
 }
 

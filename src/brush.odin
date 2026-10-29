@@ -110,6 +110,53 @@ brush_default :: proc(t: Tool) -> Brush {
 	return b
 }
 
+// Brush <-> list of ints, for storing a group's brushes in the preferences / workspace files.
+// New fields go at the end; missing trailing values keep the base brush's.
+BRUSH_INTS :: 25
+
+brush_to_ints :: proc(b: Brush) -> [BRUSH_INTS]int {
+	return {
+		b.size, b.opacity, b.flow, b.hardness, b.spacing, b.smoothing, b.scatter, b.size_jitter,
+		b.grain, b.angle, b.roundness, int(b.tip), int(b.follow), int(b.pressure), b.taper,
+		int(b.p_size), int(b.p_opacity), int(b.airbrush), b.load, b.wet, b.bristles, b.strength,
+		int(b.alt_mode), b.tone, int(b.clone_merged),
+	}
+}
+
+brush_from_ints :: proc(base: Brush, v: []int) -> Brush {
+	b := base
+	a: [BRUSH_INTS]int = brush_to_ints(base)
+	for x, i in v {
+		if i < BRUSH_INTS do a[i] = x
+	}
+	b.size = clamp(a[0], 1, BRUSH_MAX)
+	b.opacity = clamp(a[1], 1, 100)
+	b.flow = clamp(a[2], 1, 100)
+	b.hardness = clamp(a[3], 0, 100)
+	b.spacing = clamp(a[4], 1, 200)
+	b.smoothing = clamp(a[5], 0, 100)
+	b.scatter = clamp(a[6], 0, 100)
+	b.size_jitter = clamp(a[7], 0, 100)
+	b.grain = clamp(a[8], 0, 100)
+	b.angle = clamp(a[9], 0, 359)
+	b.roundness = clamp(a[10], 5, 100)
+	b.tip = Tip(clamp(a[11], 0, len(Tip) - 1))
+	b.follow = a[12] != 0
+	b.pressure = Pressure(clamp(a[13], 0, len(Pressure) - 1))
+	b.taper = clamp(a[14], 0, 1000)
+	b.p_size = a[15] != 0
+	b.p_opacity = a[16] != 0
+	b.airbrush = a[17] != 0
+	b.load = clamp(a[18], 0, 100)
+	b.wet = clamp(a[19], 0, 100)
+	b.bristles = clamp(a[20], 0, 100)
+	b.strength = clamp(a[21], 0, 100)
+	b.alt_mode = a[22] != 0
+	b.tone = clamp(a[23], 0, 2)
+	b.clone_merged = a[24] != 0
+	return b
+}
+
 // Per-tool settings (each painting tool remembers its own brush).
 brushes: [Tool]Brush
 brush_preset_idx: [Tool]int

@@ -286,7 +286,7 @@ handle_draw :: proc(p: Vec2) {
 	draw_frect({math.floor(p.x) - 2, math.floor(p.y) - 2, 5, 5}, WHITE)
 }
 
-// Brush outline (ellipse in the brush's shape) or a small crosshair.
+// Brush outline (ellipse in the brush's shape), drawn thicker for small brushes.
 render_cursor :: proc(d: ^Doc) {
 	t := eff_tool()
 	mx := ui.ptr.x / f32(ui.scale)
@@ -296,9 +296,9 @@ render_cursor :: proc(d: ^Doc) {
 	}
 	b := &brushes[t]
 	r := f32(b.size) / 2 * d.zoom
-	if r < 3 {
-		return
-	}
+	// same outline as every other size; a small brush just gets a thicker line so it stays visible
+	bold := r < 3
+	r = max(r, 1.5)
 	ang := f32(b.angle) * math.PI / 180
 	if b.follow && stroke.active {
 		ang += math.atan2(stroke.dir.y, stroke.dir.x)
@@ -306,16 +306,33 @@ render_cursor :: proc(d: ^Doc) {
 	ru := r * f32(clamp(b.roundness, 5, 100)) / 100
 	n := clamp(int(r), 24, 96)
 	ca, sa := math.cos(ang), math.sin(ang)
-	prev: Vec2
+	pts := make([]Vec2, n + 1, context.temp_allocator)
 	for i in 0 ..= n {
 		th := f32(i) / f32(n) * math.TAU
 		u, v := math.cos(th) * ru, math.sin(th) * r
-		p := Vec2{mx + u * ca - v * sa, my + u * sa + v * ca}
-		if i > 0 {
-			draw_line(prev, p, Color{0, 0, 0, 160})
-			draw_line(prev + 1, p + 1, Color{255, 255, 255, 200})
-		}
-		prev = p
+		pts[i] = Vec2{mx + u * ca - v * sa, my + u * sa + v * ca}
 	}
-	draw_frect({mx, my, 1, 1}, WHITE)
+	// Every copy is offset symmetrically around the pointer, so the ring stays centred on it.
+	// All dark copies go down first, then all white ones, so neighbouring segments don't overpaint.
+	// Bold: a 2px white line (offsets 0..1) inside a dark halo (-1..2); -0.5 recentres the 4x4 block.
+	for pass in 0 ..< 2 {
+		for i in 1 ..= n {
+			a, b := pts[i - 1], pts[i]
+			if bold {
+				for dy in -1 ..= 2 {
+					for dx in -1 ..= 2 {
+						white := dx >= 0 && dx <= 1 && dy >= 0 && dy <= 1
+						if white != (pass == 1) do continue
+						o := Vec2{f32(dx) - 0.5, f32(dy) - 0.5}
+						draw_line(a + o, b + o, white ? WHITE : Color{0, 0, 0, 200})
+					}
+				}
+			} else if pass == 0 {
+				draw_line(a - 0.5, b - 0.5, Color{0, 0, 0, 160})
+			} else {
+				draw_line(a + 0.5, b + 0.5, Color{255, 255, 255, 200})
+			}
+		}
+	}
+	draw_frect({mx - 0.5, my - 0.5, 1, 1}, WHITE)
 }

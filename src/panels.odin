@@ -25,8 +25,9 @@ main_ui :: proc() {
 	optbar := Rect{0, MENU_H, W, OPT_H}
 	status := Rect{0, H - STATUS_H, W, STATUS_H}
 	body := Rect{0, MENU_H + OPT_H, W, H - MENU_H - OPT_H - STATUS_H}
+	groups_bar := Rect{0, H - GROUPS_BAR_H, W, GROUPS_BAR_H}
 	if canvas_mode {
-		body.h += STATUS_H
+		body.h += STATUS_H - GROUPS_BAR_H
 	}
 
 	right, toolbar, tabs: Rect
@@ -50,7 +51,9 @@ main_ui :: proc() {
 	canvas_update(viewport)
 	render_canvas(viewport)
 
-	if !canvas_mode {
+	if canvas_mode {
+		panel_groups_bar(groups_bar)
+	} else {
 		panel_tabs(tabs)
 		panel_toolbar(toolbar)
 		panel_right(right)
@@ -64,7 +67,7 @@ main_ui :: proc() {
 // Menu bar
 // ---------------------------------------------------------------------------
 
-MENU_TITLES := [?]string{"File", "Edit", "Image", "Adjust", "Filter", "Layer", "Select", "View", "Help"}
+MENU_TITLES := [?]string{"File", "Edit", "Image", "Adjust", "Filter", "Layer", "Select", "View", "Workspaces", "Help"}
 
 fx_item :: proc(fx: Fx) {
 	name := FX_DEFS[fx].name
@@ -202,6 +205,16 @@ menu_build :: proc(idx: int) {
 		popup_sep()
 		item("Preferences...", cmd = .Preferences)
 	case 8:
+		ws_refresh()
+		for e, i in ws_entries {
+			if i == len(WS_BUILTIN_NAMES) do popup_sep()
+			item(e.name, cmd = Cmd(int(Cmd.Ws_First) + i), checked = e.name == ws_current)
+		}
+		popup_sep()
+		item("Manage Workspaces...", cmd = .Ws_Manage)
+		item("Import Workspace...", cmd = .Ws_Import)
+		item("Export Workspace...", cmd = .Ws_Export)
+	case 9:
 		item("Keyboard Shortcuts", cmd = .Help_Keys)
 		item("About", cmd = .About)
 	}
@@ -348,39 +361,65 @@ panel_toolbar :: proc(r: Rect) {
 	COLS :: 5
 	gx := r.x + 10
 	rem_g, rem_t := -1, -1
+	cur_group := current_group()
 	for &g, gi in tool_groups {
-		// header: "Group" + hotkey badge (click to assign the key or remove the group)
+		// header band: the name on the left, the hotkey as a keycap on the right
+		// (click the keycap for options; right-click the header for rename / remove)
 		top := y
 		y += 4
-		text(r.x + 11, y + (20 - FONT_CAP) / 2, "Group", C_TEXT_DIM)
-		badge := Rect{r.x + 11 + text_w("Group") + 8, y, 28, 20}
+		title := group_title(&g)
+		clip_begin(Rect{r.x + 4, top, r.w - 9, 28})
+		draw_rrect(f32(r.x + 4), f32(top), f32(r.w - 9), 40, 5, C_PANEL_DK)
+		clip_end()
 		waiting := group_key_wait == gi
 		label := waiting ? "..." : (g.key == .KEY_NULL ? "-" : key_name(g.key))
+		kw := keycap_w(label)
+		badge := Rect{r.x + r.w - 11 - kw, y + 1, kw, 18}
+		clip_begin(Rect{r.x + 11, y, badge.x - r.x - 15, 20})
+		text(r.x + 12, y + (20 - FONT_CAP) / 2, title, g.pen_eraser ? C_ACCENT : C_TEXT)
+		clip_end()
 		bid := make_id(badge, "grpbadge")
-		if button(badge, label, "Group hotkey (click to change)", true, waiting) {
+		clicked, _, badge_hover := button_behavior(bid, badge, "Group hotkey (click for options)")
+		keycap(badge, label, waiting, badge_hover)
+		if clicked {
 			popup_begin(bid, badge, 120)
 			popup_item("Assign hotkey...", 0)
+			popup_item("Rename...", 3)
+			popup_item(g.pen_eraser ? "Pen eraser: off" : "Use for pen eraser", 2)
 			popup_item("Remove group", 1)
 		}
 		if ui.popup_result_id == bid {
-			if ui.popup_result_val == 0 {
+			switch ui.popup_result_val {
+			case 0:
 				group_key_wait = gi
 				set_statusf("Press a key for this tool group (Esc cancels, Backspace clears)")
-			} else {
+			case 2:
+				on := !g.pen_eraser
+				for &o in tool_groups do o.pen_eraser = false
+				g.pen_eraser = on
+				set_statusf(on ? "The pen's eraser end now uses this group's current tool" : "Pen eraser group cleared")
+			case 3:
+				group_rename_open(gi)
+			case:
 				rem_g = gi
 			}
 			ui.popup_result_id = 0
 		}
-		// right-click anywhere on the group label for a remove menu (opened on release,
+		// right-click anywhere on the header for a menu (opened on release,
 		// since a popup opened on the press would be closed by that same click)
 		hdr := Rect{r.x + 5, top, r.w - 11, 28}
 		hid := make_id(hdr, "grphdr")
 		if ui_hover(hdr) && ui.released[1] && !popup.open {
 			popup_begin(hid, Rect{ui.mx, ui.my, 1, 1}, 110)
+			popup_item("Rename...", 3)
 			popup_item("Remove group", 1)
 		}
 		if ui.popup_result_id == hid {
-			rem_g = gi
+			if ui.popup_result_val == 3 {
+				group_rename_open(gi)
+			} else {
+				rem_g = gi
+			}
 			ui.popup_result_id = 0
 		}
 		is_colors := len(g.colors) > 0
@@ -391,9 +430,10 @@ panel_toolbar :: proc(r: Rect) {
 		y = top + 34
 		for tool, ti in g.tools {
 			br := Rect{gx + i32(ti % COLS) * PITCH, y + i32(ti / COLS) * PITCH, BTN, BTN}
-			if icon_button(br, TOOL_ICONS[tool], TOOL_NAMES[tool], t == tool) {
+			// the pen-eraser group keeps its own selection, separate from the pen tip's tool
+			if icon_button(br, TOOL_ICONS[tool], TOOL_NAMES[tool], g.pen_eraser ? g.last == tool : t == tool && cur_group == gi) {
 				g.last = tool
-				select_tool(tool)
+				if !g.pen_eraser do select_tool_in_group(tool, gi)
 			} else if ui_hover(br) && ui.pressed[1] && !popup.open {
 				rem_g, rem_t = gi, ti
 			}
@@ -497,6 +537,8 @@ panel_toolbar :: proc(r: Rect) {
 				ordered_remove(&rg.tools, rem_t)
 			}
 		} else {
+			group_save_brushes()
+			active_group = -1 // indices shift
 			delete(tool_groups[rem_g].tools)
 			delete(tool_groups[rem_g].colors)
 			delete(tool_groups[rem_g].blends)

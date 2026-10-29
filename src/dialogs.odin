@@ -23,6 +23,8 @@ Dialog_Kind :: enum {
 	Shortcuts,
 	About,
 	Font,
+	Workspaces,
+	Group_Rename,
 }
 
 Dialog :: struct {
@@ -53,7 +55,12 @@ dialog_open :: proc(k: Dialog_Kind) {
 		msg_text  = dialog.msg_text,
 	}
 	switch k {
-	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font:
+	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename:
+	case .Workspaces:
+		ws_refresh()
+		for e, i in ws_entries {
+			if e.name == ws_current do dialog.a = i
+		}
 	case .New_Doc:
 		dialog.a, dialog.b = new_w, new_h
 		dialog.c = new_bg
@@ -195,6 +202,10 @@ dialogs_run :: proc() {
 		dlg_about()
 	case .Font:
 		dlg_font()
+	case .Workspaces:
+		dlg_workspaces()
+	case .Group_Rename:
+		dlg_group_rename()
 	}
 }
 

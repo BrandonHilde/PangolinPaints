@@ -24,17 +24,23 @@ FILTERS_PROJ := [?]Filter{{"Pangolin Paints project (*.ppnt)", "*.ppnt"}}
 FILTERS_IMG := [?]Filter{{"Images", "*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.tga;*.gif;*.qoi"}, {"All files", "*.*"}}
 FILTERS_GPL := [?]Filter{{"GIMP palette (*.gpl)", "*.gpl"}, {"All files", "*.*"}}
 
-native_dialog :: proc(save: bool, title: string, filters: []Filter, def_ext, initial: string) -> (path: string, ok: bool) {
+// `dir`: folder the dialog starts in (empty: the system's choice).
+native_dialog :: proc(save: bool, title: string, filters: []Filter, def_ext, initial: string, dir := "") -> (path: string, ok: bool) {
 	defer gfx_reset_input()
 	when ODIN_OS == .Windows {
-		return native_dialog_windows(save, title, filters, def_ext, initial)
+		return native_dialog_windows(save, title, filters, def_ext, initial, dir)
 	} else {
-		return native_dialog_zenity(save, title, filters, def_ext, initial)
+		return native_dialog_zenity(save, title, filters, def_ext, initial, dir)
 	}
 }
 
 when ODIN_OS == .Windows {
-	native_dialog_windows :: proc(save: bool, title: string, filters: []Filter, def_ext, initial: string) -> (path: string, ok: bool) {
+	win_path :: proc(p: string) -> string {
+		r, _ := strings.replace_all(p, "/", "\\", context.temp_allocator)
+		return r
+	}
+
+	native_dialog_windows :: proc(save: bool, title: string, filters: []Filter, def_ext, initial, dir: string) -> (path: string, ok: bool) {
 		buf := make([]u16, 32768, context.temp_allocator)
 		if initial != "" {
 			w := win.utf8_to_utf16(initial, context.temp_allocator)
@@ -59,6 +65,7 @@ when ODIN_OS == .Windows {
 			lpstrTitle   = win.utf8_to_wstring(title),
 			Flags        = win.OFN_EXPLORER | win.OFN_NOCHANGEDIR | win.OFN_HIDEREADONLY | (save ? win.OFN_OVERWRITEPROMPT : (win.OFN_FILEMUSTEXIST | win.OFN_PATHMUSTEXIST)),
 			lpstrDefExt  = def_ext != "" ? win.utf8_to_wstring(def_ext) : nil,
+			lpstrInitialDir = dir != "" ? win.utf8_to_wstring(win_path(dir)) : nil,
 		}
 		r := save ? win.GetSaveFileNameW(&ofn) : win.GetOpenFileNameW(&ofn)
 		if !r {
@@ -80,7 +87,8 @@ when ODIN_OS != .Windows {
 		return out
 	}
 
-	native_dialog_zenity :: proc(save: bool, title: string, filters: []Filter, def_ext, initial: string) -> (path: string, ok: bool) {
+	native_dialog_zenity :: proc(save: bool, title: string, filters: []Filter, def_ext, initial, dir: string) -> (path: string, ok: bool) {
+		start := dir != "" ? fmt.tprintf("%s%s", dir, initial) : initial
 		// Zenity
 		{
 			cmd := make([dynamic]string, context.temp_allocator)
@@ -89,8 +97,8 @@ when ODIN_OS != .Windows {
 			if save {
 				append(&cmd, "--save", "--confirm-overwrite")
 			}
-			if initial != "" {
-				append(&cmd, fmt.tprintf("--filename=%s", initial))
+			if start != "" {
+				append(&cmd, fmt.tprintf("--filename=%s", start))
 			}
 			for f in filters {
 				pat := zenity_pattern(f.pattern, context.temp_allocator)
@@ -112,7 +120,7 @@ when ODIN_OS != .Windows {
 			} else {
 				append(&cmd, "--getopenfilename")
 			}
-			dir := initial
+			dir := start
 			pattern_spec := "All files (*)"
 			if len(filters) > 0 {
 				pattern_spec = fmt.tprintf("%s (%s)", filters[0].name, zenity_pattern(filters[0].pattern, context.temp_allocator))

@@ -80,6 +80,10 @@ Cmd :: enum {
 	// help
 	Help_Keys,
 	About,
+	// workspaces
+	Ws_Manage,
+	Ws_Import,
+	Ws_Export,
 	// misc
 	Swap_Colors,
 	Default_Colors,
@@ -119,6 +123,9 @@ Cmd :: enum {
 	// adjustments and filters (must stay in the same order as `Fx`)
 	Fx_First,
 	Fx_Last = Fx_First + len(Fx) - 1,
+	// saved and built-in workspaces, in the order of `ws_entries`
+	Ws_First,
+	Ws_Last = Ws_First + WS_MAX - 1,
 }
 
 Shortcut :: struct {
@@ -343,7 +350,7 @@ select_tool :: proc(t: Tool) {
 run_cmd :: proc(cmd: Cmd) {
 	d := doc
 	if cmd >= .Tool_Brush && cmd <= .Tool_Zoom {
-		select_tool(Tool(int(cmd) - int(Cmd.Tool_Brush)))
+		select_tool_in_group(Tool(int(cmd) - int(Cmd.Tool_Brush)))
 		return
 	}
 	// commands below act on the document; finish pending interactions first
@@ -357,6 +364,10 @@ run_cmd :: proc(cmd: Cmd) {
 		fx_open(Fx(int(cmd) - int(Cmd.Fx_First)))
 		return
 	}
+	if cmd >= .Ws_First && cmd <= .Ws_Last {
+		workspace_apply_index(int(cmd) - int(Cmd.Ws_First))
+		return
+	}
 	if cmd >= .Opacity_10 && cmd <= .Opacity_100 {
 		t := paint_tool(cur_tool) ? cur_tool : Tool.Brush
 		brushes[t].opacity = (int(cmd) - int(Cmd.Opacity_10) + 1) * 10
@@ -364,7 +375,7 @@ run_cmd :: proc(cmd: Cmd) {
 		return
 	}
 	switch cmd {
-	case .None, .Tool_Brush ..= .Tool_Zoom, .Fx_First ..= .Fx_Last, .Opacity_10 ..= .Opacity_100:
+	case .None, .Tool_Brush ..= .Tool_Zoom, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
 	case .New:
 		dialog_open(.New_Doc)
 	case .Open:
@@ -385,6 +396,12 @@ run_cmd :: proc(cmd: Cmd) {
 		file_swatches_load()
 	case .Swatches_Save:
 		file_swatches_save()
+	case .Ws_Manage:
+		dialog_open(.Workspaces)
+	case .Ws_Import:
+		workspace_import()
+	case .Ws_Export:
+		workspace_export()
 
 	case .Undo:
 		if !history_undo(d) {

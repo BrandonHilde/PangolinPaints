@@ -323,6 +323,9 @@ IsKeyPressedRepeat :: proc(k: KeyboardKey) -> bool {
 	return gfx.key_repeat[key_scancode(k)]
 }
 
+@(private = "file")
+eraser_as_left: bool
+
 mouse_btn_index :: proc(b: u8) -> int {
 	switch b {
 	case 1:
@@ -384,6 +387,13 @@ gfx_poll :: proc() {
 		case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
 			gfx.mouse = {e.button.x, e.button.y} * gfx.density
 			if i := mouse_btn_index(e.button.button); i >= 0 {
+				// Windows reports the pen's eraser end as a middle click: treat it as a plain
+				// press so it erases instead of panning
+				if i == 2 {
+					if e.button.down && pen_eraser_active() do eraser_as_left = true
+					if eraser_as_left do i = 0
+					if !e.button.down do eraser_as_left = false
+				}
 				if e.button.down {
 					gfx.m_down[i] = true
 					gfx.m_pressed[i] = true

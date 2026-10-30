@@ -95,7 +95,7 @@ dialog_open :: proc(k: Dialog_Kind) {
 			dialog.kind = .None
 		}
 	case .Grid:
-		dialog.a, dialog.b, dialog.c = grid_w, grid_h, grid_opacity
+		dialog.a, dialog.b, dialog.c, dialog.d = grid_w, grid_h, grid_opacity, grid_angle
 		dialog.flag, dialog.flag2 = show_grid, snap_grid
 	case .Feather:
 		dialog.a = 10

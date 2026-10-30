@@ -26,7 +26,12 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   brush settings (size, hardness, taper, ...).
 - **Grid**: a resizable grid (View > Grid, Ctrl+;) that every tool snaps to while Snap to Grid (Ctrl+Shift+;) is on:
   brush strokes, lines, selections, gradients, crops, moves, transforms and text placement. Snapping applies once a
-  tool is pressed; hovering stays free, so transform handles are always reachable.
+  tool is pressed; hovering stays free, so transform handles are always reachable. The grid can be rotated.
+- **Mirror painting**: any number of mirror lines through a movable centre (Move Center, then click or drag on the
+  canvas), at any angle: one mirror reflects left / right, more make kaleidoscope / snowflake symmetry. Applies to
+  every brush tool and the line tool, including filled shapes.
+- **Grid and Mirror switches** can be added to tool groups (the group's + button) to turn them on and off with a
+  click or the group's hotkey; while either is on, its settings sit in a bar under the tool options.
 - **Image editing**
   - Adjust: auto contrast, brightness/contrast, levels, curves (per channel, with histogram), exposure,
     hue/saturation (colorize), vibrance, colour balance, temperature/tint, desaturate, sepia, invert, posterize,

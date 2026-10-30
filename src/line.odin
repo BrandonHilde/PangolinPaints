@@ -130,11 +130,16 @@ line_fill_polygon :: proc(d: ^Doc, pts: []Vec2, col: Color) {
 	cov: []u8
 	defer delete(cov)
 	span := seamless_mode ? 1 : 0
-	for oy in -span ..= span {
+	// mirror painting fills every mirrored copy of the shape
+	ms: [MIRROR_COPIES]Affine
+	nm := 1
+	ms[0] = AFFINE_ID
+	if mirror_on do ms, nm = mirror_transforms(d)
+	for mk in 0 ..< nm do for oy in -span ..= span {
 		for ox in -span ..= span {
 			off := Vec2{f32(ox * w), f32(oy * h)}
 			shifted := make([]Vec2, len(pts), context.temp_allocator)
-			for p, i in pts do shifted[i] = p + off
+			for p, i in pts do shifted[i] = affine_apply(ms[mk], p) + off
 			s := sel_polygon(w, h, shifted)
 			if cov == nil {
 				cov = s

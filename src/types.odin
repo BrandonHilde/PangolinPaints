@@ -217,6 +217,9 @@ Tool :: enum {
 	Hand,
 	Zoom,
 	Line, // after the rest: tool groups are saved by index
+	// switches rather than tools: clicking them in a group turns the grid / mirror painting on or off
+	Grid,
+	Mirror,
 }
 
 TOOL_NAMES := [Tool]string {
@@ -241,6 +244,8 @@ TOOL_NAMES := [Tool]string {
 	.Hand           = "Hand (H)",
 	.Zoom           = "Zoom (Z)",
 	.Line           = "Line / Polygon (U)",
+	.Grid           = "Grid on / off (Ctrl+;)",
+	.Mirror         = "Mirror painting on / off",
 }
 
 Sel_Mode :: enum {

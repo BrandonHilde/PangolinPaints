@@ -62,6 +62,10 @@ current_group :: proc() -> int {
 
 // Picks `t` as a member of group `gi`; without a group, keeps the active group if it holds `t`.
 select_tool_in_group :: proc(t: Tool, gi := -1) {
+	if tool_is_toggle(t) {
+		tool_toggle(t)
+		return
+	}
 	if gi >= 0 {
 		group_enter(gi)
 	} else if active_group < 0 || active_group >= len(tool_groups) || !tool_group_has(&tool_groups[active_group], t) {
@@ -167,29 +171,33 @@ tool_group_activate :: proc(gi: int) {
 		set_statusf("Brush blend: %s", BLEND_NAMES[brush_blend])
 		return
 	}
-	n := len(g.tools)
+	// the hotkey cycles through the real tools; a group of only switches flips its first one
+	tools := make([dynamic]Tool, context.temp_allocator)
+	for t in g.tools do if !tool_is_toggle(t) do append(&tools, t)
+	n := len(tools)
 	if n == 0 {
+		if len(g.tools) > 0 do tool_toggle(g.tools[0])
 		return
 	}
 	if g.pen_eraser {
 		// only changes the pen's eraser end, never the active tool
-		for t, i in g.tools {
+		for t, i in tools {
 			if t == g.last {
-				g.last = g.tools[(i + 1) % n]
+				g.last = tools[(i + 1) % n]
 				break
 			}
 		}
 		return
 	}
-	for t, i in g.tools {
+	for t, i in tools {
 		if t == cur_tool && current_group() == gi {
-			g.last = g.tools[(i + 1) % n]
+			g.last = tools[(i + 1) % n]
 			select_tool_in_group(g.last, gi)
 			return
 		}
 	}
-	pick := g.tools[0]
-	for t in g.tools {
+	pick := tools[0]
+	for t in tools {
 		if t == g.last do pick = t
 	}
 	g.last = pick

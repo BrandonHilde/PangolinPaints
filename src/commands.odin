@@ -79,6 +79,7 @@ Cmd :: enum {
 	Toggle_Grid,
 	Toggle_Snap,
 	Grid_Settings,
+	Toggle_Mirror,
 	Toggle_Navigator,
 	Toggle_Canvas_Mode,
 	Toggle_Seamless,
@@ -127,6 +128,8 @@ Cmd :: enum {
 	Tool_Hand,
 	Tool_Zoom,
 	Tool_Line,
+	Tool_Grid,
+	Tool_Mirror,
 	// adjustments and filters (must stay in the same order as `Fx`)
 	Fx_First,
 	Fx_Last = Fx_First + len(Fx) - 1,
@@ -303,6 +306,10 @@ shortcuts_update :: proc() {
 	if tool_groups_key_capture() {
 		return
 	}
+	if mirror_placing && IsKeyPressed(.ESCAPE) {
+		mirror_placing = false
+		return
+	}
 	// line in progress: Enter finishes, Esc cancels, Backspace takes back a point
 	if line_active() {
 		if IsKeyPressed(.ENTER) || IsKeyPressed(.KP_ENTER) {
@@ -376,13 +383,13 @@ select_tool :: proc(t: Tool) {
 
 run_cmd :: proc(cmd: Cmd) {
 	d := doc
-	if cmd >= .Tool_Brush && cmd <= .Tool_Line {
+	if cmd >= .Tool_Brush && cmd <= .Tool_Mirror {
 		select_tool_in_group(Tool(int(cmd) - int(Cmd.Tool_Brush)))
 		return
 	}
 	// commands below act on the document; finish pending interactions first
 	#partial switch cmd {
-	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap, .Grid_Settings, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
+	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap, .Grid_Settings, .Toggle_Mirror, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
 	case .Opacity_10 ..= .Opacity_100:
 	case:
 		tools_commit_pending()
@@ -402,7 +409,7 @@ run_cmd :: proc(cmd: Cmd) {
 		return
 	}
 	switch cmd {
-	case .None, .Tool_Brush ..= .Tool_Line, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
+	case .None, .Tool_Brush ..= .Tool_Mirror, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
 	case .New:
 		dialog_open(.New_Doc)
 	case .Open:
@@ -594,6 +601,10 @@ run_cmd :: proc(cmd: Cmd) {
 		set_status(snap_grid ? "Snap to grid on" : "Snap to grid off")
 	case .Grid_Settings:
 		dialog_open(.Grid)
+	case .Toggle_Mirror:
+		mirror_on = !mirror_on
+		if !mirror_on do mirror_placing = false
+		set_status(mirror_on ? "Mirror painting on" : "Mirror painting off")
 	case .Toggle_Navigator:
 		show_navigator = !show_navigator
 	case .Toggle_Canvas_Mode:

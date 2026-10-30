@@ -25,6 +25,12 @@ prefs_save :: proc() {
 	fmt.sbprintf(&sb, "grid_w=%d\n", grid_w)
 	fmt.sbprintf(&sb, "grid_h=%d\n", grid_h)
 	fmt.sbprintf(&sb, "grid_opacity=%d\n", grid_opacity)
+	fmt.sbprintf(&sb, "grid_angle=%d\n", grid_angle)
+	fmt.sbprintf(&sb, "mirror=%d\n", b2i(mirror_on))
+	fmt.sbprintf(&sb, "mirror_count=%d\n", mirror_count)
+	fmt.sbprintf(&sb, "mirror_angle=%d\n", mirror_angle)
+	fmt.sbprintf(&sb, "mirror_cx=%d\n", int(mirror_cx * 10000))
+	fmt.sbprintf(&sb, "mirror_cy=%d\n", int(mirror_cy * 10000))
 	fmt.sbprintf(&sb, "new_w=%d\n", new_w)
 	fmt.sbprintf(&sb, "new_h=%d\n", new_h)
 	fmt.sbprintf(&sb, "new_bg=%d\n", new_bg)
@@ -79,6 +85,18 @@ prefs_load :: proc() {
 			grid_h = clamp(val, 1, 4096)
 		case "grid_opacity":
 			grid_opacity = clamp(val, 5, 100)
+		case "grid_angle":
+			grid_angle = clamp(val, -90, 90)
+		case "mirror":
+			mirror_on = val != 0
+		case "mirror_count":
+			mirror_count = clamp(val, 1, MIRROR_MAX)
+		case "mirror_angle":
+			mirror_angle = clamp(val, 0, 179)
+		case "mirror_cx":
+			mirror_cx = clamp(f32(val) / 10000, 0, 1)
+		case "mirror_cy":
+			mirror_cy = clamp(f32(val) / 10000, 0, 1)
 		case "new_w":
 			new_w = clamp(val, 1, 16000)
 		case "new_h":

@@ -420,6 +420,12 @@ Stroke :: struct {
 	bristle:    [48]f32,
 	clone_off:  Vec2,
 	rng:        u64,
+	// mirror painting: the symmetry's transforms (identity first), fixed for the stroke, and
+	// each copy's own wet paint so mirrored oil / smudge strokes don't mix with each other
+	mirror_m:   [MIRROR_COPIES]Affine,
+	mirror_n:   int,
+	mcarry:     [MIRROR_COPIES][][4]f32,
+	mcarry_ok:  [MIRROR_COPIES]bool,
 }
 
 stroke: Stroke
@@ -456,10 +462,15 @@ stroke_begin :: proc(tool: Tool, p: Vec2, color: Color) -> bool {
 	tgt := s.pts
 	dabs := s.dabs
 	carry := s.carry
+	mcarry := s.mcarry
 	s^ = Stroke {
-		pts   = tgt,
-		dabs  = dabs,
-		carry = carry,
+		pts    = tgt,
+		dabs   = dabs,
+		carry  = carry,
+		mcarry = mcarry,
+	}
+	if mirror_on {
+		s.mirror_m, s.mirror_n = mirror_transforms(d)
 	}
 	s.active = true
 	s.tool = t
@@ -541,6 +552,14 @@ stroke_begin :: proc(tool: Tool, p: Vec2, color: Color) -> bool {
 			pc := [4]f32{f32(s.color.r) / 255, f32(s.color.g) / 255, f32(s.color.b) / 255, 1}
 			for &c in s.carry[:side * side] do c = pc
 			s.carry_init = true
+		}
+		for k in 1 ..< s.mirror_n {
+			if len(s.mcarry[k]) < side * side {
+				delete(s.mcarry[k])
+				s.mcarry[k] = make([][4]f32, side * side)
+			}
+			copy(s.mcarry[k][:side * side], s.carry[:side * side])
+			s.mcarry_ok[k] = s.carry_init
 		}
 	}
 	// the first dab
@@ -850,6 +869,38 @@ tip_alpha :: #force_inline proc(e: ^Tip_Eval, s: ^Stroke, x, y: int) -> f32 {
 // ---------------------------------------------------------------------------
 
 dab_apply :: proc(s: ^Stroke, dab: Dab) {
+	if s.mirror_n <= 1 {
+		dab_apply_wrapped(s, dab)
+		return
+	}
+	// mirror painting: every copy gets the dab, moved and turned by its transform; wet tools swap
+	// in that copy's paint, and the paint load runs down once per dab, not once per copy
+	left := s.paint_left
+	after := left
+	for k in 0 ..< s.mirror_n {
+		m := s.mirror_m[k]
+		c := dab
+		p := affine_apply(m, Vec2{dab.x, dab.y})
+		c.x, c.y = p.x, p.y
+		c.dir = vnorm(Vec2{m.a * dab.dir.x + m.b * dab.dir.y, m.c * dab.dir.x + m.d * dab.dir.y})
+		s.paint_left = left
+		if k > 0 {
+			s.carry, s.mcarry[k] = s.mcarry[k], s.carry
+			s.carry_init, s.mcarry_ok[k] = s.mcarry_ok[k], s.carry_init
+		}
+		dab_apply_wrapped(s, c)
+		if k > 0 {
+			s.carry, s.mcarry[k] = s.mcarry[k], s.carry
+			s.carry_init, s.mcarry_ok[k] = s.mcarry_ok[k], s.carry_init
+		} else {
+			after = s.paint_left
+		}
+	}
+	s.paint_left = after
+}
+
+@(private = "file")
+dab_apply_wrapped :: proc(s: ^Stroke, dab: Dab) {
 	d := doc
 	// seamless mode: stamp the dab on every wrapped copy that reaches into the canvas
 	if seamless_mode && (s.tool == .Brush || s.tool == .Eraser || s.tool == .Clone || s.tool == .Blur || s.tool == .Dodge) {
@@ -914,7 +965,7 @@ dab_apply_one :: proc(s: ^Stroke, dab: Dab) {
 		dab_blur(s, &e, box, alpha)
 	case .Dodge:
 		dab_dodge(s, &e, box, alpha)
-	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom, .Line:
+	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom, .Line, .Grid, .Mirror:
 	}
 	doc_dirty(d, box)
 }

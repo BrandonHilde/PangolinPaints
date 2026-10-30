@@ -296,7 +296,7 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		}
 	case .Crop:
 		crop_mouse_down(p)
-	case .Hand:
+	case .Hand, .Grid, .Mirror:
 		drag.active = false
 	case .Zoom:
 		drag.active = false
@@ -404,7 +404,7 @@ update_drag :: proc(p: Vec2) {
 		crop_mouse_drag(p)
 	case .Text:
 		if drag.moved do text_drag(p)
-	case .Bucket, .Wand, .Hand, .Zoom, .Line:
+	case .Bucket, .Wand, .Hand, .Zoom, .Line, .Grid, .Mirror:
 	}
 }
 
@@ -466,7 +466,7 @@ end_drag :: proc() {
 		crop_mouse_up()
 	case .Line:
 		line_mouse_up(drag.cur)
-	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom:
+	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom, .Grid, .Mirror:
 	}
 	drag.active = false
 }
@@ -488,6 +488,9 @@ canvas_update :: proc(vp: Rect) {
 	}
 	hover_pt = p
 	hover_valid = over
+	if !drag.active && mirror_center_input(p, over) {
+		return
+	}
 
 	if over && ui.wheel != 0 && ui.focus_id == 0 && !drag.active {
 		if ui.shift {
@@ -525,6 +528,7 @@ canvas_update :: proc(vp: Rect) {
 		switch t {
 		case .Hand:
 			ui.cursor = .RESIZE_ALL
+		case .Grid, .Mirror:
 		case .Zoom:
 			ui.cursor = .POINTING_HAND
 		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Line:

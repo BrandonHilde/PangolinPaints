@@ -340,7 +340,43 @@ selftest :: proc() -> int {
 		// a freehand stroke snapped point by point paints along the grid lines
 		paint_line(.Brush, red, snap_pt({12, 31}), snap_pt({48, 38}))
 		check(px(d, 0, 30, 40) == red && px(d, 0, 30, 25) == white, "snapped stroke follows the grid line")
-		show_grid, grid_w, grid_h = false, 64, 64
+		// rotated 45 degrees about the centre: snapped points sit on the rotated lattice
+		grid_w, grid_h, grid_angle = 10, 10, 45
+		q := snap_pt({60, 33})
+		c, ca, sa := grid_frame(d)
+		u := Vec2{(q - c).x * ca + (q - c).y * sa, -(q - c).x * sa + (q - c).y * ca} + c
+		frac :: proc(v: f32) -> f32 {return abs(v / 10 - math.round(v / 10))}
+		check(frac(u.x) < 0.01 && frac(u.y) < 0.01 && vlen(q - Vec2{60, 33}) < 8, "rotated grid snapping")
+		show_grid, grid_w, grid_h, grid_angle = false, 64, 64, 0
+	}
+
+	// --- mirror painting ---------------------------------------------------------------
+	{
+		d := fresh(200, 100, white)
+		mirror_on, mirror_count, mirror_angle, mirror_cx, mirror_cy = true, 1, 90, 0.5, 0.5
+		paint_line(.Brush, red, {20, 30}, {60, 30})
+		check(px(d, 0, 40, 30) == red && px(d, 0, 159, 30) == red && px(d, 0, 100, 30) == white, "one mirror paints the reflection")
+		check(len(d.undo) == 1, "a mirrored stroke is one undo step")
+		history_undo(d)
+		// four mirrors: 8 copies around the centre
+		mirror_count, mirror_angle = 4, 0
+		paint_line(.Brush, red, {130, 50}, {140, 50}, 4)
+		check(px(d, 0, 65, 50) == red && px(d, 0, 100, 15) == red && px(d, 0, 100, 85) == red, "four mirrors paint around the centre")
+		history_undo(d)
+		// wet oil: each copy keeps its own paint
+		mirror_count, mirror_angle = 1, 90
+		paint_line(.Oil, blue, {20, 60}, {60, 60})
+		c0, c1 := px(d, 0, 40, 60), px(d, 0, 159, 60)
+		check(c0.b > 150 && c1.b > 150, fmt.tprintf("mirrored oil paints both sides (%v / %v)", c0, c1))
+		history_undo(d)
+		// a filled polygon is filled on both sides
+		set_fg(red)
+		line_outline, line_fill = false, true
+		append(&line_tool.pts, Vec2{10, 10}, Vec2{40, 10}, Vec2{25, 40})
+		line_finish(true)
+		check(px(d, 0, 25, 20) == red && px(d, 0, 174, 20) == red, "mirrored polygon fill")
+		line_outline, line_fill = true, false
+		mirror_on, mirror_count, mirror_angle = false, 1, 90
 	}
 
 	// --- line / polygon tool ---------------------------------------------------------

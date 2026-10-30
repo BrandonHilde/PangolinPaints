@@ -200,6 +200,7 @@ render_canvas :: proc(vp: Rect) {
 		}
 	}
 	render_grid(d, vp)
+	render_mirror(d, vp)
 	outline_rect(Rect{x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2}, Color{10, 10, 14, 255})
 
 	// selection outline (marching ants)

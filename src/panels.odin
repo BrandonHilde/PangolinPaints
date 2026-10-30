@@ -25,6 +25,10 @@ main_ui :: proc() {
 	optbar := Rect{0, MENU_H, W, OPT_H}
 	status := Rect{0, H - STATUS_H, W, STATUS_H}
 	body := Rect{0, MENU_H + OPT_H, W, H - MENU_H - OPT_H - STATUS_H}
+	modebar: Rect
+	if modebar_visible() {
+		modebar = cut_top(&body, MODE_H)
+	}
 	groups_bar := Rect{0, H - GROUPS_BAR_H, W, GROUPS_BAR_H}
 	if canvas_mode {
 		body.h += STATUS_H - GROUPS_BAR_H
@@ -60,6 +64,7 @@ main_ui :: proc() {
 		panel_status(status)
 	}
 	panel_options(optbar)
+	if modebar_visible() do panel_modebar(modebar)
 	panel_menubar(menubar)
 }
 
@@ -205,6 +210,7 @@ menu_build :: proc(idx: int) {
 		item("Grid", cmd = .Toggle_Grid, checked = show_grid)
 		item("Snap to Grid", cmd = .Toggle_Snap, checked = snap_grid)
 		item("Grid Settings...", cmd = .Grid_Settings)
+		item("Mirror Painting", cmd = .Toggle_Mirror, checked = mirror_on)
 		item("Navigator", cmd = .Toggle_Navigator, checked = show_navigator)
 		item("Canvas Mode", cmd = .Toggle_Canvas_Mode, checked = canvas_mode)
 		item("Seamless Mode", cmd = .Toggle_Seamless, checked = seamless_mode)
@@ -359,6 +365,8 @@ TOOL_ICONS := [Tool]Icon {
 	.Hand           = .Hand,
 	.Zoom           = .Zoom,
 	.Line           = .Line,
+	.Grid           = .Grid,
+	.Mirror         = .Sym_X,
 }
 
 panel_toolbar :: proc(r: Rect) {
@@ -442,9 +450,15 @@ panel_toolbar :: proc(r: Rect) {
 		for tool, ti in g.tools {
 			br := Rect{gx + i32(ti % COLS) * PITCH, y + i32(ti / COLS) * PITCH, BTN, BTN}
 			// the pen-eraser group keeps its own selection, separate from the pen tip's tool
-			if icon_button(br, TOOL_ICONS[tool], TOOL_NAMES[tool], g.pen_eraser ? g.last == tool : t == tool && cur_group == gi) {
-				g.last = tool
-				if !g.pen_eraser do select_tool_in_group(tool, gi)
+			lit := g.pen_eraser ? g.last == tool : t == tool && cur_group == gi
+			if tool_is_toggle(tool) do lit = tool_toggle_on(tool)
+			if icon_button(br, TOOL_ICONS[tool], TOOL_NAMES[tool], lit) {
+				if tool_is_toggle(tool) {
+					tool_toggle(tool)
+				} else {
+					g.last = tool
+					if !g.pen_eraser do select_tool_in_group(tool, gi)
+				}
 			} else if ui_hover(br) && ui.pressed[1] && !popup.open {
 				rem_g, rem_t = gi, ti
 			}

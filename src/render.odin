@@ -258,6 +258,7 @@ render_canvas :: proc(vp: Rect) {
 	}
 
 	text_draw_overlay(d)
+	render_line_preview(d)
 
 	// clone source marker
 	if cur_tool == .Clone && clone_src_set {

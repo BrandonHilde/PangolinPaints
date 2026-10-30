@@ -355,6 +355,7 @@ TOOL_ICONS := [Tool]Icon {
 	.Crop           = .Crop,
 	.Hand           = .Hand,
 	.Zoom           = .Zoom,
+	.Line           = .Line,
 }
 
 panel_toolbar :: proc(r: Rect) {
@@ -595,6 +596,7 @@ panel_options :: proc(r: Rect) {
 	t := eff_tool()
 	if paint_tool(t) {
 		options_brush(&x, y, t)
+		if t == .Line do options_line(&x, y)
 	} else {
 		options_other(&x, y, t)
 	}
@@ -642,7 +644,7 @@ options_brush :: proc(x: ^i32, y: i32, t: Tool) {
 	slider_w(x, y, 92, &b.size, 1, BRUSH_MAX, "Size", "Brush size ([ and ])", "px", 2.5)
 	slider_w(x, y, 84, &b.opacity, 1, 100, "Opacity", "Opacity (Shift+number keys)")
 	#partial switch t {
-	case .Brush, .Eraser, .Clone:
+	case .Brush, .Eraser, .Clone, .Line:
 		slider_w(x, y, 70, &b.flow, 1, 100, "Flow", "How fast paint builds up")
 		slider_w(x, y, 76, &b.hardness, 0, 100, "Hard", "Hardness")
 		if t == .Clone {

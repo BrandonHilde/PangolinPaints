@@ -142,11 +142,11 @@ workspace_builtin :: proc(i: int) {
 		ws_group("Select", .ONE, false, .Select_Rect, .Select_Ellipse, .Lasso, .Wand)
 		ws_group("Frame", .TWO, false, .Crop, .Move, .Transform)
 		ws_group("Retouch", .THREE, false, .Clone, .Blur, .Dodge, .Smudge, .Picker)
-		ws_group("Mark", .FOUR, false, .Brush, .Eraser, .Text)
+		ws_group("Mark", .FOUR, false, .Brush, .Line, .Eraser, .Text)
 		ws_group("View", .FIVE, false, .Hand, .Zoom)
 	case 3:
 		tool_groups_clear()
-		ws_group("Draw", .ONE, false, .Brush, .Eraser, .Smudge)
+		ws_group("Draw", .ONE, false, .Brush, .Line, .Eraser, .Smudge)
 		ws_group("Colour", .TWO, false, .Picker, .Bucket, .Gradient)
 		ws_group("View", .THREE, false, .Hand, .Zoom)
 		ws_group("Pen", .KEY_NULL, true, .Eraser, .Smudge)

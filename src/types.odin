@@ -208,6 +208,7 @@ Tool :: enum {
 	Crop,
 	Hand,
 	Zoom,
+	Line, // after the rest: tool groups are saved by index
 }
 
 TOOL_NAMES := [Tool]string {
@@ -231,6 +232,7 @@ TOOL_NAMES := [Tool]string {
 	.Crop           = "Crop (C)",
 	.Hand           = "Hand (H)",
 	.Zoom           = "Zoom (Z)",
+	.Line           = "Line / Polygon (U)",
 }
 
 Sel_Mode :: enum {

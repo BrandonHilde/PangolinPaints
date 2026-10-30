@@ -124,6 +124,7 @@ Cmd :: enum {
 	Tool_Crop,
 	Tool_Hand,
 	Tool_Zoom,
+	Tool_Line,
 	// adjustments and filters (must stay in the same order as `Fx`)
 	Fx_First,
 	Fx_Last = Fx_First + len(Fx) - 1,
@@ -212,6 +213,7 @@ SHORTCUTS := [?]Shortcut {
 	{.Tool_Crop, .C, false, false, false},
 	{.Tool_Hand, .H, false, false, false},
 	{.Tool_Zoom, .Z, false, false, false},
+	{.Tool_Line, .U, false, false, false},
 	{.Swap_Colors, .X, false, false, false},
 	{.Default_Colors, .D, false, false, false},
 	{.Brush_Smaller, .LEFT_BRACKET, false, false, false},
@@ -299,6 +301,21 @@ shortcuts_update :: proc() {
 	if tool_groups_key_capture() {
 		return
 	}
+	// line in progress: Enter finishes, Esc cancels, Backspace takes back a point
+	if line_active() {
+		if IsKeyPressed(.ENTER) || IsKeyPressed(.KP_ENTER) {
+			line_finish(false)
+			return
+		}
+		if IsKeyPressed(.ESCAPE) {
+			line_cancel()
+			return
+		}
+		if IsKeyPressed(.BACKSPACE) {
+			line_undo_point()
+			return
+		}
+	}
 	// pending transform / crop: Enter applies, Esc cancels
 	if xform.active || crop.active {
 		if IsKeyPressed(.ENTER) || IsKeyPressed(.KP_ENTER) {
@@ -357,7 +374,7 @@ select_tool :: proc(t: Tool) {
 
 run_cmd :: proc(cmd: Cmd) {
 	d := doc
-	if cmd >= .Tool_Brush && cmd <= .Tool_Zoom {
+	if cmd >= .Tool_Brush && cmd <= .Tool_Line {
 		select_tool_in_group(Tool(int(cmd) - int(Cmd.Tool_Brush)))
 		return
 	}
@@ -383,7 +400,7 @@ run_cmd :: proc(cmd: Cmd) {
 		return
 	}
 	switch cmd {
-	case .None, .Tool_Brush ..= .Tool_Zoom, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
+	case .None, .Tool_Brush ..= .Tool_Line, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
 	case .New:
 		dialog_open(.New_Doc)
 	case .Open:

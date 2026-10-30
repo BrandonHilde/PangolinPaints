@@ -126,7 +126,7 @@ tool_groups_default :: proc() {
 		append(&tool_groups, g)
 	}
 	add(.ONE, .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge)
-	add(.TWO, .Clone, .Bucket, .Gradient, .Picker, .Text)
+	add(.TWO, .Clone, .Bucket, .Gradient, .Line, .Picker, .Text)
 	add(.THREE, .Select_Rect, .Select_Ellipse, .Lasso, .Wand)
 	add(.FOUR, .Move, .Transform, .Crop)
 	add(.FIVE, .Hand, .Zoom)

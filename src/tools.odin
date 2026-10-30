@@ -209,6 +209,8 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		if !stroke_begin(t, p, main_col) {
 			drag.active = false
 		}
+	case .Line:
+		line_mouse_down(btn, p)
 	case .Bucket:
 		drag.active = false
 		if pt_in_doc(p) && can_edit() {
@@ -387,7 +389,7 @@ update_drag :: proc(p: Vec2) {
 		xform_mouse_drag(p)
 	case .Crop:
 		crop_mouse_drag(p)
-	case .Bucket, .Text, .Wand, .Hand, .Zoom:
+	case .Bucket, .Text, .Wand, .Hand, .Zoom, .Line:
 	}
 }
 
@@ -438,6 +440,8 @@ end_drag :: proc() {
 		xform.grab = .None
 	case .Crop:
 		crop_mouse_up()
+	case .Line:
+		line_mouse_up(drag.cur)
 	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom:
 	}
 	drag.active = false
@@ -498,7 +502,7 @@ canvas_update :: proc(vp: Rect) {
 			ui.cursor = .RESIZE_ALL
 		case .Zoom:
 			ui.cursor = .POINTING_HAND
-		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone:
+		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Line:
 			// the brush outline is drawn instead (see render_cursor)
 			ui.cursor = .DEFAULT
 		case .Transform:
@@ -1120,6 +1124,7 @@ crop_commit :: proc() {
 // Finish any pending tool interaction (switching tools, running commands).
 tools_commit_pending :: proc() {
 	text_end()
+	if !drag.active do line_finish(false)
 	if drag.active {
 		end_drag()
 	}

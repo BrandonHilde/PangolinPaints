@@ -326,6 +326,28 @@ selftest :: proc() -> int {
 		show_grid, grid_w, grid_h = false, 64, 64
 	}
 
+	// --- line / polygon tool ---------------------------------------------------------
+	{
+		d := fresh(100, 100, white)
+		set_fg(red)
+		line_outline, line_fill = true, false
+		append(&line_tool.pts, Vec2{10, 10}, Vec2{90, 10}, Vec2{90, 90})
+		line_finish(false)
+		check(!line_active() && len(d.undo) == 1, "a finished polyline is one undo step")
+		check(px(d, 0, 50, 10) == red && px(d, 0, 90, 50) == red && px(d, 0, 50, 50) == white, "polyline paints straight segments")
+		history_undo(d)
+		line_fill = true
+		append(&line_tool.pts, Vec2{20, 20}, Vec2{80, 20}, Vec2{80, 80}, Vec2{20, 80})
+		line_finish(true)
+		check(len(d.undo) == 1 && px(d, 0, 50, 50) == red && px(d, 0, 20, 50) == red && px(d, 0, 5, 50) == white, "closed polygon is filled and outlined in one step")
+		history_undo(d)
+		line_outline = false
+		append(&line_tool.pts, Vec2{20, 20}, Vec2{80, 20}, Vec2{50, 80})
+		line_finish(true)
+		check(len(d.undo) == 1 && px(d, 0, 50, 40) == red && px(d, 0, 50, 19) == white, "fill without outline")
+		line_outline, line_fill = true, false
+	}
+
 	// --- defaults ------------------------------------------------------------------
 	{
 		check(brush_default(.Brush).pressure == .Pen && brush_default(.Eraser).pressure == .Pen, "pen pressure is on by default")

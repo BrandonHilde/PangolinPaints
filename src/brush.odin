@@ -107,6 +107,10 @@ brush_default :: proc(t: Tool) -> Brush {
 	case .Clone:
 		b.size = 60
 		b.hardness = 40
+	case .Line:
+		b.size = 6
+		b.hardness = 95
+		b.spacing = 5
 	}
 	return b
 }
@@ -299,7 +303,7 @@ brush_presets_init :: proc() {
 
 paint_tool :: proc(t: Tool) -> bool {
 	#partial switch t {
-	case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone:
+	case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Line:
 		return true
 	}
 	return false
@@ -434,7 +438,9 @@ stroke_uses_mask :: proc(t: Tool) -> bool {
 }
 
 // Start a stroke at canvas position p. Returns false if the layer can't be painted.
-stroke_begin :: proc(t: Tool, p: Vec2, color: Color) -> bool {
+// The line tool paints as the brush, with its own settings.
+stroke_begin :: proc(tool: Tool, p: Vec2, color: Color) -> bool {
+	t := tool == .Line ? Tool.Brush : tool
 	d := doc
 	if !can_edit() {
 		return false
@@ -457,7 +463,7 @@ stroke_begin :: proc(t: Tool, p: Vec2, color: Color) -> bool {
 	}
 	s.active = true
 	s.tool = t
-	s.b = brushes[t]
+	s.b = brushes[tool]
 	if !pen_active() {
 		// pressure only exists for a pen: the mouse always paints at full pressure
 		s.b.pressure = .Off
@@ -908,7 +914,7 @@ dab_apply_one :: proc(s: ^Stroke, dab: Dab) {
 		dab_blur(s, &e, box, alpha)
 	case .Dodge:
 		dab_dodge(s, &e, box, alpha)
-	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom:
+	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom, .Line:
 	}
 	doc_dirty(d, box)
 }

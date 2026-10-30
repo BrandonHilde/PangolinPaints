@@ -113,6 +113,7 @@ Tiles :: struct {
 // Editable text layer. The pixels in `Layer.pix` are a rendering of this; any operation that edits
 // the pixels directly turns `on` off ("rasterised") so the two can never disagree.
 TEXT_MAX :: 2048
+TEXT_PAL :: 32
 
 Text_Info :: struct {
 	on:        bool,
@@ -126,6 +127,10 @@ Text_Info :: struct {
 	track:     int, // extra letter spacing, 1/100 em
 	x, y:      f32, // top-left corner of the text block on the canvas
 	bx:        Box, // where it was last rendered
+	// per-character colours: cidx[i] is 0 for `color`, k for pal[k - 1] (indexed by byte, like `buf`)
+	cidx:      [TEXT_MAX]u8,
+	pal:       [TEXT_PAL]Color,
+	npal:      int,
 }
 
 Layer :: struct {

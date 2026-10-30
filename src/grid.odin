@@ -23,6 +23,8 @@ tool_snaps :: proc(t: Tool) -> bool {
 	#partial switch t {
 	case .Hand, .Zoom, .Picker:
 		return false
+	case .Text:
+		return !text_edit.active // placing a new block snaps; selecting text doesn't
 	}
 	return true
 }

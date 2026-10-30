@@ -196,6 +196,79 @@ text_str :: proc(ti: ^Text_Info) -> string {
 	return string(ti.buf[:ti.n])
 }
 
+// Character colours -------------------------------------------------------------
+
+text_char_color :: proc(ti: ^Text_Info, i: int) -> Color {
+	k := int(ti.cidx[i])
+	if k == 0 || k > ti.npal do return ti.color
+	return ti.pal[k - 1]
+}
+
+// Drops palette entries no character uses any more.
+text_pal_compact :: proc(ti: ^Text_Info) {
+	used: [TEXT_PAL + 1]bool
+	for k in ti.cidx[:ti.n] do used[k] = true
+	remap: [TEXT_PAL + 1]u8
+	n := 0
+	for k in 1 ..= ti.npal {
+		if used[k] {
+			ti.pal[n] = ti.pal[k - 1]
+			n += 1
+			remap[k] = u8(n)
+		}
+	}
+	for &k in ti.cidx[:ti.n] do k = remap[k]
+	ti.npal = n
+}
+
+// Colour index for `c` (0 = the text's own colour), adding it to the palette; -1 if there is no room.
+text_pal_index :: proc(ti: ^Text_Info, c: Color) -> int {
+	if c == ti.color do return 0
+	for p, k in ti.pal[:ti.npal] {
+		if p == c do return k + 1
+	}
+	if ti.npal == TEXT_PAL do text_pal_compact(ti)
+	if ti.npal == TEXT_PAL do return -1
+	ti.pal[ti.npal] = c
+	ti.npal += 1
+	return ti.npal
+}
+
+text_color_range :: proc(ti: ^Text_Info, a, b: int, c: Color) {
+	k := text_pal_index(ti, c)
+	if k < 0 do return
+	for &x in ti.cidx[a:b] do x = u8(k)
+	text_pal_compact(ti)
+}
+
+// One colour for the whole text.
+text_color_all :: proc(ti: ^Text_Info, c: Color) {
+	ti.color = c
+	ti.npal = 0
+	for &x in ti.cidx[:ti.n] do x = 0
+}
+
+// Inserts UTF-8 bytes at byte index `at` with colour index `k`; returns how many bytes fit.
+text_insert_bytes :: proc(ti: ^Text_Info, at: int, s: []u8, k: u8) -> int {
+	n := min(len(s), TEXT_MAX - ti.n)
+	if n <= 0 do return 0
+	copy(ti.buf[at + n:ti.n + n], ti.buf[at:ti.n])
+	copy(ti.cidx[at + n:ti.n + n], ti.cidx[at:ti.n])
+	copy(ti.buf[at:at + n], s[:n])
+	for &x in ti.cidx[at:at + n] do x = k
+	ti.n += n
+	return n
+}
+
+// Removes bytes [a, b).
+text_delete_range :: proc(ti: ^Text_Info, a, b: int) {
+	if b <= a do return
+	copy(ti.buf[a:], ti.buf[b:ti.n])
+	copy(ti.cidx[a:], ti.cidx[b:ti.n])
+	ti.n -= b - a
+	if ti.npal > 0 do text_pal_compact(ti)
+}
+
 @(private = "file")
 glyph_adv :: proc(face: ^Ufont, sc: f32, r, next: rune, track: f32) -> f32 {
 	ad, lsb: i32
@@ -328,6 +401,10 @@ text_draw :: proc(d: ^Doc, l: ^Layer, L: ^Text_Layout) -> Box {
 	if box_empty(bb) do return {}
 	bw, bh := bb.x1 - bb.x0, bb.y1 - bb.y0
 	cov := make([]f32, bw * bh, context.temp_allocator)
+	// with character colours, premultiplied colour is accumulated alongside the coverage
+	multi := ti.npal > 0
+	acc: [][3]f32
+	if multi do acc = make([][3]f32, bw * bh, context.temp_allocator)
 	size := f32(max(ti.size, 1))
 	track := size * f32(ti.track) / 100
 	s := text_str(ti)
@@ -335,9 +412,13 @@ text_draw :: proc(d: ^Doc, l: ^Layer, L: ^Text_Layout) -> Box {
 		rs := utf8.string_to_runes(s[ln.a:ln.b], context.temp_allocator)
 		pen := ti.x + text_line_x(ti, L, ln.w)
 		base := ti.y + f32(li) * L.lh + L.asc
+		bi := ln.a
 		for r, i in rs {
 			next: rune
 			if i + 1 < len(rs) do next = rs[i + 1]
+			gc := text_char_color(ti, bi)
+			gcol := [3]f32{f32(gc.r), f32(gc.g), f32(gc.b)}
+			bi += utf8.rune_size(r)
 			if r != ' ' && r != '\t' {
 				fx := pen - math.floor(pen)
 				x0, y0, x1, y1: i32
@@ -358,6 +439,10 @@ text_draw :: proc(d: ^Doc, l: ^Layer, L: ^Text_Layout) -> Box {
 							if c <= 0 do continue
 							k := &cov[py * bw + px]
 							k^ = k^ + c * (1 - k^)
+							if multi {
+								o := &acc[py * bw + px]
+								o^ = gcol * c + o^ * (1 - c)
+							}
 						}
 					}
 				}
@@ -372,7 +457,12 @@ text_draw :: proc(d: ^Doc, l: ^Layer, L: ^Text_Layout) -> Box {
 			if c <= 0 do continue
 			a := u8(clamp(c * f32(col.a) + 0.5, 0, 255))
 			if a == 0 do continue
-			tiles_set(&l.pix, bb.x0 + x, bb.y0 + y, Color{col.r, col.g, col.b, a}, {})
+			pc := col
+			if multi {
+				v := acc[y * bw + x] / c
+				pc = Color{u8(clamp(v.r + 0.5, 0, 255)), u8(clamp(v.g + 0.5, 0, 255)), u8(clamp(v.b + 0.5, 0, 255)), 255}
+			}
+			tiles_set(&l.pix, bb.x0 + x, bb.y0 + y, Color{pc.r, pc.g, pc.b, a}, {})
 		}
 	}
 	return bb

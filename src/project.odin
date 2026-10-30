@@ -15,7 +15,7 @@ import "core:image/qoi"
 // ---------------------------------------------------------------------------
 
 PPNT_MAGIC :: "PPNT"
-PPNT_VERSION :: 2
+PPNT_VERSION :: 3 // 2: text layers, 3: text character colours
 
 LF_VISIBLE :: 1
 LF_LOCKED :: 2
@@ -151,7 +151,7 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 			read_tiles(&r, &l.mask)
 		}
 		if flags & LF_TEXT != 0 && ver >= 2 {
-			read_text(&r, &l.text)
+			read_text(&r, &l.text, int(ver))
 		}
 		append(&nd.layers, l)
 		if r.bad do break
@@ -582,9 +582,15 @@ write_text :: proc(w: ^Writer, t: ^Text_Info) {
 	for v in ([4]int{t.bx.x0, t.bx.y0, t.bx.x1, t.bx.y1}) do w32(w, transmute(u32)i32(v))
 	w32(w, u32(t.n))
 	append(&w.b, ..t.buf[:t.n])
+	// version 3: character colours
+	w8(w, u8(t.npal))
+	for c in t.pal[:t.npal] do wcol(w, c)
+	if t.npal > 0 {
+		append(&w.b, ..t.cidx[:t.n])
+	}
 }
 
-read_text :: proc(r: ^Reader, t: ^Text_Info) {
+read_text :: proc(r: ^Reader, t: ^Text_Info, ver: int) {
 	t.on = true
 	name_set(&t.font, rstr(r))
 	t.size = int(r32(r))
@@ -608,4 +614,20 @@ read_text :: proc(r: ^Reader, t: ^Text_Info) {
 	r.pos += n
 	t.size = clamp(t.size, 1, 4000)
 	t.line_pct = clamp(t.line_pct, 10, 1000)
+	if ver < 3 do return
+	t.npal = int(r8(r))
+	if t.npal > TEXT_PAL {
+		r.bad = true
+		return
+	}
+	for &c in t.pal[:t.npal] do c = rcol(r)
+	if t.npal > 0 {
+		if r.pos + n > len(r.d) {
+			r.bad = true
+			return
+		}
+		copy(t.cidx[:n], r.d[r.pos:r.pos + n])
+		r.pos += n
+		for &k in t.cidx[:n] do if int(k) > t.npal do k = 0
+	}
 }

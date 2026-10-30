@@ -229,6 +229,8 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		drag.active = false
 		if pt_in_doc(p) || text_edit.active {
 			text_click(p)
+			// dragging inside the text being edited selects
+			drag.active = text_edit_layer() != nil && !ui.dbl_click
 		}
 	case .Picker:
 		pick_color(p, btn)
@@ -389,7 +391,9 @@ update_drag :: proc(p: Vec2) {
 		xform_mouse_drag(p)
 	case .Crop:
 		crop_mouse_drag(p)
-	case .Bucket, .Text, .Wand, .Hand, .Zoom, .Line:
+	case .Text:
+		if drag.moved do text_drag(p)
+	case .Bucket, .Wand, .Hand, .Zoom, .Line:
 	}
 }
 

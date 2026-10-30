@@ -58,12 +58,14 @@ set_fg :: proc(c: Color) {
 		fg_h = h
 	}
 	fg_s, fg_v = s, v
+	text_fg_changed()
 }
 
 set_fg_hsv :: proc(h, s, v: f32) {
 	color_link_clear()
 	fg_h, fg_s, fg_v = h, s, v
 	fg = hsv_to_rgb(h, s, v)
+	text_fg_changed()
 }
 
 // Colour-group swatch the colour picker is editing (picked from the toolbar), or -1.

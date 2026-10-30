@@ -348,6 +348,48 @@ selftest :: proc() -> int {
 		line_outline, line_fill = true, false
 	}
 
+	// --- text character colours -------------------------------------------------------
+	{
+		d := fresh(400, 120, white)
+		text_defaults_init()
+		l := layer_make("Text", d.w, d.h)
+		l.text = text_defaults
+		l.text.on = true
+		l.text.size = 40
+		l.text.x, l.text.y = 10, 10
+		text_color_all(&l.text, blue)
+		append(&d.layers, l)
+		d.active_layer = 1
+		ti := &d.layers[1].text
+		s := "MMMM MMMM"
+		text_insert_bytes(ti, 0, transmute([]u8)s, 0)
+		text_color_range(ti, 5, 9, red)
+		check(ti.npal == 1 && text_char_color(ti, 0) == blue && text_char_color(ti, 6) == red, "colour a range of text")
+		text_render_layer(d, 1)
+		count :: proc(d: ^Doc, x0, x1: int, c: Color) -> int {
+			n := 0
+			for y in 0 ..< d.h do for x in x0 ..< x1 {
+				p := tiles_get(&d.layers[1].pix, x, y, {})
+				if p.a == 255 && p.r == c.r && p.g == c.g && p.b == c.b do n += 1
+			}
+			return n
+		}
+		mx, _, _ := text_caret_xy(ti, 5) // where the red part starts
+		mid := int(mx) - 1
+		check(count(d, 0, mid, blue) > 100 && count(d, 0, mid, red) == 0 && count(d, mid, d.w, red) > 100 && count(d, mid, d.w, blue) == 0, "coloured text renders in its colours")
+		// inserting and deleting keeps each character's colour
+		text_insert_bytes(ti, 0, transmute([]u8)string("x"), 0)
+		text_delete_range(ti, 0, 1)
+		check(text_char_color(ti, 5) == red && text_char_color(ti, 4) == blue, "colours move with the text")
+		text_delete_range(ti, 5, 9)
+		check(ti.npal == 0, "unused text colours are dropped")
+		text_color_range(ti, 0, 2, red)
+		data := project_encode(d)
+		nd, ok := project_decode(data)
+		check(ok && nd.layers[1].text.npal == 1 && text_char_color(&nd.layers[1].text, 1) == red && text_char_color(&nd.layers[1].text, 3) == blue, "text colours are saved in projects")
+		if ok do doc_destroy(nd)
+	}
+
 	// --- defaults ------------------------------------------------------------------
 	{
 		check(brush_default(.Brush).pressure == .Pen && brush_default(.Eraser).pressure == .Pen, "pen pressure is on by default")

@@ -8,17 +8,22 @@ import "core:unicode/utf8"
 // Text tool: click the canvas to start a text layer, click existing text to edit it.
 // Type on the canvas; Esc, Ctrl+Enter, or clicking elsewhere finishes. Every setting lives on the layer
 // (and as defaults for the next one), so text stays editable and is saved with the project.
+// Drag, Shift+arrows or double click select text; picking a colour (colour picker, swatches,
+// toolbar colours) while text is selected colours just the selection.
 // ---------------------------------------------------------------------------
 
 Text_Edit :: struct {
-	active:  bool,
-	d:       ^Doc,
-	layer:   int,
-	caret:   int, // byte index
-	created: bool, // this session made the layer: an empty result removes it again
-	want_x:  f32, // column kept while moving up / down
-	vert:    bool, // the last key was Up or Down
-	blink_t: f64,
+	active:   bool,
+	d:        ^Doc,
+	layer:    int,
+	caret:    int, // byte index
+	anchor:   int, // other end of the selection (== caret: nothing selected)
+	created:  bool, // this session made the layer: an empty result removes it again
+	want_x:   f32, // column kept while moving up / down
+	vert:     bool, // the last key was Up or Down
+	blink_t:  f64,
+	type_col: Color, // colour picked with nothing selected: used for what is typed next
+	has_type: bool,
 }
 
 text_edit: Text_Edit
@@ -108,14 +113,62 @@ text_layer_at :: proc(d: ^Doc, p: Vec2) -> int {
 	return -1
 }
 
+// Selected byte range, if any.
+text_sel_range :: proc() -> (a, b: int, ok: bool) {
+	if text_edit_layer() == nil || text_edit.caret == text_edit.anchor do return
+	return min(text_edit.caret, text_edit.anchor), max(text_edit.caret, text_edit.anchor), true
+}
+
+@(private = "file")
+is_word_byte :: proc(c: u8) -> bool {
+	return c != ' ' && c != '\n' && c != '\t'
+}
+
+@(private = "file")
+select_word :: proc(ti: ^Text_Info, i: int) {
+	a, b := i, i
+	for a > 0 && is_word_byte(ti.buf[a - 1]) do a -= 1
+	for b < ti.n && is_word_byte(ti.buf[b]) do b += 1
+	text_edit.anchor, text_edit.caret = a, b
+}
+
+// Mouse drag while editing: extend the selection to p.
+text_drag :: proc(p: Vec2) {
+	l := text_edit_layer()
+	if l == nil do return
+	text_edit.caret = text_hit_index(&l.text, p)
+	text_edit.has_type = false
+	text_edit.blink_t = ui.time
+}
+
+// The foreground colour changed: colour the selection, or remember it for the next typing.
+text_fg_changed :: proc() {
+	l := text_edit_layer()
+	if l == nil do return
+	if a, b, ok := text_sel_range(); ok {
+		text_begin_change()
+		text_color_range(&l.text, a, b, fg)
+		text_changed()
+	} else {
+		text_edit.type_col = fg
+		text_edit.has_type = true
+	}
+}
+
 text_click :: proc(p: Vec2) {
 	d := doc
 	text_defaults_init()
-	// inside the block being edited: just move the caret
+	// inside the block being edited: move the caret (Shift: extend the selection, double click: select a word)
 	if l := text_edit_layer(); l != nil {
 		b := l.text.bx
 		if p.x >= f32(b.x0) && p.x < f32(b.x1) && p.y >= f32(b.y0) && p.y < f32(b.y1) {
 			text_edit.caret = text_hit_index(&l.text, p)
+			if ui.dbl_click {
+				select_word(&l.text, text_edit.caret)
+			} else if !ui.shift {
+				text_edit.anchor = text_edit.caret
+			}
+			text_edit.has_type = false
 			text_edit.blink_t = ui.time
 			return
 		}
@@ -131,11 +184,13 @@ text_click :: proc(p: Vec2) {
 		d.edit_mask = false
 		history_push(d)
 		text_hist_open = true
+		ci := text_hit_index(&d.layers[li].text, p)
 		text_edit = Text_Edit {
 			active  = true,
 			d       = d,
 			layer   = li,
-			caret   = text_hit_index(&d.layers[li].text, p),
+			caret   = ci,
+			anchor  = ci,
 			blink_t = ui.time,
 		}
 		return
@@ -147,7 +202,7 @@ text_click :: proc(p: Vec2) {
 	l.text.on = true
 	l.text.n = 0
 	l.text.x, l.text.y = p.x, p.y
-	l.text.color = fg
+	text_color_all(&l.text, fg)
 	l.blend = brush_blend // the new text layer composites with the current brush blend mode
 	text_defaults.color = fg
 	inject_at(&d.layers, d.active_layer + 1, l)
@@ -163,21 +218,45 @@ text_click :: proc(p: Vec2) {
 	}
 }
 
+// Removes the selected text, if any.
+@(private = "file")
+delete_selection :: proc(ti: ^Text_Info) -> bool {
+	a, b, ok := text_sel_range()
+	if !ok do return false
+	text_delete_range(ti, a, b)
+	text_edit.caret, text_edit.anchor = a, a
+	return true
+}
+
+// Types `s` at the caret, replacing the selection. New characters take the colour picked for typing,
+// or the colour of the character before them.
 @(private = "file")
 insert_text :: proc(l: ^Layer, s: string) {
 	ti := &l.text
+	// the colour of the replaced text carries over to what replaces it
+	if a, _, ok := text_sel_range(); ok && !text_edit.has_type {
+		text_edit.type_col = text_char_color(ti, a)
+		text_edit.has_type = true
+	}
+	delete_selection(ti)
+	k: u8
+	c := text_edit.caret
+	if text_edit.has_type {
+		k = u8(max(text_pal_index(ti, text_edit.type_col), 0))
+	} else if c > 0 {
+		k = ti.cidx[c - 1]
+	} else if ti.n > 0 {
+		k = ti.cidx[0]
+	}
 	for r in s {
 		if r == '\r' do continue
 		if r < 32 && r != '\n' do continue
 		if r == 127 do continue
 		enc, n := utf8.encode_rune(r)
 		if ti.n + n > TEXT_MAX do break
-		c := text_edit.caret
-		copy(ti.buf[c + n:ti.n + n], ti.buf[c:ti.n])
-		copy(ti.buf[c:c + n], enc[:n])
-		ti.n += n
-		text_edit.caret += n
+		text_edit.caret += text_insert_bytes(ti, text_edit.caret, enc[:n], k)
 	}
+	text_edit.anchor = text_edit.caret
 }
 
 @(private = "file")
@@ -222,6 +301,20 @@ text_update :: proc() {
 		changed = true
 		typed = true
 	}
+	if ui.ctrl && (IsKeyPressed(.C) || IsKeyPressed(.X)) {
+		if a, b, ok := text_sel_range(); ok {
+			gfx_clipboard_set(string(ti.buf[a:b]))
+			if IsKeyPressed(.X) {
+				delete_selection(ti)
+				changed = true
+				typed = true
+			}
+		}
+	}
+	if ui.ctrl && IsKeyPressed(.A) {
+		text_edit.anchor, text_edit.caret = 0, ti.n
+		text_edit.blink_t = ui.time
+	}
 	key :: proc(k: KeyboardKey) -> bool {
 		return IsKeyPressed(k) || IsKeyPressedRepeat(k)
 	}
@@ -234,29 +327,38 @@ text_update :: proc() {
 		changed = true
 		typed = true
 	}
-	if key(.BACKSPACE) && text_edit.caret > 0 {
-		s := prev_rune_start(ti, text_edit.caret)
-		copy(ti.buf[s:], ti.buf[text_edit.caret:ti.n])
-		ti.n -= text_edit.caret - s
-		text_edit.caret = s
+	if key(.BACKSPACE) && (text_edit.caret > 0 || text_edit.caret != text_edit.anchor) {
+		if !delete_selection(ti) {
+			s := prev_rune_start(ti, text_edit.caret)
+			text_delete_range(ti, s, text_edit.caret)
+			text_edit.caret, text_edit.anchor = s, s
+		}
 		changed = true
 		typed = true
 	}
-	if key(.DELETE) && text_edit.caret < ti.n {
-		e := next_rune_end(ti, text_edit.caret)
-		copy(ti.buf[text_edit.caret:], ti.buf[e:ti.n])
-		ti.n -= e - text_edit.caret
+	if key(.DELETE) && (text_edit.caret < ti.n || text_edit.caret != text_edit.anchor) {
+		if !delete_selection(ti) {
+			text_delete_range(ti, text_edit.caret, next_rune_end(ti, text_edit.caret))
+		}
 		changed = true
 		typed = true
 	}
 	moved := false
 	if changed || key(.LEFT) || key(.RIGHT) do text_edit.vert = false
 	if key(.LEFT) {
-		text_edit.caret = prev_rune_start(ti, text_edit.caret)
+		if a, _, ok := text_sel_range(); ok && !ui.shift {
+			text_edit.caret = a // collapse to the start
+		} else {
+			text_edit.caret = prev_rune_start(ti, text_edit.caret)
+		}
 		moved = true
 	}
 	if key(.RIGHT) {
-		text_edit.caret = next_rune_end(ti, text_edit.caret)
+		if _, b, ok := text_sel_range(); ok && !ui.shift {
+			text_edit.caret = b
+		} else {
+			text_edit.caret = next_rune_end(ti, text_edit.caret)
+		}
 		moved = true
 	}
 	if key(.HOME) || key(.END) || key(.UP) || key(.DOWN) {
@@ -282,6 +384,10 @@ text_update :: proc() {
 		text_end()
 		return
 	}
+	if moved {
+		if !ui.shift do text_edit.anchor = text_edit.caret
+		text_edit.has_type = false
+	}
 	if changed || moved {
 		text_edit.blink_t = ui.time
 	}
@@ -304,6 +410,19 @@ text_draw_overlay :: proc(d: ^Doc) {
 	editing := text_edit_layer() != nil
 	col := editing ? C_ACCENT : Color{246, 170, 104, 120}
 	draw_rect_outline({a.x, a.y, z.x - a.x, z.y - a.y}, col)
+	if sa, sb, ok := text_sel_range(); ok {
+		L := text_layout(ti)
+		for ln in L.lines {
+			lo, hi := max(sa, ln.a), min(sb, ln.b)
+			if lo > hi || (lo == hi && sb <= ln.b) do continue
+			x0, y0, h := text_caret_xy(ti, lo)
+			x1, _, _ := text_caret_xy(ti, hi)
+			if sb > ln.b do x1 += f32(ti.size) * 0.25 // the selection runs on past the line break
+			p0 := canvas_to_screen({x0, y0})
+			p1 := canvas_to_screen({x1, y0 + h})
+			draw_rect(p0.x, p0.y, max(p1.x - p0.x, 1), p1.y - p0.y, Color{C_ACCENT.r, C_ACCENT.g, C_ACCENT.b, 70})
+		}
+	}
 	if editing && i32((ui.time - text_edit.blink_t) * 2) % 2 == 0 {
 		cx, cy, ch := text_caret_xy(ti, text_edit.caret)
 		s0 := canvas_to_screen({cx, cy})
@@ -343,15 +462,20 @@ options_text :: proc(x: ^i32, y: i32) {
 		apply(live)
 	}
 	x^ += 97
-	// colour chip: shows the text colour; click to take the foreground colour
+	// colour chip: shows the text (or selection) colour; click to take the foreground colour
+	sa, sb, has_sel := text_sel_range()
 	cr := Rect{x^, y, 24, 14}
 	id := make_id(cr, "textcol")
-	clicked, _, hover := button_behavior(id, cr, "Text colour (click to use the foreground colour)")
-	draw_rrect(f32(cr.x), f32(cr.y), 24, 14, RADIUS, ti.color)
+	clicked, _, hover := button_behavior(id, cr, has_sel ? "Selection colour (click to use the foreground colour)" : "Text colour (click to use the foreground colour for all of it)")
+	draw_rrect(f32(cr.x), f32(cr.y), 24, 14, RADIUS, has_sel ? text_char_color(ti, sa) : ti.color)
 	draw_rrect_outline(f32(cr.x), f32(cr.y), 24, 14, RADIUS, hover ? WHITE : C_RING_HI)
 	if clicked {
 		if live do text_begin_change()
-		ti.color = fg
+		if has_sel {
+			text_color_range(ti, sa, sb, fg)
+		} else {
+			text_color_all(ti, fg)
+		}
 		apply(live)
 	}
 	x^ += 30

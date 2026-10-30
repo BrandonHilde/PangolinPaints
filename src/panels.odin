@@ -25,10 +25,6 @@ main_ui :: proc() {
 	optbar := Rect{0, MENU_H, W, OPT_H}
 	status := Rect{0, H - STATUS_H, W, STATUS_H}
 	body := Rect{0, MENU_H + OPT_H, W, H - MENU_H - OPT_H - STATUS_H}
-	modebar: Rect
-	if modebar_visible() {
-		modebar = cut_top(&body, MODE_H)
-	}
 	groups_bar := Rect{0, H - GROUPS_BAR_H, W, GROUPS_BAR_H}
 	if canvas_mode {
 		body.h += STATUS_H - GROUPS_BAR_H
@@ -64,7 +60,6 @@ main_ui :: proc() {
 		panel_status(status)
 	}
 	panel_options(optbar)
-	if modebar_visible() do panel_modebar(modebar)
 	panel_menubar(menubar)
 }
 
@@ -611,7 +606,11 @@ panel_options :: proc(r: Rect) {
 	x := r.x + 8
 	y := r.y + (r.h - 1 - 14) / 2
 	t := eff_tool()
-	if paint_tool(t) {
+	if options_switch_on && options_switch == .Grid && show_grid {
+		options_grid(&x, y)
+	} else if options_switch_on && options_switch == .Mirror && mirror_on {
+		options_mirror(&x, y)
+	} else if paint_tool(t) {
 		options_brush(&x, y, t)
 		if t == .Line do options_line(&x, y)
 	} else {

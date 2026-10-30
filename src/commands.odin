@@ -372,6 +372,7 @@ shortcuts_update :: proc() {
 }
 
 select_tool :: proc(t: Tool) {
+	options_show_tool() // picking a tool brings its settings back to the options bar
 	if t != cur_tool {
 		tools_commit_pending()
 	}
@@ -594,16 +595,21 @@ run_cmd :: proc(cmd: Cmd) {
 		show_thirds = !show_thirds
 	case .Toggle_Grid:
 		show_grid = !show_grid
+		switch_changed(.Grid)
 		set_status(show_grid ? (snap_grid ? "Grid on, snapping" : "Grid on") : "Grid off")
 	case .Toggle_Snap:
 		snap_grid = !snap_grid
-		if snap_grid do show_grid = true
+		if snap_grid && !show_grid {
+			show_grid = true
+			switch_changed(.Grid)
+		}
 		set_status(snap_grid ? "Snap to grid on" : "Snap to grid off")
 	case .Grid_Settings:
 		dialog_open(.Grid)
 	case .Toggle_Mirror:
 		mirror_on = !mirror_on
 		if !mirror_on do mirror_placing = false
+		switch_changed(.Mirror)
 		set_status(mirror_on ? "Mirror painting on" : "Mirror painting off")
 	case .Toggle_Navigator:
 		show_navigator = !show_navigator

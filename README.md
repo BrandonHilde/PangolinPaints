@@ -31,7 +31,8 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   canvas), at any angle: one mirror reflects left / right, more make kaleidoscope / snowflake symmetry. Applies to
   every brush tool and the line tool, including filled shapes.
 - **Grid and Mirror switches** can be added to tool groups (the group's + button) to turn them on and off with a
-  click or the group's hotkey; while either is on, its settings sit in a bar under the tool options.
+  click or the group's hotkey. The options bar shows whatever was picked last: clicking a switch shows its settings
+  there (clicking it again turns it off), and picking or using a tool brings that tool's settings back.
 - **Image editing**
   - Adjust: auto contrast, brightness/contrast, levels, curves (per channel, with histogram), exposure,
     hue/saturation (colorize), vibrance, colour balance, temperature/tint, desaturate, sepia, invert, posterize,

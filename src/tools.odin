@@ -173,6 +173,7 @@ sel_mode_now :: proc() -> Sel_Mode {
 
 begin_drag :: proc(btn: int, p: Vec2) {
 	t := eff_tool()
+	if t != .Hand && t != .Zoom do options_show_tool() // the options bar follows the tool in use
 	d := doc
 	drag.active = true
 	drag.btn = btn

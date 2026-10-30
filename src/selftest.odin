@@ -350,6 +350,23 @@ selftest :: proc() -> int {
 		show_grid, grid_w, grid_h, grid_angle = false, 64, 64, 0
 	}
 
+	// --- switches share the options bar ---------------------------------------------------
+	{
+		fresh(32, 32, white)
+		show_grid, mirror_on = false, false
+		tool_toggle(.Grid)
+		check(show_grid && options_switch_on && options_switch == .Grid, "clicking Grid turns it on and shows its settings")
+		select_tool(.Brush)
+		check(show_grid && !options_switch_on, "picking a tool brings its settings back")
+		tool_toggle(.Grid)
+		check(show_grid && options_switch_on, "clicking Grid while it is on shows its settings")
+		tool_toggle(.Grid)
+		check(!show_grid && !options_switch_on, "clicking Grid again turns it off")
+		tool_toggle(.Mirror)
+		tool_toggle(.Mirror)
+		check(!mirror_on && !options_switch_on, "Mirror switches the same way")
+	}
+
 	// --- mirror painting ---------------------------------------------------------------
 	{
 		d := fresh(200, 100, white)

@@ -201,6 +201,7 @@ menu_build :: proc(idx: int) {
 		item("Rule of Thirds", cmd = .Toggle_Thirds, checked = show_thirds)
 		item("Navigator", cmd = .Toggle_Navigator, checked = show_navigator)
 		item("Canvas Mode", cmd = .Toggle_Canvas_Mode, checked = canvas_mode)
+		item("Seamless Mode", cmd = .Toggle_Seamless, checked = seamless_mode)
 		item("Cycle Transparency Display", cmd = .Cycle_Canvas_Bg)
 		popup_sep()
 		item("Preferences...", cmd = .Preferences)
@@ -262,6 +263,9 @@ panel_menubar :: proc(r: Rect) {
 	text(tx, r.y + (r.h - 1 - FONT_CAP) / 2, t, C_TEXT_DIM)
 	if icon_button(Rect{tx - 28, r.y + 3, 20, r.h - 7}, .Canvas_Mode, "Canvas mode (Tab)", canvas_mode) {
 		run_cmd(.Toggle_Canvas_Mode)
+	}
+	if icon_button(Rect{tx - 52, r.y + 3, 20, r.h - 7}, .Seamless, "Seamless mode", seamless_mode) {
+		run_cmd(.Toggle_Seamless)
 	}
 }
 

@@ -102,6 +102,19 @@ pt_in_doc :: proc(p: Vec2) -> bool {
 	return p.x >= 0 && p.y >= 0 && p.x < f32(doc.w) && p.y < f32(doc.h)
 }
 
+// Seamless mode: a point on any of the surrounding tiles is the same point on the canvas.
+wrap_pt :: proc(p: Vec2) -> Vec2 {
+	if !seamless_mode {
+		return p
+	}
+	w, h := f32(doc.w), f32(doc.h)
+	return Vec2{p.x - math.floor(p.x / w) * w, p.y - math.floor(p.y / h) * h}
+}
+
+wrap_i :: #force_inline proc(v, n: int) -> int {
+	return ((v % n) + n) % n
+}
+
 ipt :: proc(p: Vec2) -> IVec {
 	return IVec{int(math.floor(p.x)), int(math.floor(p.y))}
 }
@@ -109,7 +122,7 @@ ipt :: proc(p: Vec2) -> IVec {
 // Average colour around p from the composite (or the active layer).
 sample_color :: proc(p: Vec2, merged: bool) -> (c: Color, ok: bool) {
 	d := doc
-	q := ipt(p)
+	q := ipt(wrap_pt(p))
 	if q.x < 0 || q.y < 0 || q.x >= d.w || q.y >= d.h {
 		return
 	}
@@ -167,6 +180,11 @@ begin_drag :: proc(btn: int, p: Vec2) {
 	drag.sel_moving = false
 	drag.moved = false
 	main_col := btn == 0 ? fg : bg
+	p := p
+	if t == .Bucket || t == .Wand || t == .Text {
+		// point tools act on the canvas copy of whatever tile was clicked
+		p = wrap_pt(p)
+	}
 	switch t {
 	case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone:
 		if t == .Clone && ui.alt {
@@ -216,8 +234,9 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		drag.sel_mode = sel_mode_now()
 		drag.sel_base = d.sel != nil ? slice.clone(d.sel.v) : nil
 		history_push(d)
-		q := ipt(p)
-		if drag.sel_mode == .Replace && d.sel != nil && pt_in_doc(p) && d.sel.v[q.y * d.w + q.x] >= 128 {
+		wp := wrap_pt(p)
+		q := ipt(wp)
+		if drag.sel_mode == .Replace && d.sel != nil && pt_in_doc(wp) && d.sel.v[q.y * d.w + q.x] >= 128 {
 			drag.sel_moving = true
 		}
 		clear(&drag.lasso)
@@ -295,9 +314,11 @@ update_drag :: proc(p: Vec2) {
 			nm := make([]u8, w * h)
 			for y in 0 ..< h {
 				sy := y - dy
+				if seamless_mode do sy = wrap_i(sy, h)
 				if sy < 0 || sy >= h do continue
 				for x in 0 ..< w {
 					sx := x - dx
+					if seamless_mode do sx = wrap_i(sx, w)
 					if sx < 0 || sx >= w do continue
 					nm[y * w + x] = drag.sel_base[sy * w + sx]
 				}
@@ -316,19 +337,36 @@ update_drag :: proc(p: Vec2) {
 			a = drag.start * 2 - b
 		}
 		// snap rectangle corners to whole pixels for crisp edges
-		shape: []u8
-		switch drag.tool {
-		case .Select_Rect:
-			shape = sel_rect(w, h, Vec2{math.round(a.x), math.round(a.y)}, Vec2{math.round(b.x), math.round(b.y)})
-		case .Select_Ellipse:
-			shape = sel_ellipse(w, h, a, b)
-		case .Lasso:
+		if drag.tool == .Lasso {
 			lp := drag.lasso[len(drag.lasso) - 1]
 			if vlen(p - lp) * d.zoom >= 2 {
 				append(&drag.lasso, p)
 			}
-			shape = sel_polygon(w, h, drag.lasso[:])
-		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Bucket, .Gradient, .Picker, .Text, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom:
+		}
+		// seamless: the shape is also drawn on the 8 neighbouring tiles, so it wraps round the edges
+		shape: []u8
+		span := seamless_mode ? 1 : 0
+		for oy in -span ..= span {
+			for ox in -span ..= span {
+				off := Vec2{f32(ox * w), f32(oy * h)}
+				s: []u8
+				#partial switch drag.tool {
+				case .Select_Rect:
+					s = sel_rect(w, h, Vec2{math.round(a.x), math.round(a.y)} + off, Vec2{math.round(b.x), math.round(b.y)} + off)
+				case .Select_Ellipse:
+					s = sel_ellipse(w, h, a + off, b + off)
+				case .Lasso:
+					pts := make([]Vec2, len(drag.lasso), context.temp_allocator)
+					for lp, i in drag.lasso do pts[i] = lp + off
+					s = sel_polygon(w, h, pts)
+				}
+				if shape == nil {
+					shape = s
+				} else {
+					for v, i in s do shape[i] = max(shape[i], v)
+					delete(s)
+				}
+			}
 		}
 		if topts.feather > 0 {
 			mask_blur(shape, w, h, f32(topts.feather))
@@ -642,9 +680,11 @@ move_render :: proc(dx, dy: int) {
 		for &p in out do p = empty
 		for y in 0 ..< h {
 			sy := y - dy
+			if seamless_mode do sy = wrap_i(sy, h)
 			if sy < 0 || sy >= h do continue
 			for x in 0 ..< w {
 				sx := x - dx
+				if seamless_mode do sx = wrap_i(sx, w)
 				if sx < 0 || sx >= w do continue
 				out[y * w + x] = drag.orig[sy * w + sx]
 			}
@@ -669,9 +709,11 @@ move_render :: proc(dx, dy: int) {
 	b := sel.bbox
 	for y in b.y0 ..< b.y1 {
 		ny := y + dy
+		if seamless_mode do ny = wrap_i(ny, h)
 		if ny < 0 || ny >= h do continue
 		for x in b.x0 ..< b.x1 {
 			nx := x + dx
+			if seamless_mode do nx = wrap_i(nx, w)
 			if nx < 0 || nx >= w do continue
 			s := sel.v[y * w + x]
 			if s == 0 do continue
@@ -681,6 +723,9 @@ move_render :: proc(dx, dy: int) {
 	}
 	affected := box_union(b, Box{b.x0 + dx, b.y0 + dy, b.x1 + dx, b.y1 + dy})
 	affected = box_union(affected, d.sel != nil ? d.sel.bbox : Box{})
+	if seamless_mode {
+		affected = doc_box(d) // moved pixels can reappear on the opposite side
+	}
 	affected = box_clip(affected, w, h)
 	if !box_empty(affected) {
 		sub := make([]Color, (affected.x1 - affected.x0) * (affected.y1 - affected.y0), context.temp_allocator)
@@ -695,9 +740,11 @@ move_render :: proc(dx, dy: int) {
 	nm := make([]u8, w * h)
 	for y in 0 ..< h {
 		sy := y - dy
+		if seamless_mode do sy = wrap_i(sy, h)
 		if sy < 0 || sy >= h do continue
 		for x in 0 ..< w {
 			sx := x - dx
+			if seamless_mode do sx = wrap_i(sx, w)
 			if sx < 0 || sx >= w do continue
 			nm[y * w + x] = sel.v[sy * w + sx]
 		}

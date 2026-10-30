@@ -838,6 +838,35 @@ tip_alpha :: #force_inline proc(e: ^Tip_Eval, s: ^Stroke, x, y: int) -> f32 {
 
 dab_apply :: proc(s: ^Stroke, dab: Dab) {
 	d := doc
+	// seamless mode: stamp the dab on every wrapped copy that reaches into the canvas
+	if seamless_mode && (s.tool == .Brush || s.tool == .Eraser || s.tool == .Clone || s.tool == .Blur || s.tool == .Dodge) {
+		w, h := f32(d.w), f32(d.h)
+		base := dab
+		base.x -= math.floor(dab.x / w) * w
+		base.y -= math.floor(dab.y / h) * h
+		for oy in -1 ..= 1 {
+			for ox in -1 ..= 1 {
+				c := base
+				c.x += f32(ox) * w
+				c.y += f32(oy) * h
+				dab_apply_one(s, c)
+			}
+		}
+		return
+	}
+	if seamless_mode {
+		// stateful tools (oil, smudge) can't be stamped repeatedly; keep the dab centre on the canvas
+		c := dab
+		c.x -= math.floor(dab.x / f32(d.w)) * f32(d.w)
+		c.y -= math.floor(dab.y / f32(d.h)) * f32(d.h)
+		dab_apply_one(s, c)
+		return
+	}
+	dab_apply_one(s, dab)
+}
+
+dab_apply_one :: proc(s: ^Stroke, dab: Dab) {
+	d := doc
 	b := &s.b
 	press := dab.press
 	r := dab.r

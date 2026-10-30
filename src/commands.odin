@@ -76,6 +76,7 @@ Cmd :: enum {
 	Toggle_Thirds,
 	Toggle_Navigator,
 	Toggle_Canvas_Mode,
+	Toggle_Seamless,
 	Cycle_Canvas_Bg,
 	// help
 	Help_Keys,
@@ -355,7 +356,7 @@ run_cmd :: proc(cmd: Cmd) {
 	}
 	// commands below act on the document; finish pending interactions first
 	#partial switch cmd {
-	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Navigator, .Toggle_Canvas_Mode, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
+	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
 	case .Opacity_10 ..= .Opacity_100:
 	case:
 		tools_commit_pending()
@@ -558,6 +559,8 @@ run_cmd :: proc(cmd: Cmd) {
 		show_navigator = !show_navigator
 	case .Toggle_Canvas_Mode:
 		canvas_mode = !canvas_mode
+	case .Toggle_Seamless:
+		seamless_mode = !seamless_mode
 	case .Cycle_Canvas_Bg:
 		bg_mode = (bg_mode + 1) % 4
 

@@ -138,6 +138,19 @@ region_select :: proc(pix: []Color, w, h, sx, sy, tol: int, contiguous, antialia
 				mask[i] = 255
 			}
 		}
+	} else if seamless_mode {
+		// the region continues across the canvas edges: plain 4-neighbour fill with wrapped neighbours
+		stack := make([dynamic]int, context.temp_allocator)
+		append(&stack, sy * w + sx)
+		for len(stack) > 0 {
+			i := pop(&stack)
+			if mask[i] != 0 || !color_match(pix[i], target, tol) {
+				continue
+			}
+			mask[i] = 255
+			x, y := i % w, i / w
+			append(&stack, y * w + (x + 1) % w, y * w + (x + w - 1) % w, ((y + 1) % h) * w + x, ((y + h - 1) % h) * w + x)
+		}
 	} else {
 		stack := make([dynamic]int, context.temp_allocator)
 		append(&stack, sy * w + sx)
@@ -183,7 +196,12 @@ region_select :: proc(pix: []Color, w, h, sx, sy, tol: int, contiguous, antialia
 			for x in 0 ..< w {
 				i := y * w + x
 				if mask[i] != 0 do continue
-				near := (x > 0 && mask[i - 1] != 0) || (x < w - 1 && mask[i + 1] != 0) || (y > 0 && mask[i - w] != 0) || (y < h - 1 && mask[i + w] != 0)
+				near: bool
+				if seamless_mode {
+					near = mask[y * w + (x + 1) % w] != 0 || mask[y * w + (x + w - 1) % w] != 0 || mask[((y + 1) % h) * w + x] != 0 || mask[((y + h - 1) % h) * w + x] != 0
+				} else {
+					near = (x > 0 && mask[i - 1] != 0) || (x < w - 1 && mask[i + 1] != 0) || (y > 0 && mask[i - w] != 0) || (y < h - 1 && mask[i + w] != 0)
+				}
 				if !near do continue
 				p := pix[i]
 				dist := max(abs(int(p.r) - int(target.r)), abs(int(p.g) - int(target.g)), abs(int(p.b) - int(target.b)), abs(int(p.a) - int(target.a)))

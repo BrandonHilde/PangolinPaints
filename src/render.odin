@@ -159,6 +159,18 @@ render_canvas :: proc(vp: Rect) {
 	draw_shadow(dst.x, dst.y + 3, dst.w, dst.h, 0, 14, Color{0, 0, 0, 150})
 	draw_canvas_bg(dst)
 	draw_canvas_tex(d, dst)
+	if seamless_mode {
+		// the surrounding 8 copies, so the image can be judged as a repeating texture
+		for ty in -1 ..= 1 {
+			for tx in -1 ..= 1 {
+				if tx == 0 && ty == 0 do continue
+				t := FRect{d.ox + f32(tx) * cw, d.oy + f32(ty) * ch, cw, ch}
+				if t.x >= f32(vp.x + vp.w) || t.y >= f32(vp.y + vp.h) || t.x + cw <= f32(vp.x) || t.y + ch <= f32(vp.y) do continue
+				draw_canvas_bg(t)
+				draw_canvas_tex(d, t)
+			}
+		}
+	}
 
 	x0 := i32(d.ox)
 	y0 := i32(d.oy)
@@ -193,16 +205,21 @@ render_canvas :: proc(vp: Rect) {
 	doc_rebuild_edges(d)
 	if len(d.sel_edges) > 0 {
 		phase := f32(ui.time * 8)
-		for e in d.sel_edges {
-			sx := d.ox + f32(e.x) * z
-			sy := d.oy + f32(e.y) * z
-			ln := f32(e.n) * z
-			if e.vert {
-				if sx < f32(vp.x) - 1 || sx > f32(vp.x + vp.w) || sy > f32(vp.y + vp.h) || sy + ln < f32(vp.y) do continue
-				ants_line(sx, sy, ln, true, phase)
-			} else {
-				if sy < f32(vp.y) - 1 || sy > f32(vp.y + vp.h) || sx > f32(vp.x + vp.w) || sx + ln < f32(vp.x) do continue
-				ants_line(sx, sy, ln, false, phase)
+		span := seamless_mode ? 1 : 0
+		for ty in -span ..= span {
+			for tx in -span ..= span {
+				for e in d.sel_edges {
+					sx := d.ox + f32(tx) * cw + f32(e.x) * z
+					sy := d.oy + f32(ty) * ch + f32(e.y) * z
+					ln := f32(e.n) * z
+					if e.vert {
+						if sx < f32(vp.x) - 1 || sx > f32(vp.x + vp.w) || sy > f32(vp.y + vp.h) || sy + ln < f32(vp.y) do continue
+						ants_line(sx, sy, ln, true, phase)
+					} else {
+						if sy < f32(vp.y) - 1 || sy > f32(vp.y + vp.h) || sx > f32(vp.x + vp.w) || sx + ln < f32(vp.x) do continue
+						ants_line(sx, sy, ln, false, phase)
+					}
+				}
 			}
 		}
 	}

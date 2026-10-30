@@ -197,6 +197,19 @@ decode_image :: proc(data: []u8, ext: string) -> (pix: []Color, w, h: int, ok: b
 	if len(data) >= 4 && ((data[0] == 'I' && data[1] == 'I' && data[2] == 42 && data[3] == 0) || (data[0] == 'M' && data[1] == 'M' && data[2] == 0 && data[3] == 42)) {
 		return tiff_decode(data)
 	}
+	// layered documents, flattened (placing one as a layer)
+	is_psd := len(data) >= 4 && string(data[:4]) == "8BPS"
+	if is_psd || ext == ".kra" {
+		ld: ^Doc
+		if is_psd {
+			ld, _ = psd_load(data, "")
+		} else {
+			ld, _ = kra_load(data, "")
+		}
+		if ld == nil do return
+		defer doc_destroy(ld)
+		return doc_flat(ld), ld.w, ld.h, true
+	}
 	if len(data) >= 4 && string(data[:4]) == "qoif" {
 		img, err := qoi.load_from_bytes(data, {.alpha_add_if_missing})
 		if err != nil || img == nil {
@@ -278,6 +291,25 @@ open_path :: proc(path: string) {
 
 // Loads a project or image file as a new document; `err` explains a failure.
 doc_load :: proc(path: string) -> (d: ^Doc, err: string) {
+	switch lower_ext(path) {
+	case ".psd", ".psb", ".kra":
+		data, ok := read_file(path)
+		if !ok {
+			return nil, fmt.tprintf("Cannot read %s", path_basename(path))
+		}
+		defer delete(data)
+		msg: string
+		if lower_ext(path) == ".kra" {
+			d, msg = kra_load(data, path_stem(path))
+		} else {
+			d, msg = psd_load(data, path_stem(path))
+		}
+		if d == nil {
+			return nil, fmt.tprintf("Cannot open %s: %s", path_basename(path), msg)
+		}
+		if msg != "" do set_status(msg)
+		return d, ""
+	}
 	if lower_ext(path) != ".ppnt" {
 		ok: bool
 		d, ok = doc_from_image(path)

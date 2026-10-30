@@ -15,13 +15,14 @@ Filter :: struct {
 }
 
 FILTERS_OPEN := [?]Filter {
-	{"All supported", "*.ppnt;*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.tga;*.gif;*.qoi;*.tif;*.tiff;*.gpl"},
+	{"All supported", "*.ppnt;*.psd;*.psb;*.kra;*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.tga;*.gif;*.qoi;*.tif;*.tiff;*.gpl"},
 	{"Pangolin Paints project (*.ppnt)", "*.ppnt"},
+	{"Photoshop / Krita (*.psd, *.psb, *.kra)", "*.psd;*.psb;*.kra"},
 	{"Images", "*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.tga;*.gif;*.qoi;*.tif;*.tiff"},
 	{"All files", "*.*"},
 }
 FILTERS_PROJ := [?]Filter{{"Pangolin Paints project (*.ppnt)", "*.ppnt"}}
-FILTERS_IMG := [?]Filter{{"Images", "*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.tga;*.gif;*.qoi;*.tif;*.tiff"}, {"All files", "*.*"}}
+FILTERS_IMG := [?]Filter{{"Images", "*.psd;*.psb;*.kra;*.png;*.jpg;*.jpeg;*.jfif;*.bmp;*.tga;*.gif;*.qoi;*.tif;*.tiff"}, {"All files", "*.*"}}
 FILTERS_GPL := [?]Filter{{"GIMP palette (*.gpl)", "*.gpl"}, {"All files", "*.*"}}
 
 // `dir`: folder the dialog starts in (empty: the system's choice).

@@ -72,6 +72,7 @@ brush_default :: proc(t: Tool) -> Brush {
 		hardness  = 80,
 		spacing   = 8,
 		roundness = 100,
+		pressure  = .Pen, // a pen's pressure is always used; the mouse paints at full pressure anyway
 		taper     = 30,
 		p_size    = true,
 		load      = 70,
@@ -112,14 +113,16 @@ brush_default :: proc(t: Tool) -> Brush {
 
 // Brush <-> list of ints, for storing a group's brushes in the preferences / workspace files.
 // New fields go at the end; missing trailing values keep the base brush's.
-BRUSH_INTS :: 25
+// The last value is a format version: lists without it predate pen pressure being on by default.
+BRUSH_INTS :: 26
+BRUSH_INTS_VERSION :: 1
 
 brush_to_ints :: proc(b: Brush) -> [BRUSH_INTS]int {
 	return {
 		b.size, b.opacity, b.flow, b.hardness, b.spacing, b.smoothing, b.scatter, b.size_jitter,
 		b.grain, b.angle, b.roundness, int(b.tip), int(b.follow), int(b.pressure), b.taper,
 		int(b.p_size), int(b.p_opacity), int(b.airbrush), b.load, b.wet, b.bristles, b.strength,
-		int(b.alt_mode), b.tone, int(b.clone_merged),
+		int(b.alt_mode), b.tone, int(b.clone_merged), BRUSH_INTS_VERSION,
 	}
 }
 
@@ -154,6 +157,10 @@ brush_from_ints :: proc(base: Brush, v: []int) -> Brush {
 	b.alt_mode = a[22] != 0
 	b.tone = clamp(a[23], 0, 2)
 	b.clone_merged = a[24] != 0
+	if len(v) < BRUSH_INTS && b.pressure == .Off {
+		// saved before pressure defaulted to on: "Off" was just the old default
+		b.pressure = .Pen
+	}
 	return b
 }
 

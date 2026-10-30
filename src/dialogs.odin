@@ -293,7 +293,7 @@ dlg_new :: proc() {
 	}
 	if ok {
 		new_w, new_h, new_bg = dialog.a, dialog.b, dialog.c
-		d := doc_new_filled(dialog.a, dialog.b, fmt.tprintf("Painting %d", len(docs) + 1), bc)
+		d := doc_new_painting(dialog.a, dialog.b, fmt.tprintf("Painting %d", len(docs) + 1), bc)
 		d.modified = false
 		add_doc(d)
 		dialog_close()

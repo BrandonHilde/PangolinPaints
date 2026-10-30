@@ -180,11 +180,14 @@ load_image_pixels :: proc(path: string) -> (pix: []Color, w, h: int, ok: bool) {
 	return decode_image(data, lower_ext(path))
 }
 
-// Decodes image file bytes: our own JPEG decoder, core:image for QOI, stb_image for the rest
+// Decodes image file bytes: our own JPEG and TIFF decoders, core:image for QOI, stb_image for the rest
 // (PNG, BMP, TGA, GIF, ...), picked by content rather than file extension.
 decode_image :: proc(data: []u8, ext: string) -> (pix: []Color, w, h: int, ok: bool) {
 	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
 		return jpeg_decode(data)
+	}
+	if len(data) >= 4 && ((data[0] == 'I' && data[1] == 'I' && data[2] == 42 && data[3] == 0) || (data[0] == 'M' && data[1] == 'M' && data[2] == 0 && data[3] == 42)) {
+		return tiff_decode(data)
 	}
 	if len(data) >= 4 && string(data[:4]) == "qoif" {
 		img, err := qoi.load_from_bytes(data, {.alpha_add_if_missing})
@@ -244,38 +247,50 @@ open_path :: proc(path: string) {
 			return
 		}
 	}
-	switch lower_ext(path) {
-	case ".ppnt":
-		data, ok := read_file(path)
-		if !ok {
-			show_message("Open", fmt.tprintf("Cannot read %s", path_basename(path)))
-			return
-		}
-		defer delete(data)
-		d, dok := project_decode(data)
-		if !dok {
-			show_message("Open", "This is not a valid Pangolin Paints project.")
-			return
-		}
-		d.path = strings.clone(path)
-		name_set(&d.title, path_stem(path))
-		add_doc(d)
-		set_statusf("Opened %s", path_basename(path))
-	case ".gpl":
+	if lower_ext(path) == ".gpl" {
 		if swatches_load_gpl(path) {
 			set_status("Swatches loaded")
 		} else {
 			show_message("Swatches", "Could not read the palette file.")
 		}
-	case:
-		d, ok := doc_from_image(path)
-		if !ok {
-			show_message("Open", fmt.tprintf("Cannot open %s", path_basename(path)))
-			return
-		}
-		add_doc(d)
+		return
+	}
+	d, err := doc_load(path)
+	if err != "" {
+		show_message("Open", err)
+		return
+	}
+	add_doc(d)
+	if lower_ext(path) == ".ppnt" {
+		set_statusf("Opened %s", path_basename(path))
+	} else {
 		set_statusf("Opened %s (%dx%d)", path_basename(path), d.w, d.h)
 	}
+}
+
+// Loads a project or image file as a new document; `err` explains a failure.
+doc_load :: proc(path: string) -> (d: ^Doc, err: string) {
+	if lower_ext(path) != ".ppnt" {
+		ok: bool
+		d, ok = doc_from_image(path)
+		if !ok {
+			return nil, fmt.tprintf("Cannot open %s", path_basename(path))
+		}
+		return d, ""
+	}
+	data, ok := read_file(path)
+	if !ok {
+		return nil, fmt.tprintf("Cannot read %s", path_basename(path))
+	}
+	defer delete(data)
+	dok: bool
+	d, dok = project_decode(data)
+	if !dok {
+		return nil, "This is not a valid Pangolin Paints project."
+	}
+	d.path = strings.clone(path)
+	name_set(&d.title, path_stem(path))
+	return d, ""
 }
 
 file_save :: proc(d: ^Doc, save_as: bool) -> bool {
@@ -378,6 +393,7 @@ Export_Format :: enum {
 	BMP,
 	TGA,
 	QOI,
+	TIFF,
 }
 
 EXPORT_FORMAT_NAMES := [Export_Format]string {
@@ -386,6 +402,7 @@ EXPORT_FORMAT_NAMES := [Export_Format]string {
 	.BMP = "BMP",
 	.TGA = "TGA",
 	.QOI = "QOI",
+	.TIFF = "TIFF (lossless, transparency)",
 }
 
 EXPORT_EXT := [Export_Format]string {
@@ -394,6 +411,7 @@ EXPORT_EXT := [Export_Format]string {
 	.BMP = "bmp",
 	.TGA = "tga",
 	.QOI = "qoi",
+	.TIFF = "tif",
 }
 
 export_format: Export_Format
@@ -410,6 +428,8 @@ export_encode :: proc(pix: []Color, w, h: int, f: Export_Format, quality: int) -
 		return tga_encode(pix, w, h)
 	case .QOI:
 		return qoi_encode(pix, w, h)
+	case .TIFF:
+		return tiff_encode(pix, w, h)
 	case .PNG:
 	}
 	return encode_png(pix, w, h)

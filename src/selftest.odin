@@ -296,7 +296,29 @@ selftest :: proc() -> int {
 		if pok do delete(pb)
 		for f in ([?]Export_Format{.BMP, .TGA, .QOI}) {
 			check(len(export_encode(pix, w, h, f, 0)) > 0, fmt.tprintf("%v export", f))
+		}		// alpha that varies, so the predictor and the alpha channel both get exercised
+		tp := make([]Color, w * h, context.temp_allocator)
+		for &c, i in tp do c = Color{pix[i].r, pix[i].g, pix[i].b, u8(i * 7)}
+		tif := export_encode(tp, w, h, .TIFF, 0)
+		tb, tw, th, tok := decode_image(tif, ".tif")
+		same := tok && tw == w && th == h
+		if same {
+			for c, i in tb do if c != tp[i] {same = false; break}
 		}
+		check(same, "tiff round trip")
+		if tok do delete(tb)
+	}
+
+	// --- defaults ------------------------------------------------------------------
+	{
+		check(brush_default(.Brush).pressure == .Pen && brush_default(.Eraser).pressure == .Pen, "pen pressure is on by default")
+		old := brush_to_ints(brush_default(.Brush))
+		old[13] = int(Pressure.Off)
+		check(brush_from_ints(brush_default(.Brush), old[:25]).pressure == .Pen, "old saved brushes get pen pressure")
+		check(brush_from_ints(brush_default(.Brush), old[:]).pressure == .Off, "pressure turned off by the user stays off")
+		d := doc_new_painting(40, 30, "two", white)
+		check(len(d.layers) == 2 && d.active_layer == 1 && px(d, 1, 5, 5).a == 0 && px(d, 0, 5, 5) == white, "new painting has a clear layer over the background")
+		doc_destroy(d)
 	}
 
 	// --- selections -----------------------------------------------------------------
@@ -327,6 +349,31 @@ selftest :: proc() -> int {
 		fmt.printf("selftest: %d failure(s)\n", fails)
 	}
 	return fails
+}
+
+// Opens any supported file and exports it flattened (`--convert in out.png`), listing its layers;
+// a headless check of the file readers.
+convert_file :: proc(src, dst: string) -> int {
+	brush_init()
+	d, err := doc_load(src)
+	if err != "" {
+		fmt.eprintln(err)
+		return 1
+	}
+	fmt.printf("%s: %dx%d, %d layer(s)\n", path_basename(src), d.w, d.h, len(d.layers))
+	for &l, i in d.layers {
+		fmt.printf("  %d %q opacity %d %v%s%s%s\n", i, name_str(&l.name), l.opacity, l.blend, l.visible ? "" : " hidden", l.has_mask ? " mask" : "", l.text.on ? " text" : "")
+	}
+	f := Export_Format.PNG
+	for e, k in EXPORT_EXT {
+		if lower_ext(dst) == fmt.tprintf(".%s", e) do f = k
+	}
+	data := export_encode(doc_flat(d, context.temp_allocator), d.w, d.h, f, 90)
+	if data == nil || !write_file(dst, data) {
+		fmt.eprintln("cannot write", dst)
+		return 1
+	}
+	return 0
 }
 
 // Paints one sample stroke per brush preset onto a sheet (`--brush-sheet out.png`),

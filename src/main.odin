@@ -136,6 +136,8 @@ main :: proc() {
 			i += 1
 		case a == "--brush-sheet" && i + 1 < len(args):
 			os.exit(brush_sheet(args[i + 1]))
+		case a == "--convert" && i + 2 < len(args):
+			os.exit(convert_file(args[i + 1], args[i + 2]))
 		case a == "--bench":
 			os.exit(bench())
 		case a == "--selftest":
@@ -164,7 +166,7 @@ main :: proc() {
 	if demo {
 		demo_setup()
 	} else {
-		d := doc_new_filled(new_w, new_h, "Untitled", new_bg_color(new_bg))
+		d := doc_new_painting(new_w, new_h, "Untitled", new_bg_color(new_bg))
 		d.modified = false
 		add_doc(d)
 	}

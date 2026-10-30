@@ -115,7 +115,7 @@ close_doc :: proc(d: ^Doc) {
 	}
 	doc_destroy(d)
 	if len(docs) == 0 {
-		nd := doc_new_filled(1600, 1200, "Untitled", Color{255, 255, 255, 255})
+		nd := doc_new_painting(1600, 1200, "Untitled", Color{255, 255, 255, 255})
 		nd.modified = false
 		append(&docs, nd)
 		doc = nd
@@ -132,6 +132,16 @@ doc_new_filled :: proc(w, h: int, title: string, fill: Color) -> ^Doc {
 		tiles_fill(&d.layers[0].pix, fill, {})
 	} else {
 		name_set(&d.layers[0].name, "Layer 1")
+	}
+	return d
+}
+
+// New document for the user to paint in: the filled background plus an empty layer on top, selected.
+doc_new_painting :: proc(w, h: int, title: string, fill: Color) -> ^Doc {
+	d := doc_new_filled(w, h, title, fill)
+	if fill.a != 0 {
+		append(&d.layers, layer_make("Layer 1", w, h))
+		d.active_layer = 1
 	}
 	return d
 }

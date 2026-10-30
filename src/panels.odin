@@ -172,6 +172,9 @@ menu_build :: proc(idx: int) {
 		item("Move Down", cmd = .Layer_Down)
 		item("Merge Down", cmd = .Layer_Merge)
 		popup_sep()
+		item("Convert Text to Path", cmd = .Layer_Text_To_Path, enabled = l.text.on)
+		item("Rasterize Layer", cmd = .Layer_Rasterize, enabled = l.text.on || l.shape != nil)
+		popup_sep()
 		item("Lock Transparency", cmd = .Layer_Lock_Alpha, checked = l.lock_alpha)
 		item("Properties...", cmd = .Layer_Props)
 		popup_sep()
@@ -1130,6 +1133,10 @@ panel_layers :: proc(r: Rect) {
 		ix := row.x + row.w - 16
 		if ly.text.on {
 			icon(.Text, ix, ry + 17, C_TEXT_DIM)
+			ix -= 13
+		}
+		if ly.shape != nil {
+			icon(.Curve, ix, ry + 17, C_TEXT_DIM)
 			ix -= 13
 		}
 		if ly.locked {

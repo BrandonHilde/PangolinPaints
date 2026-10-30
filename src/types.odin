@@ -145,6 +145,7 @@ Layer :: struct {
 	mask:       Tiles, // grey in .r; nil tile = 255 (fully revealed)
 	mask_on:    bool, // mask applied when compositing
 	text:       Text_Info, // text.on: this is a text layer
+	shape:      ^Shape, // non-nil: a vector layer (shared, see vector.odin)
 }
 
 // Soft selection mask, shared between undo snapshots. Never modified in place.

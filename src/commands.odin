@@ -48,6 +48,8 @@ Cmd :: enum {
 	Layer_Up,
 	Layer_Down,
 	Layer_Merge,
+	Layer_Text_To_Path,
+	Layer_Rasterize,
 	Layer_Props,
 	Layer_Via_Copy,
 	Layer_Via_Cut,
@@ -504,6 +506,10 @@ run_cmd :: proc(cmd: Cmd) {
 		if !doc_merge_down(d) {
 			set_status("No layer below to merge into")
 		}
+	case .Layer_Text_To_Path:
+		doc_text_to_path(d)
+	case .Layer_Rasterize:
+		doc_rasterize_layer(d)
 	case .Layer_Props:
 		dialog_open(.Layer_Props)
 	case .Layer_Via_Copy:

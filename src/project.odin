@@ -15,7 +15,7 @@ import "core:image/qoi"
 // ---------------------------------------------------------------------------
 
 PPNT_MAGIC :: "PPNT"
-PPNT_VERSION :: 3 // 2: text layers, 3: text character colours
+PPNT_VERSION :: 4 // 2: text layers, 3: text character colours, 4: vector layers
 
 LF_VISIBLE :: 1
 LF_LOCKED :: 2
@@ -23,6 +23,7 @@ LF_LOCK_ALPHA :: 4
 LF_HAS_MASK :: 8
 LF_MASK_ON :: 16
 LF_TEXT :: 32
+LF_SHAPE :: 64
 
 @(private = "file")
 write_tiles :: proc(w: ^Writer, g: ^Tiles) {
@@ -97,6 +98,7 @@ project_encode :: proc(d: ^Doc) -> []u8 {
 		if l.has_mask do flags |= LF_HAS_MASK
 		if l.mask_on do flags |= LF_MASK_ON
 		if l.text.on do flags |= LF_TEXT
+		if l.shape != nil do flags |= LF_SHAPE
 		w8(&w, flags)
 		w8(&w, l.opacity)
 		w8(&w, u8(l.blend))
@@ -106,6 +108,9 @@ project_encode :: proc(d: ^Doc) -> []u8 {
 		}
 		if l.text.on {
 			write_text(&w, &l.text)
+		}
+		if l.shape != nil {
+			write_shape(&w, l.shape)
 		}
 	}
 	return w.b[:]
@@ -152,6 +157,9 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 		}
 		if flags & LF_TEXT != 0 && ver >= 2 {
 			read_text(&r, &l.text, int(ver))
+		}
+		if flags & LF_SHAPE != 0 && ver >= 4 {
+			l.shape = read_shape(&r)
 		}
 		append(&nd.layers, l)
 		if r.bad do break

@@ -60,6 +60,7 @@ Drag :: struct {
 	moved:      bool,
 	text_move:  bool, // the Move tool is dragging a text layer by its position
 	text_start: Vec2,
+	shape0:     ^Shape, // the Move tool is dragging a vector layer: its outlines before the move
 	pan_active: bool,
 }
 
@@ -272,6 +273,12 @@ begin_drag :: proc(btn: int, p: Vec2) {
 			drag.text_start = {tl.text.x, tl.text.y}
 			return
 		}
+		if tl := &d.layers[d.active_layer]; tl.shape != nil && d.sel == nil && !d.edit_mask && !tl.locked && tl.visible {
+			// vector layers move their outlines
+			history_push(d)
+			drag.shape0 = shape_share(tl.shape)
+			return
+		}
 		if !can_edit() {
 			drag.active = false
 			return
@@ -386,6 +393,10 @@ update_drag :: proc(p: Vec2) {
 			text_render_layer(d, d.active_layer)
 			return
 		}
+		if drag.shape0 != nil {
+			shape_move_to(d, drag.shape0, math.round(p.x - drag.start.x), math.round(p.y - drag.start.y))
+			return
+		}
 		move_render(int(math.round(p.x - drag.start.x)), int(math.round(p.y - drag.start.y)))
 	case .Transform:
 		xform_mouse_drag(p)
@@ -429,6 +440,15 @@ end_drag :: proc() {
 				history_discard(d)
 			}
 			drag.text_move = false
+			d.thumb_dirty = true
+			break
+		}
+		if drag.shape0 != nil {
+			if !drag.moved {
+				history_discard(d)
+			}
+			shape_release(drag.shape0)
+			drag.shape0 = nil
 			d.thumb_dirty = true
 			break
 		}
@@ -764,10 +784,18 @@ move_render :: proc(dx, dy: int) {
 }
 
 move_nudge :: proc(dx, dy: int) {
+	d := doc
+	if l := &d.layers[d.active_layer]; l.shape != nil && d.sel == nil && !d.edit_mask && !l.locked && l.visible {
+		history_push(d)
+		s := shape_share(l.shape)
+		shape_move_to(d, s, f32(dx), f32(dy))
+		shape_release(s)
+		d.thumb_dirty = true
+		return
+	}
 	if !can_edit() {
 		return
 	}
-	d := doc
 	history_push(d)
 	g, empty, _ := doc_target(d)
 	drag.orig = make([]Color, d.w * d.h)
@@ -810,6 +838,9 @@ Xform :: struct {
 	g_start:  Vec2,
 	g_cx, g_cy, g_sx, g_sy, g_angle: f32,
 	last_box: Box,
+	// vector layers: the outlines are transformed instead of the pixels
+	shape0:   ^Shape,
+	c0x, c0y: f32, // centre of the box at the start
 }
 
 xform: Xform
@@ -819,7 +850,14 @@ xform_begin :: proc() -> bool {
 	if xform.active {
 		return true
 	}
-	if !can_edit() {
+	l := &d.layers[d.active_layer]
+	vector := l.shape != nil && d.sel == nil && !d.edit_mask
+	if vector {
+		if l.locked || !l.visible {
+			set_status(l.locked ? "Layer is locked" : "Layer is hidden")
+			return false
+		}
+	} else if !can_edit() {
 		return false
 	}
 	g, empty, _ := doc_target(d)
@@ -868,6 +906,10 @@ xform_begin :: proc() -> bool {
 	}
 	xf.cx = f32(b.x0) + f32(xf.sw) / 2
 	xf.cy = f32(b.y0) + f32(xf.sh) / 2
+	xf.c0x, xf.c0y = xf.cx, xf.cy
+	if vector {
+		xf.shape0 = shape_share(l.shape)
+	}
 	xf.sx, xf.sy, xf.angle = 1, 1, 0
 	xf.grab = .None
 	xf.last_box = b
@@ -901,6 +943,19 @@ xform_to_local :: proc(p: Vec2) -> Vec2 {
 xform_render :: proc() {
 	d := doc
 	xf := &xform
+	if xf.shape0 != nil {
+		// scale, then rotate, about the box centre, then move it to (cx, cy)
+		ca, sa := math.cos(xf.angle), math.sin(xf.angle)
+		m := Affine{ca * xf.sx, -sa * xf.sy, sa * xf.sx, ca * xf.sy, 0, 0}
+		m.e = xf.cx - m.a * xf.c0x - m.b * xf.c0y
+		m.f = xf.cy - m.c * xf.c0x - m.d * xf.c0y
+		l := &d.layers[d.active_layer]
+		ns := shape_transformed(xf.shape0, m)
+		shape_release(l.shape)
+		l.shape = ns
+		shape_render_layer(d, d.active_layer)
+		return
+	}
 	g, empty, _ := doc_target(d)
 	cs := xform_corners()
 	b := Box{d.w, d.h, 0, 0}
@@ -961,6 +1016,7 @@ xform_cancel :: proc() {
 xform_free :: proc() {
 	delete(xform.src)
 	delete(xform.base)
+	shape_release(xform.shape0)
 	xform = {}
 }
 

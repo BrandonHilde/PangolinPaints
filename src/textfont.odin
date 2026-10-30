@@ -376,6 +376,69 @@ text_bounds :: proc(ti: ^Text_Info) -> Box {
 	return Box{int(math.floor(ti.x)) - 2, int(math.floor(ti.y)) - 2, int(math.ceil(ti.x + L.w)) + 3, int(math.ceil(ti.y + h)) + 3}
 }
 
+// The text's glyph outlines as a vector shape, laid out exactly as text_draw places them;
+// consecutive characters of one colour share a path item. nil when there is nothing to draw.
+text_to_shape :: proc(ti: ^Text_Info) -> ^Shape {
+	if ti.n == 0 do return nil
+	L := text_layout(ti)
+	if L.face == nil do return nil
+	cmds := make([dynamic]Path_Cmd)
+	items := make([dynamic]Path_Item)
+	size := f32(max(ti.size, 1))
+	track := size * f32(ti.track) / 100
+	s := text_str(ti)
+	for ln, li in L.lines {
+		rs := utf8.string_to_runes(s[ln.a:ln.b], context.temp_allocator)
+		pen := ti.x + text_line_x(ti, &L, ln.w)
+		base := math.round(ti.y + f32(li) * L.lh + L.asc)
+		bi := ln.a
+		for r, i in rs {
+			next: rune
+			if i + 1 < len(rs) do next = rs[i + 1]
+			col := text_char_color(ti, bi)
+			bi += utf8.rune_size(r)
+			verts: [^]stbtt.vertex
+			nv := int(stbtt.GetCodepointShape(&L.face.info, r, &verts))
+			if nv > 0 {
+				if len(items) == 0 || items[len(items) - 1].color != col {
+					append(&items, Path_Item{col, len(cmds), len(cmds)})
+				}
+				pt :: proc(pen, base, sc: f32, x, y: stbtt.vertex_type) -> Vec2 {
+					return Vec2{pen + f32(x) * sc, base - f32(y) * sc}
+				}
+				for v in verts[:nv] {
+					c := Path_Cmd{p = pt(pen, base, L.sc, v.x, v.y)}
+					switch v.type {
+					case u8(stbtt.vmove.vmove):
+						c.kind = .Move
+					case u8(stbtt.vmove.vline):
+						c.kind = .Line
+					case u8(stbtt.vmove.vcurve):
+						c.kind = .Quad
+						c.c1 = pt(pen, base, L.sc, v.cx, v.cy)
+					case u8(stbtt.vmove.vcubic):
+						c.kind = .Cubic
+						c.c1 = pt(pen, base, L.sc, v.cx, v.cy)
+						c.c2 = pt(pen, base, L.sc, v.cx1, v.cy1)
+					case:
+						continue
+					}
+					append(&cmds, c)
+				}
+				items[len(items) - 1].b = len(cmds)
+				stbtt.FreeShape(&L.face.info, verts)
+			}
+			pen += glyph_adv(L.face, L.sc, r, next, track)
+		}
+	}
+	if len(cmds) == 0 {
+		delete(cmds)
+		delete(items)
+		return nil
+	}
+	return shape_new(cmds[:], items[:])
+}
+
 // Rasterises the text into the layer, replacing its pixels.
 text_render_layer :: proc(d: ^Doc, li: int) {
 	l := &d.layers[li]

@@ -20,6 +20,8 @@ layer_make :: proc(name: string, w, h: int) -> Layer {
 
 layer_destroy :: proc(l: ^Layer) {
 	tiles_destroy(&l.pix)
+	shape_release(l.shape)
+	l.shape = nil
 	if l.has_mask {
 		tiles_destroy(&l.mask)
 	}
@@ -29,6 +31,7 @@ layer_destroy :: proc(l: ^Layer) {
 layer_share :: proc(l: ^Layer) -> Layer {
 	n := l^
 	n.pix = tiles_share(&l.pix)
+	n.shape = shape_share(l.shape)
 	if l.has_mask {
 		n.mask = tiles_share(&l.mask)
 	}
@@ -262,7 +265,7 @@ can_edit :: proc() -> bool {
 		set_status("Layer is hidden")
 		return false
 	}
-	l.text.on = false // editing the pixels directly rasterises a text layer
+	layer_rasterize(l) // editing the pixels directly rasterises a text or vector layer
 	return true
 }
 
@@ -615,7 +618,7 @@ doc_merge_down :: proc(d: ^Doc) -> bool {
 		lo.has_mask = false
 	}
 	tiles_from_buf(&lo.pix, d.w, d.h, dst, {})
-	lo.text.on = false
+	layer_rasterize(lo)
 	layer_destroy(up)
 	ordered_remove(&d.layers, i)
 	d.active_layer = i - 1
@@ -677,7 +680,7 @@ doc_delete_mask :: proc(d: ^Doc, apply: bool) -> bool {
 		px := layer_masked(d, l)
 		l.mask_on = on
 		tiles_from_buf(&l.pix, d.w, d.h, px, {})
-		l.text.on = false
+		layer_rasterize(l)
 	}
 	tiles_destroy(&l.mask)
 	l.has_mask = false
@@ -692,8 +695,9 @@ doc_delete_mask :: proc(d: ^Doc, apply: bool) -> bool {
 // ---------------------------------------------------------------------------
 
 // Apply `f` to every pixel grid in the document, producing new nw x nh grids.
+// Vector layers instead have their outlines moved by `m` (old canvas -> new) and are redrawn.
 @(private = "file")
-doc_remap :: proc(d: ^Doc, nw, nh: int, f: proc(src: []Color, sw, sh: int, dst: []Color, dw, dh: int, ctx: rawptr, empty: Color), ctx: rawptr) {
+doc_remap :: proc(d: ^Doc, nw, nh: int, f: proc(src: []Color, sw, sh: int, dst: []Color, dw, dh: int, ctx: rawptr, empty: Color), ctx: rawptr, m: Affine) {
 	src := make([]Color, d.w * d.h)
 	defer delete(src)
 	dst := make([]Color, nw * nh)
@@ -703,6 +707,11 @@ doc_remap :: proc(d: ^Doc, nw, nh: int, f: proc(src: []Color, sw, sh: int, dst: 
 		f(src, d.w, d.h, dst, nw, nh, ctx, {})
 		tiles_destroy(&l.pix)
 		l.text.on = false
+		if l.shape != nil {
+			ns := shape_transformed(l.shape, m)
+			shape_release(l.shape)
+			l.shape = ns
+		}
 		l.pix = tiles_make(nw, nh)
 		tiles_from_buf(&l.pix, nw, nh, dst, {})
 		if l.has_mask {
@@ -716,6 +725,9 @@ doc_remap :: proc(d: ^Doc, nw, nh: int, f: proc(src: []Color, sw, sh: int, dst: 
 	mask_release(d.sel)
 	d.sel = nil
 	d.w, d.h = nw, nh
+	for &l, i in d.layers {
+		if l.shape != nil do shape_render_layer(d, i)
+	}
 	doc_clamp(d)
 	d.view_init = false
 	d.modified = true
@@ -743,7 +755,7 @@ doc_canvas_size :: proc(d: ^Doc, nw, nh, ox, oy: int) {
 				dst[ny * dw + nx] = src[y * sw + x]
 			}
 		}
-	}, &ctx)
+	}, &ctx, Affine{1, 0, 0, 1, f32(ox), f32(oy)})
 }
 
 Resample :: enum {
@@ -764,7 +776,7 @@ doc_image_size :: proc(d: ^Doc, nw, nh: int, filter: Resample) {
 	doc_remap(d, nw, nh, proc(src: []Color, sw, sh: int, dst: []Color, dw, dh: int, ctx: rawptr, empty: Color) {
 		c := (^Resize_Ctx)(ctx)
 		resample(src, sw, sh, dst, dw, dh, c.filter)
-	}, &ctx)
+	}, &ctx, Affine{f32(nw) / f32(d.w), 0, 0, f32(nh) / f32(d.h), 0, 0})
 }
 
 // quarter: 1 = 90 CW, 2 = 180, 3 = 90 CCW
@@ -775,6 +787,16 @@ doc_rotate :: proc(d: ^Doc, quarter: int) {
 		nw, nh = d.h, d.w
 	}
 	q := quarter
+	sw, sh := f32(d.w), f32(d.h)
+	m: Affine
+	switch q {
+	case 1:
+		m = {0, -1, 1, 0, sh, 0}
+	case 2:
+		m = {-1, 0, 0, -1, sw, sh}
+	case:
+		m = {0, 1, -1, 0, 0, sw}
+	}
 	doc_remap(d, nw, nh, proc(src: []Color, sw, sh: int, dst: []Color, dw, dh: int, ctx: rawptr, empty: Color) {
 		q := (^int)(ctx)^
 		for y in 0 ..< sh {
@@ -791,12 +813,13 @@ doc_rotate :: proc(d: ^Doc, quarter: int) {
 				dst[ny * dw + nx] = src[y * sw + x]
 			}
 		}
-	}, &q)
+	}, &q, m)
 }
 
 doc_flip :: proc(d: ^Doc, horiz: bool) {
 	history_push(d)
 	h := horiz
+	m := horiz ? Affine{-1, 0, 0, 1, f32(d.w), 0} : Affine{1, 0, 0, -1, 0, f32(d.h)}
 	doc_remap(d, d.w, d.h, proc(src: []Color, sw, sh: int, dst: []Color, dw, dh: int, ctx: rawptr, empty: Color) {
 		horiz := (^bool)(ctx)^
 		for y in 0 ..< sh {
@@ -808,7 +831,7 @@ doc_flip :: proc(d: ^Doc, horiz: bool) {
 				}
 			}
 		}
-	}, &h)
+	}, &h, m)
 }
 
 Rotate_Ctx :: struct {
@@ -826,6 +849,10 @@ doc_rotate_any :: proc(d: ^Doc, deg: f32) {
 	nw, nh = clamp(nw, 1, 16384), clamp(nh, 1, 16384)
 	history_push(d)
 	ctx := Rotate_Ctx{a, 0, 0}
+	// forward rotation about the centres: the inverse of the sampling below
+	scx, scy := fw / 2, fh / 2
+	dcx, dcy := f32(nw) / 2, f32(nh) / 2
+	m := Affine{ca, -sa, sa, ca, dcx - ca * scx + sa * scy, dcy - sa * scx - ca * scy}
 	doc_remap(d, nw, nh, proc(src: []Color, sw, sh: int, dst: []Color, dw, dh: int, ctx: rawptr, empty: Color) {
 		c := (^Rotate_Ctx)(ctx)
 		ca, sa := math.cos(c.angle), math.sin(c.angle)
@@ -841,7 +868,7 @@ doc_rotate_any :: proc(d: ^Doc, deg: f32) {
 				dst[y * dw + x] = sample_bilinear(src, sw, sh, sx - 0.5, sy - 0.5, empty)
 			}
 		}
-	}, &ctx)
+	}, &ctx, m)
 }
 
 doc_crop :: proc(d: ^Doc, b: Box) -> bool {

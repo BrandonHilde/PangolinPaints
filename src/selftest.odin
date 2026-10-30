@@ -390,6 +390,62 @@ selftest :: proc() -> int {
 		if ok do doc_destroy(nd)
 	}
 
+	// --- text to path ---------------------------------------------------------------
+	{
+		d := fresh(300, 120, white)
+		text_defaults_init()
+		mk :: proc(d: ^Doc, size: int, x, y: f32) -> int {
+			l := layer_make("Text", d.w, d.h)
+			l.text = text_defaults
+			l.text.on = true
+			l.text.size = size
+			l.text.x, l.text.y = x, y
+			text_color_all(&l.text, Color{30, 60, 220, 255})
+			s := "Path"
+			text_insert_bytes(&l.text, 0, transmute([]u8)s, 0)
+			append(&d.layers, l)
+			text_render_layer(d, len(d.layers) - 1)
+			return len(d.layers) - 1
+		}
+		alpha_sum :: proc(d: ^Doc, li: int) -> (sum: int, partial: int) {
+			for y in 0 ..< d.h do for x in 0 ..< d.w {
+				a := int(tiles_get(&d.layers[li].pix, x, y, {}).a)
+				sum += a
+				if a > 0 && a < 255 do partial += 1
+			}
+			return
+		}
+		li := mk(d, 50, 20, 20)
+		d.active_layer = li
+		text_sum, _ := alpha_sum(d, li)
+		check(doc_text_to_path(d) && d.layers[li].shape != nil && !d.layers[li].text.on, "text converts to a vector layer")
+		path_sum, _ := alpha_sum(d, li)
+		check(abs(path_sum - text_sum) * 100 < text_sum * 3, fmt.tprintf("the path looks like the text (%d vs %d)", path_sum, text_sum))
+		// doubling the image redraws the outlines: ink scales by 4 and edges stay one pixel wide
+		_, partial1 := alpha_sum(d, li)
+		doc_image_size(d, 600, 240, .Bicubic)
+		big_sum, partial2 := alpha_sum(d, li)
+		check(d.layers[li].shape != nil && abs(big_sum - path_sum * 4) * 100 < path_sum * 4 * 3, "image size scales vector layers")
+		check(partial2 < partial1 * 3, fmt.tprintf("scaled outlines stay sharp (%d edge pixels, was %d)", partial2, partial1))
+		data := project_encode(d)
+		nd, ok := project_decode(data)
+		check(ok && nd.layers[li].shape != nil && len(nd.layers[li].shape.cmds) == len(d.layers[li].shape.cmds), "vector layers are saved in projects")
+		if ok do doc_destroy(nd)
+		history_undo(d)
+		history_undo(d)
+		check(d.w == 300 && d.layers[li].text.on && d.layers[li].shape == nil, "undo brings the text layer back")
+		history_redo(d)
+		// free transform at 2x scales the outlines, not the pixels
+		before, _ := shape_bounds(d.layers[li].shape)
+		check(xform_begin() && d.layers[li].shape != nil, "free transform keeps a vector layer")
+		xform.sx, xform.sy = 2, 2
+		xform_commit()
+		after, _ := shape_bounds(d.layers[li].shape)
+		check(d.layers[li].shape != nil && abs((after.x1 - after.x0) - 2 * (before.x1 - before.x0)) <= 4, "free transform scales vector outlines")
+		history_undo(d)
+		check(can_edit() && d.layers[li].shape == nil, "painting rasterises a vector layer")
+	}
+
 	// --- defaults ------------------------------------------------------------------
 	{
 		check(brush_default(.Brush).pressure == .Pen && brush_default(.Eraser).pressure == .Pen, "pen pressure is on by default")
@@ -443,7 +499,7 @@ convert_file :: proc(src, dst: string) -> int {
 	}
 	fmt.printf("%s: %dx%d, %d layer(s)\n", path_basename(src), d.w, d.h, len(d.layers))
 	for &l, i in d.layers {
-		fmt.printf("  %d %q opacity %d %v%s%s%s\n", i, name_str(&l.name), l.opacity, l.blend, l.visible ? "" : " hidden", l.has_mask ? " mask" : "", l.text.on ? " text" : "")
+		fmt.printf("  %d %q opacity %d %v%s%s%s\n", i, name_str(&l.name), l.opacity, l.blend, l.visible ? "" : " hidden", l.has_mask ? " mask" : "", l.text.on ? " text" : (l.shape != nil ? " vector" : ""))
 	}
 	f := Export_Format.PNG
 	for e, k in EXPORT_EXT {

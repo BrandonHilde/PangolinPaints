@@ -309,6 +309,23 @@ selftest :: proc() -> int {
 		if tok do delete(tb)
 	}
 
+	// --- grid snapping --------------------------------------------------------------
+	{
+		d := fresh(95, 60, white)
+		show_grid, snap_grid, grid_w, grid_h = true, true, 10, 20
+		check(snap_pt({13, 7}) == Vec2{10, 0} && snap_pt({16, 11}) == Vec2{20, 20}, "points snap to grid intersections")
+		check(snap_pt({93.5, 59}) == Vec2{95, 60}, "canvas edges snap like grid lines")
+		snap_grid = false
+		check(snap_pt({13, 7}) == Vec2{13, 7}, "no snapping when snap is off")
+		snap_grid, show_grid = true, false
+		check(snap_pt({13, 7}) == Vec2{13, 7}, "no snapping while the grid is hidden")
+		show_grid = true
+		// a freehand stroke snapped point by point paints along the grid lines
+		paint_line(.Brush, red, snap_pt({12, 31}), snap_pt({48, 38}))
+		check(px(d, 0, 30, 40) == red && px(d, 0, 30, 25) == white, "snapped stroke follows the grid line")
+		show_grid, grid_w, grid_h = false, 64, 64
+	}
+
 	// --- defaults ------------------------------------------------------------------
 	{
 		check(brush_default(.Brush).pressure == .Pen && brush_default(.Eraser).pressure == .Pen, "pen pressure is on by default")

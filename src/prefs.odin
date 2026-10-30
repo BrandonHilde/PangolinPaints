@@ -20,6 +20,11 @@ prefs_save :: proc() {
 	fmt.sbprintf(&sb, "bg_mode=%d\n", bg_mode)
 	fmt.sbprintf(&sb, "pixel_grid=%d\n", b2i(show_pixel_grid))
 	fmt.sbprintf(&sb, "navigator=%d\n", b2i(show_navigator))
+	fmt.sbprintf(&sb, "grid=%d\n", b2i(show_grid))
+	fmt.sbprintf(&sb, "grid_snap=%d\n", b2i(snap_grid))
+	fmt.sbprintf(&sb, "grid_w=%d\n", grid_w)
+	fmt.sbprintf(&sb, "grid_h=%d\n", grid_h)
+	fmt.sbprintf(&sb, "grid_opacity=%d\n", grid_opacity)
 	fmt.sbprintf(&sb, "new_w=%d\n", new_w)
 	fmt.sbprintf(&sb, "new_h=%d\n", new_h)
 	fmt.sbprintf(&sb, "new_bg=%d\n", new_bg)
@@ -64,6 +69,16 @@ prefs_load :: proc() {
 			show_pixel_grid = val != 0
 		case "navigator":
 			show_navigator = val != 0
+		case "grid":
+			show_grid = val != 0
+		case "grid_snap":
+			snap_grid = val != 0
+		case "grid_w":
+			grid_w = clamp(val, 1, 4096)
+		case "grid_h":
+			grid_h = clamp(val, 1, 4096)
+		case "grid_opacity":
+			grid_opacity = clamp(val, 5, 100)
 		case "new_w":
 			new_w = clamp(val, 1, 16000)
 		case "new_h":

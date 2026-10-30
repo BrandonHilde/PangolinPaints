@@ -454,6 +454,9 @@ canvas_update :: proc(vp: Rect) {
 	mx := ui.ptr.x / f32(ui.scale)
 	my := ui.ptr.y / f32(ui.scale)
 	p := screen_to_canvas(mx, my)
+	if tool_snaps(drag.active ? drag.tool : eff_tool()) {
+		p = snap_pt(p)
+	}
 	hover_pt = p
 	hover_valid = over
 

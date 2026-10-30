@@ -199,6 +199,7 @@ render_canvas :: proc(vp: Rect) {
 			hline(x0, i32(d.oy + ch * f32(i) / 3), x1 - x0, gc)
 		}
 	}
+	render_grid(d, vp)
 	outline_rect(Rect{x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2}, Color{10, 10, 14, 255})
 
 	// selection outline (marching ants)
@@ -275,6 +276,9 @@ render_canvas :: proc(vp: Rect) {
 
 	if hover_valid && !drag.pan_active && ui.focus_id == 0 && ui.layer == ui.input_layer {
 		render_cursor(d)
+		if grid_snapping() && tool_snaps(eff_tool()) {
+			render_snap_marker(hover_pt)
+		}
 	}
 }
 
@@ -310,6 +314,11 @@ render_cursor :: proc(d: ^Doc) {
 	my := ui.ptr.y / f32(ui.scale)
 	if !paint_tool(t) {
 		return
+	}
+	if grid_snapping() {
+		// the ring sits where the dab will land
+		sp := canvas_to_screen(hover_pt)
+		mx, my = sp.x, sp.y
 	}
 	b := &brushes[t]
 	r := f32(b.size) / 2 * d.zoom

@@ -54,6 +54,7 @@ KeyboardKey :: enum i32 {
 	APOSTROPHE    = 39,
 	MINUS         = 45,
 	SLASH         = 47,
+	SEMICOLON     = 59,
 	ZERO          = 48,
 	ONE,
 	TWO,
@@ -259,6 +260,8 @@ key_scancode :: proc(k: KeyboardKey) -> sdl.Scancode {
 		return .MINUS
 	case .SLASH:
 		return .SLASH
+	case .SEMICOLON:
+		return .SEMICOLON
 	case .EQUAL:
 		return .EQUALS
 	case .LEFT_BRACKET:

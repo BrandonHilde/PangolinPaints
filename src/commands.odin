@@ -74,6 +74,9 @@ Cmd :: enum {
 	Zoom_2,
 	Toggle_Pixel_Grid,
 	Toggle_Thirds,
+	Toggle_Grid,
+	Toggle_Snap,
+	Grid_Settings,
 	Toggle_Navigator,
 	Toggle_Canvas_Mode,
 	Toggle_Seamless,
@@ -186,6 +189,8 @@ SHORTCUTS := [?]Shortcut {
 	{.Toggle_Canvas_Mode, .TAB, false, false, false},
 	{.Toggle_Pixel_Grid, .APOSTROPHE, true, true, false},
 	{.Toggle_Thirds, .APOSTROPHE, true, false, false},
+	{.Toggle_Grid, .SEMICOLON, true, false, false},
+	{.Toggle_Snap, .SEMICOLON, true, true, false},
 	{.Tool_Brush, .B, false, false, false},
 	{.Tool_Oil, .N, false, false, false},
 	{.Tool_Smudge, .R, false, false, false},
@@ -252,6 +257,8 @@ key_name :: proc(k: KeyboardKey) -> string {
 		return "Num-"
 	case .APOSTROPHE:
 		return "'"
+	case .SEMICOLON:
+		return ";"
 	case .LEFT_BRACKET:
 		return "["
 	case .RIGHT_BRACKET:
@@ -356,7 +363,7 @@ run_cmd :: proc(cmd: Cmd) {
 	}
 	// commands below act on the document; finish pending interactions first
 	#partial switch cmd {
-	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
+	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap, .Grid_Settings, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
 	case .Opacity_10 ..= .Opacity_100:
 	case:
 		tools_commit_pending()
@@ -555,6 +562,15 @@ run_cmd :: proc(cmd: Cmd) {
 		show_pixel_grid = !show_pixel_grid
 	case .Toggle_Thirds:
 		show_thirds = !show_thirds
+	case .Toggle_Grid:
+		show_grid = !show_grid
+		set_status(show_grid ? (snap_grid ? "Grid on, snapping" : "Grid on") : "Grid off")
+	case .Toggle_Snap:
+		snap_grid = !snap_grid
+		if snap_grid do show_grid = true
+		set_status(snap_grid ? "Snap to grid on" : "Snap to grid off")
+	case .Grid_Settings:
+		dialog_open(.Grid)
 	case .Toggle_Navigator:
 		show_navigator = !show_navigator
 	case .Toggle_Canvas_Mode:

@@ -25,6 +25,7 @@ Dialog_Kind :: enum {
 	Font,
 	Workspaces,
 	Group_Rename,
+	Grid,
 }
 
 Dialog :: struct {
@@ -93,6 +94,9 @@ dialog_open :: proc(k: Dialog_Kind) {
 		if !curves_open() {
 			dialog.kind = .None
 		}
+	case .Grid:
+		dialog.a, dialog.b, dialog.c = grid_w, grid_h, grid_opacity
+		dialog.flag, dialog.flag2 = show_grid, snap_grid
 	case .Feather:
 		dialog.a = 10
 	case .Grow, .Shrink:
@@ -186,6 +190,8 @@ dialogs_run :: proc() {
 		dlg_brush_settings()
 	case .Prefs:
 		dlg_prefs()
+	case .Grid:
+		dlg_grid()
 	case .Fx:
 		dlg_fx()
 	case .Curves:

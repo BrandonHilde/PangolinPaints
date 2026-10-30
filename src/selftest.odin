@@ -350,6 +350,17 @@ selftest :: proc() -> int {
 		show_grid, grid_w, grid_h, grid_angle = false, 64, 64, 0
 	}
 
+	// --- shift-stepped sliders ---------------------------------------------------------
+	{
+		check(slider_chunk(37, 0, 359, " deg", 1) == 35 && slider_chunk(-12, -90, 90, "deg", 1) == -10, "angles snap to 5 degrees")
+		check(slider_chunk(37, 0, 359, " deg", 1, 1) == 40 && slider_chunk(35, 0, 359, " deg", 1, -1) == 30, "shift+wheel steps 5 degrees")
+		check(slider_chunk(47, 1, 100, "%", 1) == 45 && slider_chunk(1, 1, 100, "%", 1, 1) == 5, "percentages step by 5")
+		check(slider_chunk(130, 0, 255, "", 1) == 130 && slider_chunk(134, 0, 255, "", 1) == 130, "0..255 steps by 10")
+		check(slider_chunk(37, 1, 1000, "px", 2.5) == 40 && slider_chunk(140, 1, 1000, "px", 2.5) == 150, "sizes stair-step")
+		check(slider_chunk(40, 1, 1000, "px", 2.5, 1) == 50 && slider_chunk(40, 1, 1000, "px", 2.5, -1) == 30, "sizes step to the next stair")
+		check(slider_chunk(7, 1, 16, "", 1) == 7, "short ranges keep single steps")
+	}
+
 	// --- switches share the options bar ---------------------------------------------------
 	{
 		fresh(32, 32, white)

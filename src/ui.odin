@@ -458,6 +458,49 @@ checkbox :: proc(x, y: i32, label: string, v: ^bool, tip := "") -> bool {
 
 // Horizontal slider with value drawn inside. `suffix` is appended to the value
 // ("%", "px"); `curve` > 1 gives finer control at the low end (brush sizes).
+// Round values that sliders with a curve (sizes) step through while Shift is held.
+SLIDER_STAIRS := [?]int{
+	1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 80, 100, 120, 150, 200, 250, 300, 400, 500,
+	600, 800, 1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000,
+}
+
+// Shift on a slider moves in chunks: angles by 5 degrees, curved (size) sliders along SLIDER_STAIRS,
+// everything else by a round step of about a twentieth of the range (5 for 0..100).
+slider_chunk :: proc(v, lo, hi: int, suffix: string, curve: f32, dir := 0) -> int {
+	if curve != 1 {
+		// nearest stair (by ratio), or the next one up / down
+		best := v
+		if dir == 0 {
+			bd := max(f32)
+			for s in SLIDER_STAIRS {
+				if s < lo || s > hi do continue
+				dd := abs(math.ln(f32(max(v, 1)) / f32(s)))
+				if dd < bd do best, bd = s, dd
+			}
+		} else if dir > 0 {
+			for s in SLIDER_STAIRS do if s > v && s <= hi {best = s; break}
+		} else {
+			#reverse for s in SLIDER_STAIRS do if s < v && s >= lo {best = s; break}
+		}
+		return clamp(best, lo, hi)
+	}
+	step := 5
+	if !strings.contains(suffix, "deg") {
+		step = 1
+		target := f32(hi - lo) / 20
+		for s in ([?]int{1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000}) {
+			if f32(s) <= target * 1.3 do step = s
+		}
+	}
+	n := int(math.round(f32(v) / f32(step)))
+	if dir != 0 {
+		// from an off-step value, the first step lands on the next multiple
+		n = int(math.floor(f32(v) / f32(step))) + (dir > 0 ? 1 : 0)
+		if dir < 0 && v % step == 0 do n -= 1
+	}
+	return clamp(n * step, lo, hi)
+}
+
 slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix := "", curve: f32 = 1, div := 1) -> bool {
 	id := make_id(r, label)
 	_, held, hover := button_behavior(id, r, tip)
@@ -469,6 +512,7 @@ slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix :
 		}
 		nv := lo + int(t * f32(hi - lo) + 0.5)
 		nv = clamp(nv, lo, hi)
+		if ui.shift do nv = slider_chunk(nv, lo, hi, suffix, curve)
 		if nv != v^ {
 			v^ = nv
 			changed = true
@@ -480,6 +524,7 @@ slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix :
 			step = max(v^ / 10, 1)
 		}
 		nv := clamp(v^ + (ui.wheel > 0 ? step : -step), lo, hi)
+		if ui.shift do nv = slider_chunk(v^, lo, hi, suffix, curve, ui.wheel > 0 ? 1 : -1)
 		if nv != v^ {
 			v^ = nv
 			changed = true

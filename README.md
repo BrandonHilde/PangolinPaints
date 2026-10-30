@@ -83,6 +83,7 @@ enabled in the Wacom driver's tablet properties.
 | V / T / C / H / Z | move / free transform / crop / hand / zoom |
 | U | line / polygon (Enter finishes, Backspace removes a point, Esc cancels) |
 | Ctrl+; / Ctrl+Shift+; | grid / snap to grid |
+| Shift on a slider | move in chunks: angles by 5 degrees, sizes along 1, 2, 3, 5, 10, 15, 20, 25, 50 ..., others by about 5% |
 | [ ] / 1-9, 0 | brush size / opacity 10%-100% |
 | X / D | swap colours / default colours |
 | Space (hold) / Alt (hold) | pan / eyedropper |

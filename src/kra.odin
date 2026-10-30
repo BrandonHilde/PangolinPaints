@@ -231,6 +231,7 @@ KRA_BLENDS := [?]struct {
 	{"darken", .Darken}, {"lighten", .Lighten}, {"dodge", .Color_Dodge}, {"burn", .Color_Burn},
 	{"add", .Add}, {"linear_dodge", .Add}, {"subtract", .Subtract}, {"diff", .Difference},
 	{"hue", .Hue}, {"saturation", .Saturation}, {"color", .Color}, {"luminize", .Luminosity},
+	{"erase", .Erase},
 }
 
 @(private = "file")

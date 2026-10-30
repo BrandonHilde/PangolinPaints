@@ -68,6 +68,7 @@ Blend :: enum u8 {
 	Saturation,
 	Color,
 	Luminosity,
+	Erase, // the layer's alpha cuts through everything below it (stays last: saved by index)
 }
 
 BLEND_NAMES := [Blend]string {
@@ -88,6 +89,7 @@ BLEND_NAMES := [Blend]string {
 	.Saturation  = "Saturation",
 	.Color       = "Color",
 	.Luminosity  = "Luminosity",
+	.Erase       = "Erase",
 }
 
 // ---------------------------------------------------------------------------

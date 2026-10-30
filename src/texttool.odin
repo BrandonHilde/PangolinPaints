@@ -201,7 +201,8 @@ text_click :: proc(p: Vec2) {
 	l.text = text_defaults
 	l.text.on = true
 	l.text.n = 0
-	l.text.x, l.text.y = p.x, p.y
+	sp := snap_pt(p)
+	l.text.x, l.text.y = sp.x, sp.y
 	text_color_all(&l.text, fg)
 	l.blend = brush_blend // the new text layer composites with the current brush blend mode
 	text_defaults.color = fg

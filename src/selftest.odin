@@ -309,6 +309,23 @@ selftest :: proc() -> int {
 		if tok do delete(tb)
 	}
 
+	// --- erase blend mode ------------------------------------------------------------
+	{
+		d := fresh(64, 64, white)
+		doc_add_layer(d)
+		tiles_fill(&d.layers[1].pix, red, {})
+		doc_add_layer(d)
+		tiles_set(&d.layers[2].pix, 10, 10, blue, {})
+		tiles_set(&d.layers[2].pix, 11, 10, Color{0, 0, 0, 128}, {})
+		d.layers[2].blend = .Erase
+		doc_dirty_all(d)
+		doc_refresh_comp(d)
+		check(d.comp[10 * 64 + 10].a == 0 && d.comp[10 * 64 + 20] == red, "erase layer cuts through the layers below")
+		check(abs(int(d.comp[10 * 64 + 11].a) - 127) <= 1, "erase strength follows the eraser layer's alpha")
+		doc_merge_down(d)
+		check(px(d, 1, 10, 10).a == 0 && px(d, 1, 20, 10) == red, "merging an erase layer erases the layer below")
+	}
+
 	// --- grid snapping --------------------------------------------------------------
 	{
 		d := fresh(95, 60, white)

@@ -25,7 +25,8 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   point to close the shape and optionally fill it. Shift keeps segments at 15 degree steps. Painted with its own
   brush settings (size, hardness, taper, ...).
 - **Grid**: a resizable grid (View > Grid, Ctrl+;) that every tool snaps to while Snap to Grid (Ctrl+Shift+;) is on:
-  brush strokes, lines, selections, gradients, crops, moves, transforms and text placement.
+  brush strokes, lines, selections, gradients, crops, moves, transforms and text placement. Snapping applies once a
+  tool is pressed; hovering stays free, so transform handles are always reachable.
 - **Image editing**
   - Adjust: auto contrast, brightness/contrast, levels, curves (per channel, with histogram), exposure,
     hue/saturation (colorize), vibrance, colour balance, temperature/tint, desaturate, sepia, invert, posterize,
@@ -41,12 +42,13 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   font, size, colour, alignment, line and letter spacing. Text stays live (click it to edit, Move tool repositions it),
   is saved in `.ppnt` projects, and turns into ordinary pixels the moment you paint or filter the layer.
   Select text (drag, Shift+arrows, double click, Ctrl+A) and pick any colour to colour just that part.
-  Layer > Convert Text to Path makes a vector layer from the glyph outlines: moving, transforming and resizing it
+  Layer > Convert Text to Path (or right-click the layer) makes a vector layer from the glyph outlines: moving, transforming and resizing it
   redraws the outlines, so it stays sharp at any size.
 - **Pen tablets**: pressure, tilt and the eraser end work with Wacom/Huion-style tablets on Windows (Windows Ink) and
   Linux (SDL pen events). Set `PANGOLIN_PEN_DEBUG=1` on Linux to print pen events.
 - **Layers**: unlimited layers with opacity and 17 blend modes (multiply, screen, overlay, soft/hard light,
-  dodge/burn, hue, saturation, colour, luminosity, ...), lock, lock transparency, layer masks (paint black to hide,
+  dodge/burn, hue, saturation, colour, luminosity, ...) plus Erase, which cuts the layer's shape out of everything
+  below it (e.g. knock text out of a painting), lock, lock transparency, layer masks (paint black to hide,
   white to reveal; from selection; apply or delete), merge down, flatten, layer via copy/cut, thumbnails.
 - **Colour**: HSV picker, RGB sliders, hex entry, swatch sets (oil paints, skin tones, earth & sky, pastels, ...),
   recent colours, GIMP `.gpl` swatch import/export, eyedropper with averaging. Click a colour in a toolbar colour

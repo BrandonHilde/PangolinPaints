@@ -1146,6 +1146,21 @@ panel_layers :: proc(r: Rect) {
 		if ly.lock_alpha {
 			icon(.Lock_Alpha, ix, ry + 17, C_ACCENT)
 		}
+		// right-click: select the layer and open its menu (on release, so the press doesn't close it)
+		if ui_hover(row) && ui_hover(list) && ui.released[1] && !popup.open {
+			if d.active_layer != li do tools_commit_pending()
+			d.active_layer = li
+			d.edit_mask = false
+			popup_begin(make_id(list, "layermenu"), Rect{ui.mx, ui.my, 1, 1}, 150)
+			popup_item("Convert Text to Path", cmd = .Layer_Text_To_Path, enabled = ly.text.on)
+			popup_item("Rasterize Layer", cmd = .Layer_Rasterize, enabled = ly.text.on || ly.shape != nil)
+			popup_sep()
+			popup_item("Duplicate Layer", cmd = .Layer_Dup)
+			popup_item("Delete Layer", cmd = .Layer_Del, enabled = len(d.layers) > 1)
+			popup_item("Merge Down", cmd = .Layer_Merge, enabled = li > 0)
+			popup_sep()
+			popup_item("Properties...", cmd = .Layer_Props)
+		}
 		if ui_hover(row) && ui_hover(list) && ui.pressed[0] {
 			switch {
 			case in_rect(eye, ui.mx, ui.my):

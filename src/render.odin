@@ -278,7 +278,8 @@ render_canvas :: proc(vp: Rect) {
 	if hover_valid && !drag.pan_active && ui.focus_id == 0 && ui.layer == ui.input_layer {
 		render_cursor(d)
 		if grid_snapping() && tool_snaps(eff_tool()) {
-			render_snap_marker(hover_pt)
+			// where a press would land
+			render_snap_marker(snap_pt(hover_pt))
 		}
 	}
 }
@@ -316,8 +317,8 @@ render_cursor :: proc(d: ^Doc) {
 	if !paint_tool(t) {
 		return
 	}
-	if grid_snapping() {
-		// the ring sits where the dab will land
+	if grid_snapping() && drag.active {
+		// mid-stroke the ring sits where the dabs land
 		sp := canvas_to_screen(hover_pt)
 		mx, my = sp.x, sp.y
 	}

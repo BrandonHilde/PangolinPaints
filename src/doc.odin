@@ -377,6 +377,10 @@ blend_px :: proc(dst, src: Color, opacity: f32, mode: Blend) -> Color {
 		return dst
 	}
 	sa := f32(src.a) / 255 * opacity
+	if mode == .Erase {
+		// only the source's coverage matters: it removes that much of what is below
+		return Color{dst.r, dst.g, dst.b, u8(f32(dst.a) * (1 - sa) + 0.5)}
+	}
 	if dst.a == 0 {
 		return Color{src.r, src.g, src.b, u8(sa * 255 + 0.5)}
 	}

@@ -18,13 +18,13 @@ grid_snapping :: proc() -> bool {
 	return show_grid && snap_grid
 }
 
-// View tools and the eyedropper keep the raw pointer.
+// View tools and the eyedropper keep the raw pointer. Snapping only applies once a tool is
+// pressed: hovering (and hit-testing handles) always uses the real pointer position.
 tool_snaps :: proc(t: Tool) -> bool {
 	#partial switch t {
-	case .Hand, .Zoom, .Picker:
+	case .Hand, .Zoom, .Picker, .Text:
+		// text clicks hit-test existing text; a new block's position is snapped in text_click
 		return false
-	case .Text:
-		return !text_edit.active // placing a new block snaps; selecting text doesn't
 	}
 	return true
 }

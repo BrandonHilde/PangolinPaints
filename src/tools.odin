@@ -5,7 +5,7 @@ import "core:slice"
 
 canvas_vp: Rect
 
-hover_pt: Vec2 // canvas position under the mouse (continuous)
+hover_pt: Vec2 // canvas position under the mouse (continuous; snapped to the grid only while dragging)
 hover_valid: bool // mouse is over the canvas viewport
 
 Grad_Kind :: enum u8 {
@@ -239,7 +239,7 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		drag.sel_mode = sel_mode_now()
 		drag.sel_base = d.sel != nil ? slice.clone(d.sel.v) : nil
 		history_push(d)
-		wp := wrap_pt(p)
+		wp := wrap_pt(hover_pt) // whether the press is inside the selection: the real pointer
 		q := ipt(wp)
 		if drag.sel_mode == .Replace && d.sel != nil && pt_in_doc(wp) && d.sel.v[q.y * d.w + q.x] >= 128 {
 			drag.sel_moving = true
@@ -482,7 +482,8 @@ canvas_update :: proc(vp: Rect) {
 	mx := ui.ptr.x / f32(ui.scale)
 	my := ui.ptr.y / f32(ui.scale)
 	p := screen_to_canvas(mx, my)
-	if tool_snaps(drag.active ? drag.tool : eff_tool()) {
+	// grid snapping applies to the action, not to hovering: handles stay reachable
+	if drag.active && tool_snaps(drag.tool) {
 		p = snap_pt(p)
 	}
 	hover_pt = p
@@ -539,7 +540,7 @@ canvas_update :: proc(vp: Rect) {
 			ui.cursor = .CROSSHAIR
 		}
 		if ui.pressed[0] || ui.pressed[1] {
-			begin_drag(ui.pressed[0] ? 0 : 1, p)
+			begin_drag(ui.pressed[0] ? 0 : 1, tool_snaps(t) ? snap_pt(p) : p)
 		}
 	} else if drag.active {
 		btn_down := ui.down[drag.btn]
@@ -1069,7 +1070,8 @@ xform_mouse_down :: proc(p: Vec2) {
 		return
 	}
 	xf := &xform
-	xf.grab, xf.handle = xform_hit(p)
+	// handles are hit-tested at the real pointer; the drag itself works from the snapped point
+	xf.grab, xf.handle = xform_hit(hover_pt)
 	xf.g_start = p
 	xf.g_cx, xf.g_cy, xf.g_sx, xf.g_sy, xf.g_angle = xf.cx, xf.cy, xf.sx, xf.sy, xf.angle
 }

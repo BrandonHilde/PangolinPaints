@@ -447,9 +447,13 @@ panel_toolbar :: proc(r: Rect) {
 			clicked, _, hover := button_behavior(make_id(br, "grpcol"), br, color_hex(c))
 			draw_rrect(f32(br.x), f32(br.y), f32(br.w), f32(br.h), RADIUS, c)
 			same := c.r == fg.r && c.g == fg.g && c.b == fg.b
-			draw_rrect_outline(f32(br.x), f32(br.y), f32(br.w), f32(br.h), RADIUS, same ? WHITE : (hover ? C_RING_HI : C_RING))
+			linked := color_link_g == gi && color_link_i == ci
+			draw_rrect_outline(f32(br.x), f32(br.y), f32(br.w), f32(br.h), RADIUS, linked ? C_ACCENT : (same ? WHITE : (hover ? C_RING_HI : C_RING)))
+			if linked {
+				draw_rrect_outline(f32(br.x - 1), f32(br.y - 1), f32(br.w + 2), f32(br.h + 2), RADIUS + 1, C_ACCENT)
+			}
 			if clicked {
-				set_fg(c)
+				color_link_set(gi, ci)
 			} else if hover && ui.pressed[1] && !popup.open {
 				rem_g, rem_t = gi, ci
 			}
@@ -531,6 +535,7 @@ panel_toolbar :: proc(r: Rect) {
 		y += 6
 	}
 	if rem_g >= 0 {
+		color_link_clear() // indices shift
 		if rem_t >= 0 {
 			rg := &tool_groups[rem_g]
 			if len(rg.colors) > 0 {
@@ -782,7 +787,11 @@ panel_right :: proc(r: Rect) {
 	x, y := area.x, area.y
 
 	// --- colour picker ---------------------------------------------------
-	section_header(x, y, area.w, "Color")
+	if color_linked() != nil {
+		section_header(x, y, area.w, "Color - editing toolbar colour")
+	} else {
+		section_header(x, y, area.w, "Color")
+	}
 	y += 20
 	SV_H :: 100
 	sv := Rect{x, y, area.w - 20, SV_H}
@@ -791,7 +800,7 @@ panel_right :: proc(r: Rect) {
 	draw_gradient(f32(sv.x), f32(sv.y), f32(sv.w), f32(sv.h), Color{0, 0, 0, 0}, Color{0, 0, 0, 255})
 	outline_rect(sv, C_RING_HI)
 	if act, fx, fy := drag_area(sv, make_id(sv, "sv")); act {
-		set_fg_hsv(fg_h, fx, 1 - fy)
+		picker_set_fg_hsv(fg_h, fx, 1 - fy)
 	}
 	cx := sv.x + i32(fg_s * f32(sv.w - 1))
 	cy := sv.y + i32((1 - fg_v) * f32(sv.h - 1))
@@ -805,7 +814,7 @@ panel_right :: proc(r: Rect) {
 	}
 	outline_rect(hue, C_RING_HI)
 	if act, _, fy := drag_area(hue, make_id(hue, "hue")); act {
-		set_fg_hsv(fy * 359.9, fg_s, fg_v)
+		picker_set_fg_hsv(fy * 359.9, fg_s, fg_v)
 	}
 	hy := hue.y + i32(fg_h / 360 * f32(hue.h - 1))
 	draw_rrect(f32(hue.x - 3), f32(hy - 2), f32(hue.w + 6), 5, 2, WHITE)
@@ -831,7 +840,7 @@ panel_right :: proc(r: Rect) {
 	}
 	if ch, sub := text_field(hr, &hex_buf, "Hex colour (RRGGBB)"); ch || sub {
 		if c, ok := parse_hex(name_str(&hex_buf)); ok {
-			set_fg(c)
+			picker_set_fg(c)
 		}
 	}
 	h, s, v := int(fg_h + 0.5), int(fg_s * 100 + 0.5), int(fg_v * 100 + 0.5)
@@ -841,7 +850,7 @@ panel_right :: proc(r: Rect) {
 	names := [3]string{"R", "G", "B"}
 	for i in 0 ..< 3 {
 		if slider(Rect{x, y + i32(i) * 17, area.w, 14}, &rgb[i], 0, 255, names[i]) {
-			set_fg(Color{u8(rgb[0]), u8(rgb[1]), u8(rgb[2]), 255})
+			picker_set_fg(Color{u8(rgb[0]), u8(rgb[1]), u8(rgb[2]), 255})
 		}
 	}
 	y += 56

@@ -51,6 +51,7 @@ set_statusf :: proc(format: string, args: ..any) {
 }
 
 set_fg :: proc(c: Color) {
+	color_link_clear()
 	fg = Color{c.r, c.g, c.b, 255}
 	h, s, v := rgb_to_hsv(c)
 	if s > 0.001 && v > 0.001 {
@@ -60,8 +61,44 @@ set_fg :: proc(c: Color) {
 }
 
 set_fg_hsv :: proc(h, s, v: f32) {
+	color_link_clear()
 	fg_h, fg_s, fg_v = h, s, v
 	fg = hsv_to_rgb(h, s, v)
+}
+
+// Colour-group swatch the colour picker is editing (picked from the toolbar), or -1.
+color_link_g, color_link_i := -1, -1
+
+color_link_clear :: proc() {
+	color_link_g, color_link_i = -1, -1
+}
+
+// Makes colour `ci` of group `gi` the foreground colour and the one the picker edits.
+color_link_set :: proc(gi, ci: int) {
+	set_fg(tool_groups[gi].colors[ci])
+	color_link_g, color_link_i = gi, ci
+}
+
+color_linked :: proc() -> ^Color {
+	if color_link_g < 0 || color_link_g >= len(tool_groups) do return nil
+	g := &tool_groups[color_link_g]
+	if color_link_i < 0 || color_link_i >= len(g.colors) do return nil
+	return &g.colors[color_link_i]
+}
+
+// The colour picker's edits: change the foreground colour and the linked group colour with it.
+picker_set_fg :: proc(c: Color) {
+	g, i := color_link_g, color_link_i
+	set_fg(c)
+	color_link_g, color_link_i = g, i
+	if lc := color_linked(); lc != nil do lc^ = fg
+}
+
+picker_set_fg_hsv :: proc(h, s, v: f32) {
+	g, i := color_link_g, color_link_i
+	set_fg_hsv(h, s, v)
+	color_link_g, color_link_i = g, i
+	if lc := color_linked(); lc != nil do lc^ = fg
 }
 
 // Remember a colour that was painted with.

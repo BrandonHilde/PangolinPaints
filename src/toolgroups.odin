@@ -103,6 +103,7 @@ group_clean_name :: proc(s: string) -> string {
 
 tool_groups_clear :: proc() {
 	active_group = -1
+	color_link_clear()
 	for &g in tool_groups {
 		delete(g.tools)
 		delete(g.colors)
@@ -135,13 +136,17 @@ tool_group_activate :: proc(gi: int) {
 	g := &tool_groups[gi]
 	if len(g.colors) > 0 {
 		next := 0
-		for c, i in g.colors {
-			if c.r == fg.r && c.g == fg.g && c.b == fg.b {
-				next = (i + 1) % len(g.colors)
-				break
+		if color_link_g == gi {
+			next = (color_link_i + 1) % len(g.colors)
+		} else {
+			for c, i in g.colors {
+				if c.r == fg.r && c.g == fg.g && c.b == fg.b {
+					next = (i + 1) % len(g.colors)
+					break
+				}
 			}
 		}
-		set_fg(g.colors[next])
+		color_link_set(gi, next)
 		return
 	}
 	if len(g.blends) == 1 {

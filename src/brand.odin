@@ -6,82 +6,27 @@ APP_TAGLINE :: "Brushstrokes, scale by scale."
 
 LOGO_SIZE :: 16
 
-// Pixel-art pangolin facing left, holding a paintbrush with a wet tip.
-// Characters map to colours in `logo_color`.
-LOGO_ART := [LOGO_SIZE]string {
-	"...........r....",
-	"..........rr....",
-	".........kk.....",
-	"......oooook....",
-	"....ooddbbkdoo..",
-	"...oddbbddkbddo.",
-	"..oddbbddbkddbbo",
-	"..obbddbbdkbbddo",
-	".oobddbbddkbddbo",
-	"ossoobbddbkddbo.",
-	"osswoddbbdldbo..",
-	".osssllooolooo..",
-	"..ooollo.ol.ol..",
-	"....ol.o.ol.ol..",
-	"....oo.o.oo.oo..",
-	"..yy.bb.rr.gg...",
-}
+// A pangolin whose tail is a paint-dipped brush, on a rounded tile.
+LOGO_SVG :: #load("../assets/logo.svg", string)
 
-logo_color :: proc(ch: u8) -> (c: Color, ok: bool) {
-	switch ch {
-	case 'o':
-		return Color{46, 32, 24, 255}, true
-	case 'd':
-		return Color{139, 94, 60, 255}, true
-	case 'b':
-		return Color{192, 140, 86, 255}, true
-	case 'l':
-		return Color{224, 185, 136, 255}, true
-	case 's':
-		return Color{240, 217, 181, 255}, true
-	case 'w':
-		return Color{255, 255, 255, 255}, true
-	case 'k':
-		return Color{120, 72, 40, 255}, true // brush handle
-	case 'r':
-		return Color{214, 64, 52, 255}, true
-	case 'y':
-		return Color{240, 196, 60, 255}, true
-	case 'g':
-		return Color{70, 150, 90, 255}, true
-	}
-	return {}, false
-}
+@(private = "file")
+logo_cache: map[i32]Texture // by physical size
 
-logo_tex: Texture
-
-logo_pixels :: proc() -> []Color {
-	pix := make([]Color, LOGO_SIZE * LOGO_SIZE, context.temp_allocator)
-	for row, y in LOGO_ART {
-		for x in 0 ..< len(row) {
-			if c, ok := logo_color(row[x]); ok {
-				pix[y * LOGO_SIZE + x] = c
-			}
-		}
-	}
-	return pix
-}
-
-// Window icon and the texture used by the About dialog.
+// Window icon.
 brand_init :: proc() {
-	pix := logo_pixels()
-	logo_tex = tex_from_pixels(pix, LOGO_SIZE, LOGO_SIZE, .Point)
-	const_scale :: 4
-	big := make([]Color, LOGO_SIZE * const_scale * LOGO_SIZE * const_scale, context.temp_allocator)
-	for y in 0 ..< LOGO_SIZE * const_scale {
-		for x in 0 ..< LOGO_SIZE * const_scale {
-			big[y * LOGO_SIZE * const_scale + x] = pix[(y / const_scale) * LOGO_SIZE + x / const_scale]
-		}
-	}
-	gfx_set_icon(big, LOGO_SIZE * const_scale, LOGO_SIZE * const_scale)
+	ICON_PX :: 256
+	pix := svg_render(LOGO_SVG, ICON_PX, ICON_PX, context.temp_allocator)
+	gfx_set_icon(pix, ICON_PX, ICON_PX)
 }
 
-// Draws the logo at an integer scale.
+// Draws the logo LOGO_SIZE * scale logical px wide, rendered at the window's physical resolution.
 logo_draw :: proc(x, y, scale: i32) {
-	draw_tex(logo_tex, {0, 0, LOGO_SIZE, LOGO_SIZE}, {f32(x), f32(y), f32(LOGO_SIZE * scale), f32(LOGO_SIZE * scale)})
+	size := LOGO_SIZE * scale
+	px := size * i32(gfx.scale)
+	t, ok := logo_cache[px]
+	if !ok {
+		t = tex_from_pixels(svg_render(LOGO_SVG, int(px), int(px), context.temp_allocator), int(px), int(px), .Point)
+		logo_cache[px] = t
+	}
+	draw_tex(t, {0, 0, f32(px), f32(px)}, {f32(x), f32(y), f32(size), f32(size)})
 }

@@ -653,6 +653,57 @@ brush_sheet :: proc(path: string) -> int {
 	return write_file(path, encode_png(cp, w, h)) ? 0 : 1
 }
 
+// Every icon at the sizes the UI draws it (1x, 2x and 3x) plus a large proof, and the logo (`--icon-sheet`).
+icon_sheet :: proc(path: string) -> int {
+	SIZES :: [?]int{12, 16, 24, 32, 36, 48, 96}
+	COL :: 300
+	PER_ROW :: 4
+	row_h := 0
+	for s in SIZES do row_h = max(row_h, s)
+	row_h += 34
+	rows := (len(Icon) + PER_ROW - 1) / PER_ROW
+	w := PER_ROW * COL + 20
+	logo_h := 280
+	h := rows * row_h + logo_h + 20
+	pix := make([]Color, w * h)
+	defer delete(pix)
+	for &p in pix do p = C_PANEL
+	put :: proc(pix: []Color, w, h: int, src: []Color, sw, sh, x, y: int, tint: Color) {
+		for yy in 0 ..< sh {
+			for xx in 0 ..< sw {
+				s := src[yy * sw + xx]
+				px, py := x + xx, y + yy
+				if s.a == 0 || px < 0 || py < 0 || px >= w || py >= h do continue
+				d := &pix[py * w + px]
+				k := f32(s.a) / 255 * f32(tint.a) / 255
+				for ch in 0 ..< 3 {
+					d[ch] = u8(f32(d[ch]) * (1 - k) + f32(s[ch]) * f32(tint[ch]) / 255 * k + 0.5)
+				}
+			}
+		}
+	}
+	for ic in Icon {
+		i := int(ic)
+		ox := 10 + (i % PER_ROW) * COL
+		oy := 10 + (i / PER_ROW) * row_h
+		x := ox
+		for s, k in SIZES {
+			icon_px := svg_render(ICON_SVG[ic], s, s, context.temp_allocator)
+			put(pix, w, h, icon_px, s, s, x, oy + 16 + (row_h - 34 - s) / 2, k == 1 ? C_ACCENT : C_TEXT)
+			x += s + 4
+		}
+		image_draw_text(pix, w, h, ox, oy, fmt.tprintf("%v", ic), 14, C_TEXT_DIM)
+	}
+	ly := 10 + rows * row_h
+	x := 10
+	for s in ([?]int{16, 32, 48, 64, 128, 256}) {
+		lp := svg_render(LOGO_SVG, s, s, context.temp_allocator)
+		put(pix, w, h, lp, s, s, x, ly, WHITE)
+		x += s + 12
+	}
+	return write_file(path, encode_png(pix, w, h)) ? 0 : 1
+}
+
 // Rough timings for big canvases (`--bench`).
 bench :: proc() -> int {
 	brush_init()

@@ -96,7 +96,11 @@ enabled in the Wacom driver's tablet properties.
 
 ## Developer flags
 `--selftest` (tests), `--bench` (timings on a 4000x3000 canvas), `--brush-sheet out.png` (one stroke per preset),
+`--icon-sheet out.png` (every icon at each size and UI scale, and the logo),
 `--demo` (sample painting), `--shot file.png` (screenshot after a few frames).
+
+Icons are SVG files in `assets/icons` (24 x 24, drawn in `currentColor` with round-capped 2 px strokes) and the logo is
+`assets/logo.svg`; both are built into the executable and rasterised at the screen's resolution by `src/svg.odin`.
 
 ## License
 BSD 3-Clause. See [LICENSE](LICENSE).

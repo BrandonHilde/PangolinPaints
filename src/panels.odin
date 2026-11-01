@@ -495,7 +495,7 @@ panel_toolbar :: proc(r: Rect) {
 		if can_add {
 			pid := make_id(pr, "grpadd")
 			tip := "Add a tool, colours or brush blend modes to this group (right-click an item to remove it)"
-			if icon_button(pr, .Plus, tip) {
+			if icon_button_quiet(pr, .Plus, tip) {
 				popup_begin(pid, pr)
 				popup_grid(5)
 				any_section := false
@@ -869,8 +869,9 @@ panel_right :: proc(r: Rect) {
 	y += 24
 	rgb := [3]int{int(fg.r), int(fg.g), int(fg.b)}
 	names := [3]string{"R", "G", "B"}
+	tints := [3]Color{{236, 96, 86, 255}, {108, 196, 116, 255}, {96, 150, 236, 255}}
 	for i in 0 ..< 3 {
-		if slider(Rect{x, y + i32(i) * 17, area.w, 14}, &rgb[i], 0, 255, names[i]) {
+		if slider(Rect{x, y + i32(i) * 17, area.w, 14}, &rgb[i], 0, 255, names[i], tint = tints[i]) {
 			picker_set_fg(Color{u8(rgb[0]), u8(rgb[1]), u8(rgb[2]), 255})
 		}
 	}

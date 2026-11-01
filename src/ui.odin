@@ -22,7 +22,6 @@ C_HOVER :: Color{68, 72, 85, 255}
 C_ACTIVE :: Color{178, 100, 56, 255} // selected rows, pressed
 C_ACCENT :: Color{246, 170, 104, 255}
 C_ACCENT_TINT :: Color{246, 170, 104, 52} // toggled-on fill
-C_SLIDER :: Color{108, 70, 46, 255}
 C_TEXT :: Color{229, 231, 237, 255}
 C_TEXT_DIM :: Color{140, 145, 160, 255}
 C_TEXT_OFF :: Color{88, 92, 106, 255}
@@ -52,7 +51,6 @@ UI :: struct {
 	tip:                 string,
 	cursor:              MouseCursor,
 
-	icons:               Texture,
 	caret:               int,
 	sel_all:             bool,
 	edit:                Name,
@@ -179,12 +177,18 @@ clip_end :: proc() {
 	}
 }
 
-icon :: proc(ic: Icon, x, y: i32, c: Color) {
-	draw_tex(ui.icons, {f32(int(ic) * ICON_SIZE), 0, ICON_SIZE, ICON_SIZE}, {f32(x), f32(y), ICON_SIZE, ICON_SIZE}, c)
+icon :: proc(ic: Icon, x, y: i32, c: Color, size: i32 = ICON_SIZE) {
+	tex, px := icon_atlas(size)
+	draw_tex(tex, {f32(int(ic) * int(px)), 0, f32(px), f32(px)}, {f32(x), f32(y), f32(size), f32(size)}, c)
 }
 
-icon_centered :: proc(ic: Icon, r: Rect, c: Color) {
-	icon(ic, r.x + (r.w - ICON_SIZE) / 2, r.y + (r.h - ICON_SIZE) / 2, c)
+icon_centered :: proc(ic: Icon, r: Rect, c: Color, size: i32 = ICON_SIZE) {
+	icon(ic, r.x + (r.w - size) / 2, r.y + (r.h - size) / 2, c, size)
+}
+
+// Buttons with room for them (tool buttons) get the large icons.
+icon_fit :: proc(r: Rect) -> i32 {
+	return min(r.w, r.h) >= 22 ? ICON_SIZE_LG : ICON_SIZE
 }
 
 // Small "+" / "-" badge in the top-right corner of a 12x12 icon.
@@ -414,7 +418,7 @@ icon_button :: proc(r: Rect, ic: Icon, tip := "", active := false, enabled := tr
 		clicked, held, hover = false, false, false
 	}
 	fg := ctl_state(r, hover, held, active, enabled)
-	icon_centered(ic, r, fg)
+	icon_centered(ic, r, fg, icon_fit(r))
 	return clicked
 }
 
@@ -424,6 +428,20 @@ badge_button :: proc(r: Rect, ic: Icon, plus: bool, tip := "", enabled := true) 
 	x := r.x + (r.w - ICON_SIZE) / 2
 	y := r.y + (r.h - ICON_SIZE) / 2
 	icon_badge(x, y, plus, enabled ? C_ACCENT : C_TEXT_OFF)
+	return clicked
+}
+
+// Quiet icon button for add-item slots: an outline until hovered, so it doesn't compete with real items.
+icon_button_quiet :: proc(r: Rect, ic: Icon, tip := "") -> bool {
+	id := make_id(r, tip)
+	clicked, held, hover := button_behavior(id, r, tip)
+	fg := C_TEXT_DIM
+	if hover || held {
+		fg = ctl_state(r, hover, held, false, true)
+	} else {
+		draw_rrect_outline(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, C_RING_HI)
+	}
+	icon_centered(ic, r, fg, icon_fit(r))
 	return clicked
 }
 
@@ -501,7 +519,8 @@ slider_chunk :: proc(v, lo, hi: int, suffix: string, curve: f32, dir := 0) -> in
 	return clamp(n * step, lo, hi)
 }
 
-slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix := "", curve: f32 = 1, div := 1) -> bool {
+// `tint` colours the filled part (the colour picker uses its channel colours).
+slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix := "", curve: f32 = 1, div := 1, tint := C_ACCENT) -> bool {
 	id := make_id(r, label)
 	_, held, hover := button_behavior(id, r, tip)
 	changed := false
@@ -535,10 +554,15 @@ slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix :
 	if curve != 1 {
 		frac = math.pow(clamp(frac, 0, 1), 1 / curve)
 	}
-	if fw := f32(r.w) * frac; fw >= 1 {
-		draw_rrect(f32(r.x), f32(r.y), fw, f32(r.h), RADIUS, hover || held ? C_ACTIVE : C_SLIDER)
-		draw_rrect_outline(f32(r.x), f32(r.y), fw, f32(r.h), RADIUS, C_RING)
+	// a translucent fill up to the value, ending in a bright handle
+	fw := f32(r.w) * clamp(frac, 0, 1)
+	if fw >= 1 {
+		fill := tint
+		fill.a = hover || held ? 96 : 66
+		draw_rrect(f32(r.x), f32(r.y), fw, f32(r.h), RADIUS, fill)
 	}
+	hx := clamp(f32(r.x) + fw - 2, f32(r.x) + 1, f32(r.x + r.w) - 3)
+	draw_rrect(hx, f32(r.y) + 2, 2, f32(r.h) - 4, 1, hover || held ? WHITE : tint)
 	vs := div > 1 ? fmt.tprintf("%.*f", div >= 100 ? 2 : 1, f32(v^) / f32(div)) : fmt.tprintf("%d", v^)
 	s := label == "" ? fmt.tprintf("%s%s", vs, suffix) : fmt.tprintf("%s: %s%s", label, vs, suffix)
 	text_centered(r, s, C_TEXT)
@@ -1026,7 +1050,7 @@ popup_run_grid :: proc() {
 		}
 		ctl_surface(ir, hover ? C_HOVER : C_PANEL_LT, hover ? C_RING_HI : C_RING)
 		if it.has_icon {
-			icon_centered(it.icon, ir, hover ? WHITE : C_TEXT)
+			icon_centered(it.icon, ir, hover ? WHITE : C_TEXT, ICON_SIZE_LG)
 		} else {
 			tx := ir.x + 8
 			if it.has_color {

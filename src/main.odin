@@ -136,6 +136,8 @@ main :: proc() {
 			i += 1
 		case a == "--brush-sheet" && i + 1 < len(args):
 			os.exit(brush_sheet(args[i + 1]))
+		case a == "--icon-sheet" && i + 1 < len(args):
+			os.exit(icon_sheet(args[i + 1]))
 		case a == "--convert" && i + 2 < len(args):
 			os.exit(convert_file(args[i + 1], args[i + 2]))
 		case a == "--bench":
@@ -159,7 +161,6 @@ main :: proc() {
 	set_fg(fg)
 	tool_groups_default()
 	prefs_load()
-	ui.icons = icons_build_atlas()
 	render_init()
 	brand_init()
 

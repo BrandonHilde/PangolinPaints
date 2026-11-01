@@ -200,10 +200,8 @@ render_line_preview :: proc(d: ^Doc) {
 	}
 }
 
-options_line :: proc(x: ^i32, y: i32) {
-	checkbox(x^, y + 1, "Outline", &line_outline, "Paint the line with the brush settings")
-	x^ += 64
-	checkbox(x^, y + 1, "Fill closed", &line_fill, "Fill shapes closed by clicking the first point with the foreground colour")
-	x^ += 80
-	text(x^, y + 3, line_active() ? "Double click / Enter: finish   Click first point: close   Esc: cancel" : "Drag: line   Click: polygon points (Shift: 15 degrees)", C_TEXT_DIM)
+options_line :: proc() {
+	ocheck("Outline", &line_outline, "Paint the line with the brush settings")
+	ocheck("Fill closed", &line_fill, "Fill shapes closed by clicking the first point with the foreground colour")
+	ohint(line_active() ? "Double click / Enter: finish   Click first point: close   Esc: cancel" : "Drag: line   Click: polygon points (Shift: 15 degrees)")
 }

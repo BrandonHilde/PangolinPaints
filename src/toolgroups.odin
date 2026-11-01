@@ -370,7 +370,7 @@ GROUPS_BAR_H :: 24
 
 // Keyboard-key look for hotkey badges, so they read differently from the tool buttons.
 keycap :: proc(r: Rect, label: string, lit, hover: bool) {
-	fill := lit ? C_ACTIVE : (hover ? Color{78, 82, 96, 255} : Color{62, 65, 76, 255})
+	fill := lit ? C_ACTIVE : (hover ? shade(C_HOVER, 1.15) : shade(C_PANEL_LT, 1.18))
 	face := Rect{r.x, r.y, r.w, r.h - 2}
 	draw_rrect(f32(r.x), f32(r.y + 2), f32(r.w), f32(r.h - 2), RADIUS, C_BORDER) // the key's lower edge
 	draw_rrect(f32(face.x), f32(face.y), f32(face.w), f32(face.h), RADIUS, fill)
@@ -443,7 +443,7 @@ panel_groups_bar :: proc(r: Rect) {
 		clicked, held, hover := button_behavior(make_id(cell, "grpcell"), cell, tip)
 		if active {
 			draw_rrect(f32(cell.x), f32(cell.y), f32(cell.w), f32(cell.h), RADIUS, C_ACCENT_TINT)
-			draw_rrect_outline(f32(cell.x), f32(cell.y), f32(cell.w), f32(cell.h), RADIUS, Color{246, 170, 104, 150})
+			draw_rrect_outline(f32(cell.x), f32(cell.y), f32(cell.w), f32(cell.h), RADIUS, with_alpha(C_ACCENT, 150))
 		} else {
 			draw_rrect(f32(cell.x), f32(cell.y), f32(cell.w), f32(cell.h), RADIUS, hover ? C_HOVER : C_PANEL)
 			draw_rrect_outline(f32(cell.x), f32(cell.y), f32(cell.w), f32(cell.h), RADIUS, C_RING)

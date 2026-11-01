@@ -143,36 +143,27 @@ switch_changed :: proc(t: Tool) {
 	}
 }
 
-options_grid :: proc(x: ^i32, y: i32) {
-	icon(.Grid, x^, y + 1, C_ACCENT)
-	x^ += 16
-	text(x^, y + 3, "Grid", C_TEXT)
-	x^ += text_w("Grid") + 8
-	slider_w(x, y, 84, &grid_w, 1, 1024, "W", "Grid cell width", "px", 2)
-	slider_w(x, y, 84, &grid_h, 1, 1024, "H", "Grid cell height", "px", 2)
-	slider_w(x, y, 92, &grid_angle, -90, 90, "Angle", "Grid rotation about the canvas centre", "deg")
-	checkbox(x^, y + 1, "Snap", &snap_grid, "Tools snap to the grid while it is shown (Ctrl+Shift+;)")
-	x^ += 50
-	if button(Rect{x^, y, 66, 14}, "Grid Off", "Hide the grid (Ctrl+;)") do run_cmd(.Toggle_Grid)
-	x^ += 72
+options_grid :: proc() {
+	oicon("icon", .Grid, "switch-icon")
+	otext("title", "Grid", "switch-title")
+	oslider("W", 84, &grid_w, 1, 1024, "Grid cell width", "px", 2)
+	oslider("H", 84, &grid_h, 1, 1024, "Grid cell height", "px", 2)
+	oslider("Angle", 92, &grid_angle, -90, 90, "Grid rotation about the canvas centre", "deg")
+	ocheck("Snap", &snap_grid, "Tools snap to the grid while it is shown (Ctrl+Shift+;)")
+	if obutton("Grid Off", 66, "Hide the grid (Ctrl+;)") do run_cmd(.Toggle_Grid)
 }
 
-options_mirror :: proc(x: ^i32, y: i32) {
-	icon(.Sym_X, x^, y + 1, C_ACCENT)
-	x^ += 16
-	text(x^, y + 3, "Mirror", C_TEXT)
-	x^ += text_w("Mirror") + 8
-	slider_w(x, y, 90, &mirror_count, 1, MIRROR_MAX, "Mirrors", "Number of mirror lines (each one doubles the copies)", "")
-	slider_w(x, y, 92, &mirror_angle, 0, 179, "Angle", "Angle of the first mirror line (90: left / right)", "deg")
-	if button(Rect{x^, y, 84, 14}, "Move Center", "Click or drag on the canvas to place the mirror centre", true, mirror_placing) {
+options_mirror :: proc() {
+	oicon("icon", .Sym_X, "switch-icon")
+	otext("title", "Mirror", "switch-title")
+	oslider("Mirrors", 90, &mirror_count, 1, MIRROR_MAX, "Number of mirror lines (each one doubles the copies)")
+	oslider("Angle", 92, &mirror_angle, 0, 179, "Angle of the first mirror line (90: left / right)", "deg")
+	if obutton("Move Center", 84, "Click or drag on the canvas to place the mirror centre", true, mirror_placing) {
 		mirror_placing = !mirror_placing
 		if mirror_placing do set_status("Click or drag on the canvas to place the mirror centre (Esc cancels)")
 	}
-	x^ += 88
-	if button(Rect{x^, y, 46, 14}, "Reset", "Centre the mirror on the canvas") {
+	if obutton("Reset", 46, "Centre the mirror on the canvas") {
 		mirror_cx, mirror_cy = 0.5, 0.5
 	}
-	x^ += 52
-	if button(Rect{x^, y, 72, 14}, "Mirror Off", "Turn mirror painting off") do run_cmd(.Toggle_Mirror)
-	x^ += 78
+	if obutton("Mirror Off", 72, "Turn mirror painting off") do run_cmd(.Toggle_Mirror)
 }

@@ -96,6 +96,11 @@ main :: proc() {
 	demo := false
 	dlg_arg := -1
 	menu_arg := -1
+	Script_Click :: struct {
+		frame: int,
+		pos:   Vec2,
+	}
+	clicks := make([dynamic]Script_Click)
 	open_args := make([dynamic]string)
 	args := os.args
 	for i := 1; i < len(args); i += 1 {
@@ -131,6 +136,19 @@ main :: proc() {
 		case a == "--dialog" && i + 1 < len(args):
 			dlg_arg, _ = strconv.parse_int(args[i + 1])
 			i += 1
+		case a == "--clicks" && i + 1 < len(args):
+			// "frame:x,y;frame:x,y": left clicks in window pixels, for checking the interface
+			for part in strings.split(args[i + 1], ";", context.temp_allocator) {
+				fp := strings.split(part, ":", context.temp_allocator)
+				if len(fp) != 2 do continue
+				xy := strings.split(fp[1], ",", context.temp_allocator)
+				if len(xy) != 2 do continue
+				f, _ := strconv.parse_int(fp[0])
+				x, _ := strconv.parse_f32(xy[0])
+				y, _ := strconv.parse_f32(xy[1])
+				append(&clicks, Script_Click{f, {x, y}})
+			}
+			i += 1
 		case a == "--menu" && i + 1 < len(args):
 			menu_arg, _ = strconv.parse_int(args[i + 1])
 			i += 1
@@ -163,6 +181,8 @@ main :: proc() {
 	prefs_load()
 	render_init()
 	brand_init()
+	oui_init()
+	panels_init()
 
 	if demo {
 		demo_setup()
@@ -189,6 +209,18 @@ main :: proc() {
 	for !want_quit {
 		free_all(context.temp_allocator)
 		gfx_poll()
+		for c in clicks {
+			switch frame_no {
+			case c.frame - 2 ..< c.frame:
+				gfx.mouse = c.pos
+			case c.frame:
+				gfx.mouse = c.pos
+				gfx.m_pressed[0], gfx.m_down[0] = true, true
+			case c.frame + 1:
+				gfx.mouse = c.pos
+				gfx.m_released[0], gfx.m_down[0] = true, false
+			}
+		}
 		if gfx.quit {
 			gfx.quit = false
 			request_quit()
@@ -221,11 +253,13 @@ main :: proc() {
 			status_t -= ui.dt
 		}
 		if menu_arg >= 0 && frame_no == 3 {
-			popup_begin(1, Rect{4 + i32(menu_arg) * 44, 0, 40, 15}, 0, menu_arg)
-			menu_build(menu_arg)
+			menu_request = menu_arg
 		}
 		gfx_begin(C_BG)
+		oui_begin_frame()
 		main_ui()
+		oui_end_frame()
+		oui_render()
 		dialogs_run()
 		popup_run()
 		tooltip_draw()

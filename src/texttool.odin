@@ -409,7 +409,7 @@ text_draw_overlay :: proc(d: ^Doc) {
 	a := canvas_to_screen({f32(b.x0), f32(b.y0)})
 	z := canvas_to_screen({f32(b.x1), f32(b.y1)})
 	editing := text_edit_layer() != nil
-	col := editing ? C_ACCENT : Color{246, 170, 104, 120}
+	col := editing ? C_ACCENT : with_alpha(C_ACCENT, 120)
 	draw_rect_outline({a.x, a.y, z.x - a.x, z.y - a.y}, col)
 	if sa, sb, ok := text_sel_range(); ok {
 		L := text_layout(ti)
@@ -441,7 +441,7 @@ text_font_pick_open :: proc() {
 	dialog_open(.Font)
 }
 
-options_text :: proc(x: ^i32, y: i32) {
+options_text :: proc() {
 	text_defaults_init()
 	l := &doc.layers[doc.active_layer]
 	live := l.text.on
@@ -451,26 +451,19 @@ options_text :: proc(x: ^i32, y: i32) {
 	}
 	before := ti^
 	// font
-	fr := Rect{x^, y, 120, 14}
-	if button(fr, name_str(&ti.font), "Font (click to choose)") {
+	if obutton(name_str(&ti.font), 120, "Font (click to choose)", key = "font") {
 		text_font_pick_open()
 	}
-	x^ += 125
 	sz := ti.size
-	if slider({x^, y, 92, 14}, &sz, 6, 600, "Size", "Text size in pixels", "px", 2) {
+	if oslider("Size", 92, &sz, 6, 600, "Text size in pixels", "px", 2) {
 		if live do text_begin_change()
 		ti.size = sz
 		apply(live)
 	}
-	x^ += 97
 	// colour chip: shows the text (or selection) colour; click to take the foreground colour
 	sa, sb, has_sel := text_sel_range()
-	cr := Rect{x^, y, 24, 14}
-	id := make_id(cr, "textcol")
-	clicked, _, hover := button_behavior(id, cr, has_sel ? "Selection colour (click to use the foreground colour)" : "Text colour (click to use the foreground colour for all of it)")
-	draw_rrect(f32(cr.x), f32(cr.y), 24, 14, RADIUS, has_sel ? text_char_color(ti, sa) : ti.color)
-	draw_rrect_outline(f32(cr.x), f32(cr.y), 24, 14, RADIUS, hover ? WHITE : C_RING_HI)
-	if clicked {
+	chip := has_sel ? text_char_color(ti, sa) : ti.color
+	if oswatch_button("color", chip, has_sel ? "Selection colour (click to use the foreground colour)" : "Text colour (click to use the foreground colour for all of it)", 24) {
 		if live do text_begin_change()
 		if has_sel {
 			text_color_range(ti, sa, sb, fg)
@@ -479,35 +472,31 @@ options_text :: proc(x: ^i32, y: i32) {
 		}
 		apply(live)
 	}
-	x^ += 30
 	al := int(ti.align)
 	AL := [?]string{"Left", "Center", "Right"}
-	if nv, ch := combo({x^, y, 66, 14}, AL[:], al, "Alignment"); ch {
+	if nv, ch := ocombo("align", 66, AL[:], al, "Alignment"); ch {
 		if live do text_begin_change()
 		ti.align = u8(nv)
 		apply(live)
 	}
-	x^ += 71
 	lp := ti.line_pct
-	if slider({x^, y, 92, 14}, &lp, 50, 300, "Lines", "Line spacing", "%") {
+	if oslider("Lines", 92, &lp, 50, 300, "Line spacing", "%") {
 		if live do text_begin_change()
 		ti.line_pct = lp
 		apply(live)
 	}
-	x^ += 97
 	tr := ti.track
-	if slider({x^, y, 88, 14}, &tr, -20, 100, "Spacing", "Letter spacing (1/100 of the size)", "") {
+	if oslider("Spacing", 88, &tr, -20, 100, "Letter spacing (1/100 of the size)") {
 		if live do text_begin_change()
 		ti.track = tr
 		apply(live)
 	}
-	x^ += 93
 	if live {
 		// changes while no edit session is open each get their own undo step on the first touch
 		if !ui.down[0] && !text_edit.active do text_hist_open = false
 	}
 	hint := "Click the canvas to type" if !live else "Esc or Ctrl+Enter: finish"
-	text(x^ + 4, y + 3, hint, C_TEXT_DIM)
+	ohint(hint)
 	// keep the defaults in step with what the user last chose
 	if live && before != ti^ {
 		text_defaults.font = ti.font

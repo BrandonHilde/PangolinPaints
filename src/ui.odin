@@ -11,24 +11,35 @@ FONT_CAP :: 8 // height of its capital letters, logical px
 // Theme ----------------------------------------------------------------------
 // Neutral charcoal surfaces in three steps (well < panel < raised control), a warm amber accent
 // taken from the pangolin logo, and hairline rings instead of heavy black outlines.
-C_BG :: Color{21, 22, 26, 255} // window and gutters
-C_PANEL :: Color{35, 37, 43, 255} // docked panels
-C_PANEL_DK :: Color{26, 27, 32, 255} // wells: inputs, lists, bars
-C_PANEL_LT :: Color{52, 55, 64, 255} // raised controls
-C_BORDER :: Color{13, 14, 17, 255} // separators and outer edges
-C_RING :: Color{255, 255, 255, 18} // hairline ring around controls
-C_RING_HI :: Color{255, 255, 255, 40}
-C_HOVER :: Color{68, 72, 85, 255}
-C_ACTIVE :: Color{178, 100, 56, 255} // selected rows, pressed
-C_ACCENT :: Color{246, 170, 104, 255}
-C_ACCENT_TINT :: Color{246, 170, 104, 52} // toggled-on fill
-C_TEXT :: Color{229, 231, 237, 255}
-C_TEXT_DIM :: Color{140, 145, 160, 255}
-C_TEXT_OFF :: Color{88, 92, 106, 255}
-C_VIEWPORT :: Color{45, 47, 53, 255}
-C_DANGER :: Color{230, 98, 98, 255}
+// These are the defaults; the theme's custom properties replace them (theme_apply_palette).
+C_BG := Color{21, 22, 26, 255} // window and gutters
+C_PANEL := Color{35, 37, 43, 255} // docked panels
+C_PANEL_DK := Color{26, 27, 32, 255} // wells: inputs, lists, bars
+C_PANEL_LT := Color{52, 55, 64, 255} // raised controls
+C_BORDER := Color{13, 14, 17, 255} // separators and outer edges
+C_RING := Color{255, 255, 255, 18} // hairline ring around controls
+C_RING_HI := Color{255, 255, 255, 40}
+C_HOVER := Color{68, 72, 85, 255}
+C_ACTIVE := Color{178, 100, 56, 255} // selected rows, pressed
+C_ACCENT := Color{246, 170, 104, 255}
+C_ACCENT_TINT := Color{246, 170, 104, 52} // toggled-on fill
+C_TEXT := Color{229, 231, 237, 255}
+C_TEXT_DIM := Color{140, 145, 160, 255}
+C_TEXT_OFF := Color{88, 92, 106, 255}
+C_VIEWPORT := Color{45, 47, 53, 255}
+C_DANGER := Color{230, 98, 98, 255}
 
-RADIUS :: 3
+RADIUS: f32 = 3
+
+// A palette colour with another alpha.
+with_alpha :: proc(c: Color, a: u8) -> Color {
+	return {c.r, c.g, c.b, a}
+}
+
+// A palette colour lightened (k > 1) or darkened (k < 1).
+shade :: proc(c: Color, k: f32) -> Color {
+	return {u8(clamp(f32(c.r) * k, 0, 255)), u8(clamp(f32(c.g) * k, 0, 255)), u8(clamp(f32(c.b) * k, 0, 255)), c.a}
+}
 
 UI :: struct {
 	w, h:                int, // logical window size
@@ -191,16 +202,6 @@ icon_fit :: proc(r: Rect) -> i32 {
 	return min(r.w, r.h) >= 22 ? ICON_SIZE_LG : ICON_SIZE
 }
 
-// Small "+" / "-" badge in the top-right corner of a 12x12 icon.
-icon_badge :: proc(x, y: i32, plus: bool, c: Color) {
-	bx := x + 8
-	by := y + 0
-	fill_rect({bx, by + 2, 5, 1}, c)
-	if plus {
-		fill_rect({bx + 2, by, 1, 5}, c)
-	}
-}
-
 // Frame / input ------------------------------------------------------------------
 
 PEN_MOUSE_GRACE :: 0.25 // seconds: Windows' synthesised mouse events trail the pen by a moment
@@ -359,7 +360,8 @@ ctl_surface :: proc(r: Rect, fill, ring: Color) {
 }
 
 // Sunken field (inputs, sliders, lists).
-ctl_well :: proc(r: Rect, ring: Color = C_RING) {
+ctl_well :: proc(r: Rect, ring_in := Color{}) {
+	ring := ring_in == {} ? C_RING : ring_in
 	draw_rrect(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, C_PANEL_DK)
 	draw_rrect_outline(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, ring)
 }
@@ -374,8 +376,8 @@ ctl_state :: proc(r: Rect, hover, held, on, enabled: bool) -> Color {
 		fill, ring = C_PANEL_DK, C_RING_HI
 		if on do fg = C_ACCENT
 	case on:
-		fill, ring, fg = C_ACCENT_TINT, Color{246, 170, 104, 150}, C_ACCENT
-		if hover do fill = Color{246, 170, 104, 78}
+		fill, ring, fg = C_ACCENT_TINT, with_alpha(C_ACCENT, 150), C_ACCENT
+		if hover do fill = with_alpha(C_ACCENT, 78)
 	case hover:
 		fill, ring = C_HOVER, C_RING_HI
 	}
@@ -404,8 +406,8 @@ button_primary :: proc(r: Rect, label: string, tip := "") -> bool {
 	id := make_id(r, label)
 	clicked, held, hover := button_behavior(id, r, tip)
 	fill := C_ACTIVE
-	if hover do fill = Color{200, 116, 68, 255}
-	if held do fill = Color{150, 82, 44, 255}
+	if hover do fill = shade(C_ACTIVE, 1.13)
+	if held do fill = shade(C_ACTIVE, 0.84)
 	ctl_surface(r, fill, Color{255, 255, 255, 46})
 	text_centered(r, label, WHITE)
 	return clicked
@@ -418,29 +420,6 @@ icon_button :: proc(r: Rect, ic: Icon, tip := "", active := false, enabled := tr
 		clicked, held, hover = false, false, false
 	}
 	fg := ctl_state(r, hover, held, active, enabled)
-	icon_centered(ic, r, fg, icon_fit(r))
-	return clicked
-}
-
-// Icon button with a +/- badge (new layer, delete frame ...).
-badge_button :: proc(r: Rect, ic: Icon, plus: bool, tip := "", enabled := true) -> bool {
-	clicked := icon_button(r, ic, tip, false, enabled)
-	x := r.x + (r.w - ICON_SIZE) / 2
-	y := r.y + (r.h - ICON_SIZE) / 2
-	icon_badge(x, y, plus, enabled ? C_ACCENT : C_TEXT_OFF)
-	return clicked
-}
-
-// Quiet icon button for add-item slots: an outline until hovered, so it doesn't compete with real items.
-icon_button_quiet :: proc(r: Rect, ic: Icon, tip := "") -> bool {
-	id := make_id(r, tip)
-	clicked, held, hover := button_behavior(id, r, tip)
-	fg := C_TEXT_DIM
-	if hover || held {
-		fg = ctl_state(r, hover, held, false, true)
-	} else {
-		draw_rrect_outline(f32(r.x), f32(r.y), f32(r.w), f32(r.h), RADIUS, C_RING_HI)
-	}
 	icon_centered(ic, r, fg, icon_fit(r))
 	return clicked
 }
@@ -460,7 +439,7 @@ checkbox :: proc(x, y: i32, label: string, v: ^bool, tip := "") -> bool {
 	box := Rect{x, y, 12, 12}
 	if v^ {
 		draw_rrect(f32(box.x), f32(box.y), 12, 12, 2, C_ACCENT_TINT)
-		draw_rrect_outline(f32(box.x), f32(box.y), 12, 12, 2, Color{246, 170, 104, 170})
+		draw_rrect_outline(f32(box.x), f32(box.y), 12, 12, 2, with_alpha(C_ACCENT, 170))
 		icon(.Check, box.x, box.y, C_ACCENT)
 	} else {
 		draw_rrect(f32(box.x), f32(box.y), 12, 12, 2, held ? C_PANEL : C_PANEL_DK)
@@ -520,7 +499,8 @@ slider_chunk :: proc(v, lo, hi: int, suffix: string, curve: f32, dir := 0) -> in
 }
 
 // `tint` colours the filled part (the colour picker uses its channel colours).
-slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix := "", curve: f32 = 1, div := 1, tint := C_ACCENT) -> bool {
+slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix := "", curve: f32 = 1, div := 1, tint_in := Color{}) -> bool {
+	tint := tint_in == {} ? C_ACCENT : tint_in
 	id := make_id(r, label)
 	_, held, hover := button_behavior(id, r, tip)
 	changed := false
@@ -765,8 +745,8 @@ field_int :: proc(r: Rect, v: ^int, lo, hi: int, tip := "") -> bool {
 	return changed
 }
 
-label :: proc(x, y: i32, s: string, c := C_TEXT) {
-	text(x, y, s, c)
+label :: proc(x, y: i32, s: string, c := Color{}) {
+	text(x, y, s, c == {} ? C_TEXT : c)
 }
 
 // Popup menus / combos -----------------------------------------------------------
@@ -1166,7 +1146,7 @@ tooltip_draw :: proc() {
 		y = ui.my - h - 4
 	}
 	draw_shadow(f32(x), f32(y + 2), f32(w), f32(h), 4, 6, Color{0, 0, 0, 130})
-	draw_rrect(f32(x), f32(y), f32(w), f32(h), 4, Color{14, 15, 19, 248})
+	draw_rrect(f32(x), f32(y), f32(w), f32(h), 4, with_alpha(shade(C_PANEL_DK, 0.55), 248))
 	draw_rrect_outline(f32(x), f32(y), f32(w), f32(h), 4, C_RING_HI)
 	text(x + 7, y + (h - FONT_CAP) / 2, ui.tip, C_TEXT)
 }

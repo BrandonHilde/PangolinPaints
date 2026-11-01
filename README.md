@@ -6,7 +6,9 @@ A painting, oil painting and image editing app, and the sibling of
 [Pangolin Pixels](https://github.com/BrandonHilde/PangolinPixels): same look and feel,
 built for big painted canvases instead of pixel art.
 
-Build with `./build.sh` on Linux/macOS or `build.bat` on Windows (or `odin build src -out:PangolinPaints -o:speed`).
+Build with `./build.sh` on Linux/macOS or `build.bat` on Windows. [OdinUI](https://gitlab.com/patrick.pixelshuffle/odinui) is a
+git submodule in `libs/odinui`: clone with `git clone --recursive`, or let the build scripts fetch it on the first build
+(`git submodule update --init`). To build by hand: `odin build src -out:PangolinPaints -o:speed -collection:odinui=libs/odinui`.
 Drag images or projects onto the window to open them; hold Shift while dropping to place an image as a layer.
 `PangolinPaints --selftest` runs the headless test suite (on Windows use `PangolinPaints-console.exe`, since the GUI build has no console).
 
@@ -94,10 +96,26 @@ enabled in the Wacom driver's tablet properties.
 | Ctrl+0 / Ctrl+1 / wheel | fit / 100% / zoom |
 | Enter / Esc | apply / cancel transform or crop |
 
+## Customising the interface
+The interface is laid out and styled with CSS through [OdinUI](https://gitlab.com/patrick.pixelshuffle/odinui). The
+default theme is [assets/ui/theme.css](assets/ui/theme.css). To change it, create `theme.css` next to the executable:
+it is applied on top of the default theme and reloaded while the program runs, so it only needs what you change.
+
+```css
+:root   { --accent: #6aa8ff; --accent-tint: rgba(106, 168, 255, 0.22); --panel: #1f2430; }
+#body   { flex-direction: row-reverse; }   /* tools on the right, colour and layers on the left */
+#right  { width: 300px; }
+optionsbar slider-bar { width: 110px; }    /* wider sliders in the options bar */
+```
+
+The colour variables in `:root` also drive the parts the program draws itself (canvas surroundings, layer list,
+dialogs, menus). Icons are a font (`font-family: icons`), so `color` and `font-size` style them like text.
+
 ## Developer flags
 `--selftest` (tests), `--bench` (timings on a 4000x3000 canvas), `--brush-sheet out.png` (one stroke per preset),
 `--icon-sheet out.png` (every icon at each size and UI scale, and the logo),
-`--demo` (sample painting), `--shot file.png` (screenshot after a few frames).
+`--demo` (sample painting), `--shot file.png` (screenshot after a few frames),
+`--clicks "frame:x,y;..."` (left clicks at window pixels on those frames, for checking the interface with `--shot`).
 
 Icons are SVG files in `assets/icons` (24 x 24, drawn in `currentColor` with round-capped 2 px strokes) and the logo is
 `assets/logo.svg`; both are built into the executable and rasterised at the screen's resolution by `src/svg.odin`.

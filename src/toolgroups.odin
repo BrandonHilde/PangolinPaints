@@ -171,12 +171,12 @@ tool_group_activate :: proc(gi: int) {
 		set_statusf("Brush blend: %s", BLEND_NAMES[brush_blend])
 		return
 	}
-	// the hotkey cycles through the real tools; a group of only switches flips its first one
+	// the hotkey cycles through the real tools; a group of only switches cycles its switches
 	tools := make([dynamic]Tool, context.temp_allocator)
 	for t in g.tools do if !tool_is_toggle(t) do append(&tools, t)
 	n := len(tools)
 	if n == 0 {
-		if len(g.tools) > 0 do tool_toggle(g.tools[0])
+		group_cycle_switches(g)
 		return
 	}
 	if g.pen_eraser {
@@ -202,6 +202,36 @@ tool_group_activate :: proc(gi: int) {
 	}
 	g.last = pick
 	select_tool_in_group(pick, gi)
+}
+
+// Hotkey of a group holding only switches (grid, mirror). With none on, it turns on the last one
+// used. While one is on and its settings are shown, it moves on to the next (turning the one
+// before off), and after the last turns them all off. While working with something else, it
+// turns the group's switches off.
+group_cycle_switches :: proc(g: ^Tool_Group) {
+	if len(g.tools) == 0 do return
+	any_on := false
+	for t in g.tools do any_on ||= tool_toggle_on(t)
+	if !any_on {
+		if !tool_group_has(g, g.last) do g.last = g.tools[0]
+		switch_set(g.last, true)
+		return
+	}
+	next := -1
+	if options_switch_on && tool_toggle_on(options_switch) {
+		for t, i in g.tools {
+			if t == options_switch do next = i + 1
+		}
+		if next >= len(g.tools) {
+			next = -1
+			g.last = g.tools[0] // the cycle is over: start it again from the first
+		}
+	}
+	for t in g.tools do switch_set(t, false)
+	if next >= 0 {
+		g.last = g.tools[next]
+		switch_set(g.last, true)
+	}
 }
 
 // Runs the hotkeys of all groups; returns true if one was handled.

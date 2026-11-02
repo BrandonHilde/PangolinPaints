@@ -126,6 +126,12 @@ tool_toggle :: proc(t: Tool) {
 		options_switch, options_switch_on = t, true
 		return
 	}
+	switch_set(t, !tool_toggle_on(t))
+}
+
+// Turns a switch on or off, if it isn't already.
+switch_set :: proc(t: Tool, on: bool) {
+	if tool_toggle_on(t) == on do return
 	#partial switch t {
 	case .Grid:
 		run_cmd(.Toggle_Grid)

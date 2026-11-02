@@ -376,6 +376,27 @@ selftest :: proc() -> int {
 		tool_toggle(.Mirror)
 		tool_toggle(.Mirror)
 		check(!mirror_on && !options_switch_on, "Mirror switches the same way")
+
+		// a group of switches: its hotkey cycles Grid -> Mirror -> off
+		append(&tool_groups, Tool_Group{last = .Grid})
+		gi := len(tool_groups) - 1
+		append(&tool_groups[gi].tools, Tool.Grid, Tool.Mirror)
+		tool_group_activate(gi)
+		check(show_grid && !mirror_on && options_switch == .Grid, "switch group hotkey turns on its first switch")
+		tool_group_activate(gi)
+		check(!show_grid && mirror_on && options_switch_on && options_switch == .Mirror, "pressing again moves on to the next switch")
+		tool_group_activate(gi)
+		check(!show_grid && !mirror_on, "after the last switch, the group turns off")
+		tool_group_activate(gi)
+		select_tool(.Brush)
+		tool_group_activate(gi)
+		check(!show_grid && !mirror_on, "pressed while using a tool, the hotkey turns the switch off")
+		tool_group_activate(gi)
+		check(show_grid && options_switch_on, "and the next press turns it back on")
+		delete(tool_groups[gi].tools)
+		pop(&tool_groups)
+		show_grid, mirror_on = false, false
+		options_show_tool()
 	}
 
 	// --- mirror painting ---------------------------------------------------------------

@@ -31,6 +31,13 @@ prefs_save :: proc() {
 	fmt.sbprintf(&sb, "mirror_angle=%d\n", mirror_angle)
 	fmt.sbprintf(&sb, "mirror_cx=%d\n", int(mirror_cx * 10000))
 	fmt.sbprintf(&sb, "mirror_cy=%d\n", int(mirror_cy * 10000))
+	fmt.sbprintf(&sb, "persp=%d\n", b2i(persp_on))
+	fmt.sbprintf(&sb, "persp_points=%d\n", persp_points)
+	fmt.sbprintf(&sb, "persp_lines=%d\n", persp_lines)
+	fmt.sbprintf(&sb, "persp_snap=%d\n", b2i(persp_snap))
+	for v, i in persp_vp {
+		fmt.sbprintf(&sb, "persp_x%d=%d\npersp_y%d=%d\n", i, int(v.x * 10000), i, int(v.y * 10000))
+	}
 	fmt.sbprintf(&sb, "new_w=%d\n", new_w)
 	fmt.sbprintf(&sb, "new_h=%d\n", new_h)
 	fmt.sbprintf(&sb, "new_bg=%d\n", new_bg)
@@ -97,6 +104,18 @@ prefs_load :: proc() {
 			mirror_cx = clamp(f32(val) / 10000, 0, 1)
 		case "mirror_cy":
 			mirror_cy = clamp(f32(val) / 10000, 0, 1)
+		case "persp":
+			persp_on = val != 0
+		case "persp_points":
+			persp_points = clamp(val, 1, PERSP_MAX)
+		case "persp_lines":
+			persp_lines = clamp(val, 2, 64)
+		case "persp_snap":
+			persp_snap = val != 0
+		case "persp_x0", "persp_x1", "persp_x2":
+			persp_vp[key[7] - '0'].x = clamp(f32(val) / 10000, -PERSP_LIMIT, PERSP_LIMIT + 1)
+		case "persp_y0", "persp_y1", "persp_y2":
+			persp_vp[key[7] - '0'].y = clamp(f32(val) / 10000, -PERSP_LIMIT, PERSP_LIMIT + 1)
 		case "new_w":
 			new_w = clamp(val, 1, 16000)
 		case "new_h":

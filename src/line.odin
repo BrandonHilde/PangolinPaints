@@ -175,7 +175,7 @@ render_line_preview :: proc(d: ^Doc) {
 		return
 	}
 	pts := line_tool.pts[:]
-	tip := line_constrain(drag.active ? hover_pt : snap_pt(hover_pt))
+	tip := line_constrain(drag.active ? hover_pt : persp_project(d, pts[len(pts) - 1], snap_pt(hover_pt)))
 	closing := line_near_start(hover_pt)
 	if closing {
 		tip = pts[0]

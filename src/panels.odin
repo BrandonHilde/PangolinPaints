@@ -204,6 +204,7 @@ menu_build :: proc(idx: int) {
 		item("Snap to Grid", cmd = .Toggle_Snap, checked = snap_grid)
 		item("Grid Settings...", cmd = .Grid_Settings)
 		item("Mirror Painting", cmd = .Toggle_Mirror, checked = mirror_on)
+		item("Perspective Guides", cmd = .Toggle_Perspective, checked = persp_on)
 		item("Navigator", cmd = .Toggle_Navigator, checked = show_navigator)
 		item("Canvas Mode", cmd = .Toggle_Canvas_Mode, checked = canvas_mode)
 		item("Seamless Mode", cmd = .Toggle_Seamless, checked = seamless_mode)
@@ -327,6 +328,7 @@ TOOL_ICONS := [Tool]Icon {
 	.Line           = .Line,
 	.Grid           = .Grid,
 	.Mirror         = .Sym_X,
+	.Perspective    = .Perspective,
 }
 
 panel_toolbar :: proc() {
@@ -546,6 +548,8 @@ panel_options :: proc() {
 		options_grid()
 	} else if options_switch_on && options_switch == .Mirror && mirror_on {
 		options_mirror()
+	} else if options_switch_on && options_switch == .Perspective && persp_on {
+		options_persp()
 	} else if paint_tool(t) {
 		options_brush(t)
 		if t == .Line do options_line()

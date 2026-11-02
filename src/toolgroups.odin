@@ -204,7 +204,7 @@ tool_group_activate :: proc(gi: int) {
 	select_tool_in_group(pick, gi)
 }
 
-// Hotkey of a group holding only switches (grid, mirror). With none on, it turns on the last one
+// Hotkey of a group holding only switches (grid, mirror, perspective). With none on, it turns on the last one
 // used. While one is on and its settings are shown, it moves on to the next (turning the one
 // before off), and after the last turns them all off. While working with something else, it
 // turns the group's switches off.

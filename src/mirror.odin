@@ -98,7 +98,7 @@ mirror_center_input :: proc(p: Vec2, over: bool) -> bool {
 // Toggle items that can sit in tool groups ---------------------------------------------
 
 tool_is_toggle :: proc(t: Tool) -> bool {
-	return t == .Grid || t == .Mirror
+	return t == .Grid || t == .Mirror || t == .Perspective
 }
 
 tool_toggle_on :: proc(t: Tool) -> bool {
@@ -107,12 +107,14 @@ tool_toggle_on :: proc(t: Tool) -> bool {
 		return show_grid
 	case .Mirror:
 		return mirror_on
+	case .Perspective:
+		return persp_on
 	}
 	return false
 }
 
 // The options bar shows the last thing picked: a tool, or one of these switches.
-options_switch: Tool // .Grid or .Mirror while its settings are shown
+options_switch: Tool // .Grid, .Mirror or .Perspective while its settings are shown
 options_switch_on: bool
 
 options_show_tool :: proc() {
@@ -137,6 +139,8 @@ switch_set :: proc(t: Tool, on: bool) {
 		run_cmd(.Toggle_Grid)
 	case .Mirror:
 		run_cmd(.Toggle_Mirror)
+	case .Perspective:
+		run_cmd(.Toggle_Perspective)
 	}
 }
 

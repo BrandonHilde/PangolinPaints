@@ -32,7 +32,11 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
 - **Mirror painting**: any number of mirror lines through a movable centre (Move Center, then click or drag on the
   canvas), at any angle: one mirror reflects left / right, more make kaleidoscope / snowflake symmetry. Applies to
   every brush tool and the line tool, including filled shapes.
-- **Grid and Mirror switches** can be added to tool groups (the group's + button) to turn them on and off with a
+- **Perspective guides** (View > Perspective Guides): a horizon and 1, 2 or 3 vanishing points with guide lines
+  fanning out across the canvas. While their settings are shown, drag a point (or the horizon, which carries its
+  points) to move it; points out of sight wait at the edge of the view. With Snap on, brush strokes and the line tool
+  pick the guide closest to the way they set off and keep to it (verticals, and in 1-point horizontals, count too).
+- **Grid, Mirror and Perspective switches** can be added to tool groups (the group's + button) to turn them on and off with a
   click or the group's hotkey. The options bar shows whatever was picked last: clicking a switch shows its settings
   there (clicking it again turns it off), and picking or using a tool brings that tool's settings back.
 - **Image editing**

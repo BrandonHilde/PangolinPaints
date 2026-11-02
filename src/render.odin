@@ -201,6 +201,7 @@ render_canvas :: proc(vp: Rect) {
 	}
 	render_grid(d, vp)
 	render_mirror(d, vp)
+	render_persp(d, vp)
 	outline_rect(Rect{x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2}, Color{10, 10, 14, 255})
 
 	// selection outline (marching ants)
@@ -315,10 +316,10 @@ render_cursor :: proc(d: ^Doc) {
 	t := eff_tool()
 	mx := ui.ptr.x / f32(ui.scale)
 	my := ui.ptr.y / f32(ui.scale)
-	if !paint_tool(t) {
+	if !paint_tool(t) || persp_hover >= 0 || persp_grab >= 0 {
 		return
 	}
-	if grid_snapping() && drag.active {
+	if (grid_snapping() || persp_snapping()) && drag.active {
 		// mid-stroke the ring sits where the dabs land
 		sp := canvas_to_screen(hover_pt)
 		mx, my = sp.x, sp.y

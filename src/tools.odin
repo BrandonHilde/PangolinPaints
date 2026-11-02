@@ -297,7 +297,7 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		}
 	case .Crop:
 		crop_mouse_down(p)
-	case .Hand, .Grid, .Mirror:
+	case .Hand, .Grid, .Mirror, .Perspective:
 		drag.active = false
 	case .Zoom:
 		drag.active = false
@@ -405,7 +405,7 @@ update_drag :: proc(p: Vec2) {
 		crop_mouse_drag(p)
 	case .Text:
 		if drag.moved do text_drag(p)
-	case .Bucket, .Wand, .Hand, .Zoom, .Line, .Grid, .Mirror:
+	case .Bucket, .Wand, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective:
 	}
 }
 
@@ -467,7 +467,7 @@ end_drag :: proc() {
 		crop_mouse_up()
 	case .Line:
 		line_mouse_up(drag.cur)
-	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom, .Grid, .Mirror:
+	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom, .Grid, .Mirror, .Perspective:
 	}
 	drag.active = false
 }
@@ -486,6 +486,7 @@ canvas_update :: proc(vp: Rect) {
 	// grid snapping applies to the action, not to hovering: handles stay reachable
 	if drag.active && tool_snaps(drag.tool) {
 		p = snap_pt(p)
+		if paint_tool(drag.tool) do p = persp_project(d, persp_from(), p, &persp_lock)
 	}
 	hover_pt = p
 	hover_valid = over
@@ -519,6 +520,9 @@ canvas_update :: proc(vp: Rect) {
 		}
 		return
 	}
+	if !drag.active && persp_input(d, p, over) {
+		return
+	}
 
 	// paint tools show the brush outline only (a small brush still gets a minimum-size ring)
 	if paint_tool(t) && (over || drag.active) && ui.focus_id == 0 {
@@ -529,7 +533,7 @@ canvas_update :: proc(vp: Rect) {
 		switch t {
 		case .Hand:
 			ui.cursor = .RESIZE_ALL
-		case .Grid, .Mirror:
+		case .Grid, .Mirror, .Perspective:
 		case .Zoom:
 			ui.cursor = .POINTING_HAND
 		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Line:
@@ -545,6 +549,7 @@ canvas_update :: proc(vp: Rect) {
 			ui.cursor = .CROSSHAIR
 		}
 		if ui.pressed[0] || ui.pressed[1] {
+			persp_lock = -1
 			begin_drag(ui.pressed[0] ? 0 : 1, tool_snaps(t) ? snap_pt(p) : p)
 		}
 	} else if drag.active {

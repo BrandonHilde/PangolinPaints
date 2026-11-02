@@ -62,6 +62,7 @@ Icon :: enum {
 	Text,
 	Canvas_Mode,
 	Seamless,
+	Perspective,
 }
 
 ICON_SVG := [Icon]string {
@@ -120,6 +121,7 @@ ICON_SVG := [Icon]string {
 	.Text = #load("../assets/icons/text.svg", string),
 	.Canvas_Mode = #load("../assets/icons/canvas_mode.svg", string),
 	.Seamless = #load("../assets/icons/seamless.svg", string),
+	.Perspective = #load("../assets/icons/perspective.svg", string),
 }
 
 @(private = "file")

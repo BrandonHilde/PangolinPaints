@@ -428,6 +428,47 @@ selftest :: proc() -> int {
 		mirror_on, mirror_count, mirror_angle = false, 1, 90
 	}
 
+	// --- perspective guides --------------------------------------------------------------
+	{
+		d := fresh(200, 100, white)
+		d.zoom = 1
+		saved := persp_vp
+		persp_on, persp_snap, persp_points = true, true, 2
+		persp_vp[0], persp_vp[1] = {-0.5, 0.5}, {1.5, 0.5} // (-100, 50) and (300, 50)
+		on_line :: proc(a, b, q: Vec2) -> bool {
+			u, v := b - a, q - a
+			return abs(u.x * v.y - u.y * v.x) / max(vlen(u), 0.001) < 0.01
+		}
+		from := Vec2{100, 80}
+		q := persp_project(d, from, {150, 73})
+		check(on_line(from, persp_point(d, 1), q) && q.x > 140, "a stroke heading for a point follows its guide")
+		q = persp_project(d, from, {102, 40})
+		check(abs(q.x - 100) < 0.01 && abs(q.y - 40) < 0.1, "2-point: upright strokes stay upright")
+		lock := -1
+		q = persp_project(d, from, from + {2, 0}, &lock)
+		check(q == from && lock == -1, "a stroke waits a few pixels before picking its guide")
+		persp_project(d, from, from + {-40, -2}, &lock)
+		q = persp_project(d, from, from + {0, -50}, &lock)
+		check(lock == 0 && on_line(from, persp_point(d, 0), q), "a stroke keeps to the guide it picked")
+		persp_snap = false
+		check(persp_project(d, from, {102, 40}) == Vec2{102, 40}, "no snapping when snap is off")
+		persp_snap, persp_points = true, 1
+		persp_vp[0] = {0.5, 0.4}
+		q = persp_project(d, {150, 80}, {190, 81})
+		check(abs(q.y - 80) < 0.01, "1-point: level strokes stay level")
+		q = persp_project(d, {150, 80}, {128, 66})
+		check(on_line({150, 80}, {100, 40}, q), "1-point: strokes towards the point follow it")
+		persp_points = 2
+		persp_layout(2, 0.3)
+		check(abs(persp_horizon_y(d) - 0.3) < 0.001 && persp_vp[0].x < 0 && persp_vp[1].x > 1, "default 2-point layout keeps the horizon height")
+		persp_on = false
+		tool_toggle(.Perspective)
+		check(persp_on && persp_editing(), "clicking Perspective turns it on and shows its settings")
+		tool_toggle(.Perspective)
+		check(!persp_on && !options_switch_on, "clicking it again turns it off")
+		persp_vp, persp_points, persp_snap = saved, 2, true
+	}
+
 	// --- line / polygon tool ---------------------------------------------------------
 	{
 		d := fresh(100, 100, white)

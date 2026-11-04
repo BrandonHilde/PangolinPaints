@@ -2,6 +2,7 @@ package pangolin
 
 import "core:fmt"
 import "core:math"
+import "core:os"
 import "core:strings"
 import "core:time"
 
@@ -54,20 +55,346 @@ selftest :: proc() -> int {
 	// --- UI scale -----------------------------------------------------------
 	{
 		check(ui_scale_auto(1366, 768) == 100, "auto scale on a small laptop")
-		check(ui_scale_auto(1920, 1080) == 150, "auto scale at 1080p")
-		check(ui_scale_auto(2560, 1440) == 200, "auto scale at 1440p")
-		check(ui_scale_auto(3840, 2160) == 300, "auto scale at 4K")
-		check(ui_scale_auto(7680, 4320) == 400, "auto scale tops out")
+		check(ui_scale_auto(1920, 1080) == 150, "a 1080p display gets 150%")
+		check(ui_scale_auto(2560, 1440) == 200 && ui_scale_auto(3840, 2160) == 300, "larger displays get more")
+		check(ui_scale_auto(15360, 8640) == UI_SCALE_MAX, "auto stops at the end of the slider")
 		check(ui_scale_auto(1080, 1920) == 100, "auto scale on a portrait monitor goes by its width")
-		check(ui_scale_choose(0, 3840, 2160, 3264, 1836) == 300, "auto applies to a large window")
-		check(ui_scale_choose(0, 3840, 2160, 1280, 800) == 140, "auto lowered to fit a small window")
-		check(ui_scale_choose(350, 3840, 2160, 3840, 2160) == 350, "a chosen scale beats auto")
-		check(ui_scale_choose(100, 3840, 2160, 3840, 2160) == 100, "a chosen scale can be smaller than auto")
-		check(ui_scale_choose(400, 1920, 1080, 900, 560) == 100, "the smallest window still gets 100%")
+		check(ui_scale_auto(1920, 1080, 2) == 200, "the system's display scale is a lower limit")
+		ui_scale_arg, ui_scale_pref = 350, 125
+		check(ui_scale_wanted() == 350, "--scale beats the saved scale")
+		ui_scale_arg = 0
+		check(ui_scale_wanted() == 125, "a chosen scale beats auto, whatever the window")
+		ui_scale_pref = 0
 		check(ui_scale_parse(0) == 0, "stored auto")
 		check(ui_scale_parse(2) == 200, "stored multiple from older versions")
 		check(ui_scale_parse(125) == 125, "stored percent")
 		check(ui_scale_parse(9000) == UI_SCALE_MAX, "stored scale clamped")
+	}
+
+	// --- commands and shortcuts ------------------------------------------------------
+	{
+		has :: proc(c: Cmd, key: KeyboardKey, ctrl, shift: bool) -> bool {
+			for s in SHORTCUTS do if s.cmd == c && s.key == key && s.ctrl == ctrl && s.shift == shift && !s.alt do return true
+			return false
+		}
+		check(has(.Tool_Line, .L, false, false), "L picks the line tool")
+		check(has(.Tool_Lasso, .Q, false, false), "Q picks the lasso")
+		check(has(.Tool_Text, .T, false, false), "T picks the text tool")
+		check(has(.Tool_Transform, .T, false, true) && has(.Tool_Transform, .T, true, false), "Shift+T and Ctrl+T pick free transform")
+		for a, i in SHORTCUTS {
+			for b in SHORTCUTS[i + 1:] {
+				check(a.key != b.key || a.ctrl != b.ctrl || a.shift != b.shift || a.alt != b.alt, fmt.tprintf("%s is bound to one command", shortcut_text_for(a)))
+			}
+		}
+		// every command says what it does, except for the ones that are not commands
+		for c in Cmd.None ..= Cmd.Tool_Seamless {
+			if c == .None do continue
+			check(cmd_help(c) != "", fmt.tprintf("%v has tooltip text", c))
+		}
+		for fx in Fx {
+			def := &FX_DEFS[fx]
+			check(def.help != "", fmt.tprintf("%s says what it does", def.name))
+			for p in def.params do check(p.help != "", fmt.tprintf("%s: %s has tooltip text", def.name, p.name))
+			if def.flag != "" do check(def.flag_help != "", fmt.tprintf("%s: its checkbox has tooltip text", def.name))
+			if def.choice != nil do check(def.choice_help != "", fmt.tprintf("%s: its combo has tooltip text", def.name))
+		}
+		for t in Tool {
+			check(TOOL_HELP[t] != "", fmt.tprintf("%v has tooltip text", t))
+			check(tool_is_toggle(t) || TOOL_HINT[t] != "", fmt.tprintf("%v has a status bar hint", t))
+			check(fmt.tprintf("%v", Cmd(int(Cmd.Tool_Brush) + int(t))) == fmt.tprintf("Tool_%v", t), fmt.tprintf("the command for %v picks it", t))
+		}
+		tool_groups_default()
+		WANT := [?]string{"Paint", "Draw", "Select", "Transform", "View"}
+		check(len(tool_groups) == len(WANT), "five default tool groups")
+		for &g, i in tool_groups do check(group_title(&g) == WANT[i], fmt.tprintf("default group %d is %s", i, WANT[i]))
+	}
+
+	// --- frames ---------------------------------------------------------------------------
+	{
+		same_look :: proc(a, b: []Color) -> bool {
+			if len(a) != len(b) do return false
+			for p, i in a {
+				q := b[i]
+				if p.a == 0 && q.a == 0 do continue // the color of a fully clear pixel shows nowhere
+				if abs(int(p.r) - int(q.r)) > 1 || abs(int(p.g) - int(q.g)) > 1 || abs(int(p.b) - int(q.b)) > 1 || abs(int(p.a) - int(q.a)) > 1 do return false
+			}
+			return true
+		}
+		frame_flat :: proc(d: ^Doc, f: int) -> []Color {
+			out := make([]Color, d.w * d.h, context.temp_allocator)
+			frame_composite(d, f, out)
+			return out
+		}
+		b := &brushes[.Brush]
+		b^ = brush_default(.Brush)
+		b.size, b.hardness, b.opacity, b.flow = 12, 100, 100, 100
+
+		d := fresh(200, 120, {})
+		check(len(d.frames) == 1 && d.active_frame == 0, "a new painting has one frame")
+		paint_line(.Brush, red, {20, 60}, {100, 60})
+		doc_add_frame(d, false)
+		check(len(d.frames) == 2 && d.active_frame == 1, "a new frame comes after the current one, and is shown")
+		check(px(d, 0, 60, 60).a == 0, "a new frame's cels are empty")
+		paint_line(.Brush, blue, {60, 20}, {60, 100})
+		set_frame(0)
+		check(px(d, 0, 60, 60) == red && px(d, 0, 60, 30).a == 0, "frame 1 keeps its own pixels")
+		check(frame_flat(d, 1)[30 * d.w + 60] == blue, "a frame other than the current one can be composited")
+		set_frame(1)
+		check(px(d, 0, 60, 30) == blue && px(d, 0, 30, 60).a == 0, "frame 2 keeps its own pixels")
+
+		// undo snapshots cover all frames, and bring back the frame they were taken on
+		undo_n := len(d.undo)
+		paint_line(.Brush, red, {150, 20}, {150, 100})
+		set_frame(0)
+		history_undo(d)
+		check(d.active_frame == 1 && px(d, 0, 150, 60).a == 0 && px(d, 0, 60, 30) == blue, "undo goes back to the frame it changes")
+		check(frame_flat(d, 0)[60 * d.w + 60] == red, "undo leaves the other frames alone")
+		history_redo(d)
+		set_frame(1)
+		check(px(d, 0, 150, 60) == red, "redo brings the stroke back")
+		_ = undo_n
+
+		// a duplicate shares its tiles until it is painted on
+		set_frame(0)
+		src_tile := d.layers[0].pix.t[60 / TILE * d.layers[0].pix.tw + 60 / TILE]
+		refs_before := src_tile.refs
+		doc_add_frame(d, true)
+		check(d.active_frame == 1 && len(d.frames) == 3, "a duplicate comes after the current frame")
+		dup_tile := d.layers[0].pix.t[60 / TILE * d.layers[0].pix.tw + 60 / TILE]
+		check(dup_tile == src_tile && src_tile.refs > refs_before, "a duplicate frame shares its tiles")
+		paint_line(.Brush, blue, {30, 60}, {90, 60})
+		check(px(d, 0, 60, 60) == blue && frame_flat(d, 0)[60 * d.w + 60] == red, "painting on a duplicate leaves its source alone")
+		check(frame_flat(d, 2)[30 * d.w + 60] == blue, "the frame after the duplicate moved along")
+
+		// move and delete, with a tag following the frames
+		name: Tag
+		name.from, name.to = 1, 2
+		append(&d.tags, name)
+		doc_move_frame(d, 1)
+		check(d.active_frame == 2 && px(d, 0, 60, 60) == blue && frame_flat(d, 1)[30 * d.w + 60] == blue, "moving a frame moves its cels")
+		doc_delete_frame(d)
+		check(len(d.frames) == 2 && d.active_frame == 1 && d.tags[0].to == 1, "deleting a frame fixes the tags")
+		history_undo(d)
+		check(len(d.frames) == 3 && d.active_frame == 2 && d.tags[0].to == 2 && px(d, 0, 60, 60) == blue, "undo brings a deleted frame back")
+		for len(d.frames) > 1 do doc_delete_frame(d)
+		check(!doc_delete_frame(d), "the last frame can't be deleted")
+		clear(&d.tags)
+
+		// everything that works on whole layers works on every frame
+		d = fresh(200, 120, {})
+		paint_line(.Brush, red, {20, 60}, {100, 60})
+		doc_add_layer(d)
+		paint_line(.Brush, blue, {20, 30}, {100, 30})
+		doc_add_frame(d, false)
+		paint_line(.Brush, blue, {20, 90}, {100, 90})
+		d.active_layer = 0
+		paint_line(.Brush, red, {20, 40}, {100, 40})
+		f0, f1 := frame_flat(d, 0), frame_flat(d, 1)
+		d.active_layer = 1
+		doc_merge_down(d)
+		check(len(d.layers) == 1 && same_look(frame_flat(d, 0), f0) && same_look(frame_flat(d, 1), f1), "merge down merges on every frame")
+		history_undo(d)
+		check(len(d.layers) == 2 && same_look(frame_flat(d, 0), f0), "undo brings the merged layer back on every frame")
+		doc_flatten(d)
+		check(len(d.layers) == 1 && same_look(frame_flat(d, 0), f0) && same_look(frame_flat(d, 1), f1), "flatten keeps every frame's look")
+		history_undo(d)
+		doc_flip(d, true)
+		check(frame_flat(d, 0)[60 * d.w + (d.w - 1 - 60)] == red, "a flip reaches the other frames")
+		history_undo(d)
+		doc_canvas_size(d, 300, 200, 50, 40)
+		check(d.w == 300 && frame_flat(d, 0)[100 * d.w + 110] == red, "a canvas size change reaches the other frames")
+		check(frame_flat(d, 1)[130 * d.w + 110] == blue, "and the current one")
+		history_undo(d)
+		check(d.w == 200 && same_look(frame_flat(d, 0), f0) && same_look(frame_flat(d, 1), f1), "undo restores every frame's size")
+		if bx, ok := doc_content_bounds(d); ok {
+			check(bx.y0 < 30 - 3, "trim looks at every frame")
+		}
+		d.active_layer = 0
+		set_frame(1)
+		doc_add_mask(d, false)
+		tiles_fill(&d.layers[0].mask, Color{0, 0, 0, 255}, MASK_EMPTY)
+		doc_touch_all(d)
+		check(frame_flat(d, 0)[60 * d.w + 60] == red, "a mask painted on one frame leaves the others")
+		doc_delete_mask(d, true)
+		check(!d.layers[0].has_mask && frame_flat(d, 0)[60 * d.w + 60] == red, "applying a mask keeps the other frames' pixels")
+
+		// a text layer spans the frames until it is painted on
+		d = fresh(200, 120, white)
+		tl := layer_make("Words", d.w, d.h)
+		tiles_fill(&tl.pix, Color{0, 200, 0, 255}, {})
+		tl.opacity = 128
+		tl.text.on = true
+		append(&d.layers, tl)
+		d.active_layer = 0
+		doc_add_frame(d, false)
+		check(frame_flat(d, 1)[10] != white, "a text layer shows on a new frame")
+		d.active_layer = 1
+		can_edit()
+		check(!d.layers[1].text.on && tiles_count(&d.layers[1].pix) > 0, "painting on a text layer makes it pixels")
+		check(frame_flat(d, 0)[10] != white && frame_flat(d, 1)[10].g == 200, "both frames keep showing it")
+		set_frame(0)
+		check(tiles_count(&d.layers[1].pix) > 0, "as their own copies")
+
+		// new frame from visible: the same look from one plain image, whatever the layers do
+		d = fresh(200, 120, Color{200, 180, 150, 255})
+		paint_line(.Brush, red, {20, 60}, {180, 60})
+		doc_add_layer(d)
+		paint_line(.Brush, blue, {60, 20}, {60, 100})
+		d.layers[1].blend = .Multiply
+		d.layers[1].opacity = 180
+		d.active_layer = 1
+		doc_add_mask(d, false)
+		for x in 0 ..< 200 do tiles_set(&d.layers[1].mask, x, 50, Color{90, 90, 90, 255}, MASK_EMPTY)
+		d.edit_mask = false
+		tv := layer_make("Words", d.w, d.h)
+		for x in 10 ..< 150 do tiles_set(&tv.pix, x, 80, Color{0, 200, 0, 200}, {})
+		tv.text.on = true
+		tv.blend = .Screen
+		append(&d.layers, tv)
+		hidden := layer_make("Hidden", d.w, d.h)
+		tiles_fill(&hidden.pix, Color{9, 9, 9, 255}, {})
+		hidden.visible = false
+		append(&d.layers, hidden)
+		d.active_layer = 3
+		source := frame_flat(d, 0)
+		undo_before := len(d.undo)
+		doc_frame_from_visible(d)
+		check(len(d.frames) == 2 && d.active_frame == 1, "from visible adds a frame after the current one")
+		check(same_look(frame_flat(d, 1), source), "from visible looks just like its source")
+		check(same_look(doc_flat(d, context.temp_allocator), source), "and so does the composite of the current frame")
+		check(d.frames[1].flat > 0 && d.frames[0].flat == 0, "only the new frame is flat")
+		tgt := &d.layers[d.active_layer]
+		check(tgt.blend == .Normal && tgt.opacity == 255 && tgt.visible && !layer_spans(tgt), "its image is on a plain layer")
+		painted := 0
+		for &l in d.layers {
+			if !layer_spans(&l) && tiles_count(&l.pix) > 0 do painted += 1
+		}
+		check(painted == 1, "every other layer's cel is empty on that frame")
+		check(same_look(frame_flat(d, 0), source), "the source frame is unchanged")
+		history_undo(d)
+		check(len(d.frames) == 1 && len(d.undo) == undo_before && same_look(frame_flat(d, 0), source), "from visible can be undone")
+		history_redo(d)
+		check(len(d.frames) == 2 && same_look(frame_flat(d, 1), source), "and redone")
+		// text typed on that frame afterwards is the frame's own: it shows
+		typed := layer_make("Typed", d.w, d.h)
+		tiles_fill(&typed.pix, Color{9, 200, 9, 255}, {})
+		typed.text.on = true
+		typed.span_id = span_next_id(d)
+		append(&d.layers, typed)
+		doc_touch_all(d)
+		check(frame_flat(d, 1)[10].g == 200, "a text layer made on a flat frame shows on it")
+		layer_destroy(&d.layers[len(d.layers) - 1])
+		pop(&d.layers)
+		doc_touch_all(d)
+		// no plain layer to use: it makes one
+		for &l in d.layers do l.blend = .Multiply
+		set_frame(0)
+		pre := frame_flat(d, 0)
+		n_layers := len(d.layers)
+		doc_frame_from_visible(d)
+		check(len(d.layers) == n_layers + 1 && same_look(frame_flat(d, d.active_frame), pre), "with no plain layer, it adds one")
+		for &l in d.layers do l.blend = .Normal
+		history_undo(d)
+		for &l in d.layers do l.blend = .Normal
+		doc_touch_all(d)
+
+		// .ppnt version 5: everything comes back, and shared tiles stay shared
+		set_frame(1)
+		d.frames[1].duration = 250
+		tg: Tag
+		name_set(&tg.name, "Walk")
+		tg.from, tg.to, tg.dir, tg.color = 0, 1, .Ping_Pong, Color{1, 2, 3, 255}
+		append(&d.tags, tg)
+		doc_add_frame(d, true)
+		saved := [3][]Color{frame_flat(d, 0), frame_flat(d, 1), frame_flat(d, 2)}
+		data := project_encode(d)
+		nd, ok := project_decode(data)
+		check(ok, "a project with frames loads")
+		if ok {
+			check(len(nd.frames) == 3 && nd.active_frame == d.active_frame && nd.frames[1].duration == 250, "frames round trip")
+			check(nd.frames[1].flat > 0 && nd.frames[2].flat > 0 && nd.frames[0].flat == 0, "the flat flag round trips")
+			check(len(nd.tags) == 1 && name_str(&nd.tags[0].name) == "Walk" && nd.tags[0].to == 1 && nd.tags[0].dir == .Ping_Pong, "tags round trip")
+			for f in 0 ..< 3 do check(same_look(frame_flat(nd, f), saved[f]), fmt.tprintf("frame %d looks the same after loading", f + 1))
+			lp := nd.layers[0].pix
+			shared_tiles := false
+			for t in lp.t do if t != nil && t.refs > 1 do shared_tiles = true
+			// the duplicate is the current frame; its cel on frame 2 holds the same tiles
+			for &l in nd.layers {
+				for t in l.pix.t do if t != nil && t.refs > 1 do shared_tiles = true
+			}
+			check(shared_tiles, "tiles frames share stay shared after loading")
+			doc_destroy(nd)
+		}
+		// older files: one frame
+		old := Writer{}
+		old.b = make([dynamic]u8, context.temp_allocator)
+		append(&old.b, 'P', 'P', 'N', 'T')
+		w8(&old, 4)
+		w32(&old, 64)
+		w32(&old, 64)
+		w32(&old, 0)
+		w32(&old, 1)
+		wstr(&old, "Old")
+		w8(&old, LF_VISIBLE)
+		w8(&old, 255)
+		w8(&old, 0)
+		w32(&old, 0)
+		od, ook := project_decode(old.b[:])
+		check(ook && len(od.frames) == 1 && od.active_frame == 0 && len(od.tags) == 0, "a version 4 project loads as one frame")
+		if ook do doc_destroy(od)
+
+		// GIF export honors the playback range
+		d = fresh(32, 32, red)
+		doc_add_frame(d, false)
+		paint_line(.Brush, blue, {0, 16}, {31, 16})
+		doc_add_frame(d, true)
+		gif_all := export_gif_bytes(d, 100)
+		check(len(gif_all) > 6 && string(gif_all[:6]) == "GIF89a", "a GIF comes out")
+		gp, gw, gh, gok := decode_image(gif_all, ".gif")
+		check(gok && gw == 32 && gh == 32, "and reads back")
+		if gok do delete(gp)
+		tg2: Tag
+		tg2.from, tg2.to = 1, 1
+		append(&d.tags, tg2)
+		play_tag = 0
+		lo, hi, _ := play_range()
+		check(lo == 1 && hi == 1, "a tag limits the playback range")
+		one := export_gif_bytes(d, 100)
+		check(len(one) < len(gif_all), "and what a GIF holds")
+		check(export_png_sequence(d, "selftest_seq.png", 100) == 1, "and a PNG sequence")
+		sp, sw, sh, sok := load_image_pixels("selftest_seq_001.png")
+		check(sok && sw == 32 && sh == 32, "whose files read back")
+		if sok do delete(sp)
+		os.remove("selftest_seq_001.png")
+		play_tag = -1
+	}
+
+	// --- file browser ---------------------------------------------------------------------
+	{
+		for name in ([?]string{"a.png", "b.JPG", "c.jpeg", "d.webp", "e.bmp", "f.tga", "g.gif", "h.qoi", "i.tif", "j.tiff", "k.psd", "l.psb", "m.kra", "n.ppnt"}) {
+			check(files_listed(name), fmt.tprintf("the file browser lists %s", name))
+		}
+		check(!files_listed("o.txt") && !files_listed("p.gpl"), "and not other files")
+		// webp reaches the shared decoder: a small lossless image
+		WEBP := [?]u8{'R', 'I', 'F', 'F', 0x1a, 0, 0, 0, 'W', 'E', 'B', 'P', 'V', 'P', '8', 'L', 0x0d, 0, 0, 0, 0x2f, 0, 0, 0, 0x10, 0x07, 0x10, 0x11, 0x11, 0x88, 0x88, 0xfe, 0x07, 0}
+		wp, ww, wh, wok := decode_image(WEBP[:], ".webp")
+		check(wok && ww == 1 && wh == 1, "WebP files open")
+		if wok do delete(wp)
+		// a project's preview, made the way the thumbnail thread makes it
+		d := fresh(32, 32, red)
+		doc_add_frame(d, false)
+		preview_path := "selftest_preview.ppnt"
+		if write_file(preview_path, project_encode(d)) {
+			pv, pw, ph, pok := files_preview(preview_path)
+			check(pok && pw == 32 && ph == 32, "a project has a preview")
+			if pok do delete(pv)
+			os.remove(preview_path)
+		}
+		// a drop lands at the point, at the image's own size
+		ix, iy := image_place(10, 10, IVec{16, 16})
+		check(ix == 11 && iy == 11, "a dropped image is centered on the pointer")
+		ix, iy = image_place(10, 10, IVec{-500, 500})
+		check(ix == -9 && iy == 31, "and always keeps a pixel on the canvas")
 	}
 
 	// --- tiles --------------------------------------------------------------
@@ -100,7 +427,7 @@ selftest :: proc() -> int {
 		b^ = brush_default(.Brush)
 		b.size, b.hardness, b.opacity, b.flow = 12, 100, 100, 100
 		paint_line(.Brush, red, {20, 60}, {180, 60})
-		check(px(d, 0, 100, 60) == red, "hard brush paints solid colour")
+		check(px(d, 0, 100, 60) == red, "hard brush paints solid color")
 		check(px(d, 0, 100, 20) == white, "brush leaves other pixels alone")
 		check(len(d.undo) == 1, "one undo step per stroke")
 		history_undo(d)
@@ -167,7 +494,7 @@ selftest :: proc() -> int {
 		o.wet, o.load = 90, 10
 		paint_line(.Oil, Color{240, 220, 40, 255}, {20, 80}, {180, 80})
 		m := px(d, 0, 170, 80)
-		check(m.b > 60, fmt.tprintf("wet oil picks up canvas colour (got %v)", m))
+		check(m.b > 60, fmt.tprintf("wet oil picks up canvas color (got %v)", m))
 	}
 
 	// --- layers, blend modes, masks -------------------------------------------------
@@ -395,6 +722,10 @@ selftest :: proc() -> int {
 		tool_toggle(.Mirror)
 		tool_toggle(.Mirror)
 		check(!mirror_on && !options_switch_on, "Mirror switches the same way")
+		tool_toggle(.Seamless)
+		check(seamless_mode && options_switch_on && options_switch == .Seamless, "Tiled Mode is a switch too")
+		run_cmd(.Tool_Seamless)
+		check(!seamless_mode && !options_switch_on, "its command turns it off again")
 
 		// a group of switches: its hotkey cycles Grid -> Mirror -> off
 		append(&tool_groups, Tool_Group{last = .Grid})
@@ -510,7 +841,7 @@ selftest :: proc() -> int {
 		line_outline, line_fill = true, false
 	}
 
-	// --- text character colours -------------------------------------------------------
+	// --- text character colors -------------------------------------------------------
 	{
 		d := fresh(400, 120, white)
 		text_defaults_init()
@@ -526,7 +857,7 @@ selftest :: proc() -> int {
 		s := "MMMM MMMM"
 		text_insert_bytes(ti, 0, transmute([]u8)s, 0)
 		text_color_range(ti, 5, 9, red)
-		check(ti.npal == 1 && text_char_color(ti, 0) == blue && text_char_color(ti, 6) == red, "colour a range of text")
+		check(ti.npal == 1 && text_char_color(ti, 0) == blue && text_char_color(ti, 6) == red, "color a range of text")
 		text_render_layer(d, 1)
 		count :: proc(d: ^Doc, x0, x1: int, c: Color) -> int {
 			n := 0
@@ -538,17 +869,17 @@ selftest :: proc() -> int {
 		}
 		mx, _, _ := text_caret_xy(ti, 5) // where the red part starts
 		mid := int(mx) - 1
-		check(count(d, 0, mid, blue) > 100 && count(d, 0, mid, red) == 0 && count(d, mid, d.w, red) > 100 && count(d, mid, d.w, blue) == 0, "coloured text renders in its colours")
-		// inserting and deleting keeps each character's colour
+		check(count(d, 0, mid, blue) > 100 && count(d, 0, mid, red) == 0 && count(d, mid, d.w, red) > 100 && count(d, mid, d.w, blue) == 0, "colored text renders in its colors")
+		// inserting and deleting keeps each character's color
 		text_insert_bytes(ti, 0, transmute([]u8)string("x"), 0)
 		text_delete_range(ti, 0, 1)
-		check(text_char_color(ti, 5) == red && text_char_color(ti, 4) == blue, "colours move with the text")
+		check(text_char_color(ti, 5) == red && text_char_color(ti, 4) == blue, "colors move with the text")
 		text_delete_range(ti, 5, 9)
-		check(ti.npal == 0, "unused text colours are dropped")
+		check(ti.npal == 0, "unused text colors are dropped")
 		text_color_range(ti, 0, 2, red)
 		data := project_encode(d)
 		nd, ok := project_decode(data)
-		check(ok && nd.layers[1].text.npal == 1 && text_char_color(&nd.layers[1].text, 1) == red && text_char_color(&nd.layers[1].text, 3) == blue, "text colours are saved in projects")
+		check(ok && nd.layers[1].text.npal == 1 && text_char_color(&nd.layers[1].text, 1) == red && text_char_color(&nd.layers[1].text, 3) == blue, "text colors are saved in projects")
 		if ok do doc_destroy(nd)
 	}
 
@@ -665,9 +996,9 @@ convert_file :: proc(src, dst: string) -> int {
 	}
 	f := Export_Format.PNG
 	for e, k in EXPORT_EXT {
-		if lower_ext(dst) == fmt.tprintf(".%s", e) do f = k
+		if int(k) < EXPORT_STILL_FORMATS && lower_ext(dst) == fmt.tprintf(".%s", e) do f = k
 	}
-	data := export_encode(doc_flat(d, context.temp_allocator), d.w, d.h, f, 90)
+	data := lower_ext(dst) == ".ppnt" ? project_encode(d) : export_encode(doc_flat(d, context.temp_allocator), d.w, d.h, f, 90)
 	if data == nil || !write_file(dst, data) {
 		fmt.eprintln("cannot write", dst)
 		return 1
@@ -688,7 +1019,7 @@ brush_sheet :: proc(path: string) -> int {
 	cols := [?]Color{{30, 30, 34, 255}, {178, 52, 40, 255}, {40, 92, 170, 255}, {60, 130, 70, 255}}
 	for p, i in presets {
 		y0 := i * row_h
-		// blending tools get colour bands to work on
+		// blending tools get color bands to work on
 		if p.tool != .Brush && p.tool != .Oil {
 			for y in y0 + 8 ..< y0 + row_h - 8 {
 				for x in 160 ..< w {
@@ -816,6 +1147,79 @@ bench :: proc() -> int {
 	t0 = now_s()
 	data := project_encode(d)
 	fmt.printf("save project: %.1f ms, %d KB\n", (now_s() - t0) * 1000, len(data) / 1024)
+	return bench_animation(d)
+}
+
+// 12 frames of the 12 MP painting above, as an animation over a background usually is: every frame a
+// copy of the last with a new stroke, over the opaque background and a full Multiply layer.
+@(private = "file")
+bench_animation :: proc(d: ^Doc) -> int {
+	FRAMES :: 12
+	doc_add_layer(d)
+	tiles_fill(&d.layers[d.active_layer].pix, Color{200, 180, 150, 128}, {})
+	d.layers[d.active_layer].blend = .Multiply
+	doc_add_layer(d)
+	t0 := now_s()
+	for i in 0 ..< FRAMES {
+		if i > 0 do doc_add_frame(d, true)
+		paint_line(.Brush, Color{u8(40 + i * 15), 90, 200, 255}, {f32(200 + i * 250), 300}, {f32(600 + i * 250), 2700}, 60)
+	}
+	fmt.printf("make %d frames with a stroke each: %.1f ms\n", FRAMES, (now_s() - t0) * 1000)
+	t0 = now_s()
+	for _ in 0 ..< 100 {
+		history_push(d)
+		history_discard(d)
+	}
+	fmt.printf("undo snapshot of 12 frames: %.3f ms\n", (now_s() - t0) * 1000 / 100)
+	t0 = now_s()
+	for i in 0 ..< 120 do frame_switch(d, i % FRAMES)
+	fmt.printf("swap frames: %.3f ms\n", (now_s() - t0) * 1000 / 120)
+	buf := make([]Color, d.w * d.h)
+	defer delete(buf)
+	t0 = now_s()
+	for f in 0 ..< FRAMES do frame_composite(d, f, buf)
+	t1 := now_s()
+	fmt.printf("composite one frame: %.1f ms\n", (t1 - t0) * 1000 / FRAMES)
+	small := make([]Color, (d.w / 4 + 1) * (d.h / 4 + 1))
+	defer delete(small)
+	t0 = now_s()
+	shrink_level(buf, d.w, d.h, 2, small)
+	fmt.printf("shrink to a quarter: %.1f ms\n", (now_s() - t0) * 1000)
+
+	if !gfx_init(APP_NAME, true, 1600, 1000) do return 1
+	defer gfx_shutdown()
+	gfx_set_scale(1)
+	ui.scale = 1
+	draw_frame :: proc(d: ^Doc, f, k: int, tex: Texture) {
+		gfx_poll()
+		gfx_begin(C_BG)
+		dst := FRect{0, 0, f32(d.w) * d.zoom, f32(d.h) * d.zoom}
+		draw_tex(tex, frame_cache_src(d, k), dst)
+		gfx_present()
+	}
+	d.zoom = 0.25 // a 12 MP painting fit to a 1000 px high window
+	k := frame_cache_level(d)
+	// what playback would cost without the cache: the whole composite, uploaded every frame
+	tc := tex_create(d.w, d.h, .Linear)
+	defer tex_destroy(&tc)
+	t0 = now_s()
+	for f in 0 ..< FRAMES {
+		frame_composite(d, f, buf)
+		tex_update(tc, buf)
+		gfx_poll()
+		gfx_begin(C_BG)
+		draw_tex(tc, {0, 0, f32(d.w), f32(d.h)}, {0, 0, f32(d.w) * d.zoom, f32(d.h) * d.zoom})
+		gfx_present()
+	}
+	fmt.printf("playback frame, no cache: %.1f ms\n", (now_s() - t0) * 1000 / FRAMES)
+	for pass in 0 ..< 3 {
+		t0 = now_s()
+		for f in 0 ..< FRAMES {
+			frame_switch(d, f)
+			draw_frame(d, f, k, frame_cache_tex(d, f, k))
+		}
+		fmt.printf("playback frame, cache pass %d: %.1f ms\n", pass + 1, (now_s() - t0) * 1000 / FRAMES)
+	}
 	return 0
 }
 

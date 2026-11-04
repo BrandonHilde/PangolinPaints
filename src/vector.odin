@@ -81,7 +81,8 @@ shape_transformed :: proc(s: ^Shape, m: Affine) -> ^Shape {
 }
 
 // Editing a text or vector layer's pixels directly makes it an ordinary layer.
-layer_rasterize :: proc(l: ^Layer) {
+layer_rasterize :: proc(d: ^Doc, l: ^Layer) {
+	if layer_spans(l) do layer_fan_out(d, l)
 	l.text.on = false
 	shape_release(l.shape)
 	l.shape = nil
@@ -290,8 +291,8 @@ doc_rasterize_layer :: proc(d: ^Doc) -> bool {
 	l := &d.layers[d.active_layer]
 	if !l.text.on && l.shape == nil do return false
 	history_push(d)
-	layer_rasterize(l)
-	d.thumb_dirty = true
+	layer_rasterize(d, l)
+	doc_touch_all(d)
 	return true
 }
 

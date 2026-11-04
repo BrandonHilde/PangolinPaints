@@ -103,7 +103,7 @@ text_target :: proc() -> ^Text_Info {
 text_layer_at :: proc(d: ^Doc, p: Vec2) -> int {
 	for i := len(d.layers) - 1; i >= 0; i -= 1 {
 		l := &d.layers[i]
-		if !l.text.on || !l.visible do continue
+		if !l.text.on || !l.visible || flat_hides(frame_flat_id(d, d.active_frame), l) do continue
 		b := l.text.bx
 		if box_empty(b) {
 			b = Box{int(l.text.x) - 4, int(l.text.y) - 4, int(l.text.x) + 24, int(l.text.y) + l.text.size + 4}
@@ -200,6 +200,7 @@ text_click :: proc(p: Vec2) {
 	l := layer_make("Text", d.w, d.h)
 	l.text = text_defaults
 	l.text.on = true
+	l.span_id = span_next_id(d) // it shows even on a frame made from visible
 	l.text.n = 0
 	sp := snap_pt(p)
 	l.text.x, l.text.y = sp.x, sp.y
@@ -451,11 +452,11 @@ options_text :: proc() {
 	}
 	before := ti^
 	// font
-	if obutton(name_str(&ti.font), 120, "Font (click to choose)", key = "font") {
+	if obutton(name_str(&ti.font), 120, {"Font", "The typeface of this text. Click to choose from the bundled and installed fonts."}, key = "font") {
 		text_font_pick_open()
 	}
 	sz := ti.size
-	if oslider("Size", 92, &sz, 6, 600, "Text size in pixels", "px", 2) {
+	if oslider("Size", 92, &sz, 6, 600, {"Text size", "The height of the text in canvas pixels. Text stays sharp at any size until it is painted on. Shift moves along round sizes."}, "px", 2) {
 		if live do text_begin_change()
 		ti.size = sz
 		apply(live)
@@ -463,7 +464,7 @@ options_text :: proc() {
 	// colour chip: shows the text (or selection) colour; click to take the foreground colour
 	sa, sb, has_sel := text_sel_range()
 	chip := has_sel ? text_char_color(ti, sa) : ti.color
-	if oswatch_button("color", chip, has_sel ? "Selection colour (click to use the foreground colour)" : "Text colour (click to use the foreground colour for all of it)", 24) {
+	if oswatch_button("color", chip, has_sel ? Tip{"Selection color", "The color of the selected text. Click to give it the foreground color."} : Tip{"Text color", "The color of this text. Click to give all of it the foreground color."}, 24) {
 		if live do text_begin_change()
 		if has_sel {
 			text_color_range(ti, sa, sb, fg)
@@ -474,19 +475,19 @@ options_text :: proc() {
 	}
 	al := int(ti.align)
 	AL := [?]string{"Left", "Center", "Right"}
-	if nv, ch := ocombo("align", 66, AL[:], al, "Alignment"); ch {
+	if nv, ch := ocombo("align", 66, AL[:], al, {"Alignment", "Line the rows of text up on the left, on the center, or on the right of where you clicked."}); ch {
 		if live do text_begin_change()
 		ti.align = u8(nv)
 		apply(live)
 	}
 	lp := ti.line_pct
-	if oslider("Lines", 92, &lp, 50, 300, "Line spacing", "%") {
+	if oslider("Lines", 92, &lp, 50, 300, {"Line spacing", "The distance between rows of text, in percent of the text size."}, "%") {
 		if live do text_begin_change()
 		ti.line_pct = lp
 		apply(live)
 	}
 	tr := ti.track
-	if oslider("Spacing", 88, &tr, -20, 100, "Letter spacing (1/100 of the size)") {
+	if oslider("Spacing", 88, &tr, -20, 100, {"Letter spacing", "Extra space between characters, in hundredths of the text size. Below zero they move closer."}) {
 		if live do text_begin_change()
 		ti.track = tr
 		apply(live)
@@ -515,8 +516,9 @@ font_scroll: i32
 dlg_font :: proc() {
 	fonts_ensure()
 	c := dialog_frame("Choose Font", 320, 330)
-	text(c.x, c.y + 3, "Search", C_TEXT)
-	text_field({c.x + 50, c.y, c.w - 50, 14}, &font_filter)
+	SEARCH_TIP :: "Type part of a name to shorten the list of fonts."
+	tip_text(c.x, c.y + 3, "Search", C_TEXT, {"Search", SEARCH_TIP})
+	text_field({c.x + 50, c.y, c.w - 50, 14}, &font_filter, {"Search", SEARCH_TIP})
 	list := Rect{c.x, c.y + 22, c.w, c.h - 22 - 24}
 	ctl_well(list)
 	ROW :: 16
@@ -547,6 +549,7 @@ dlg_font :: proc() {
 			fill_rect(rr, Color{255, 255, 255, 14})
 		}
 		text(rr.x + 8, rr.y + (ROW - FONT_CAP) / 2, f.name, f.name == cur ? C_ACCENT : C_TEXT)
+		tip_area(rr, "font-row", {"", "Click to use this font. The list scrolls with the mouse wheel."})
 		if hover && ui.pressed[0] do chosen = k
 	}
 	clip_end()
@@ -566,6 +569,6 @@ dlg_font :: proc() {
 		dialog_close()
 		return
 	}
-	cancel := button_primary({c.x + c.w - 64, c.y + c.h - 18, 64, 18}, "Close")
+	cancel := button_primary({c.x + c.w - 64, c.y + c.h - 18, 64, 18}, "Close", {"", "Close this window and keep the current font (Esc)."})
 	if cancel || IsKeyPressed(.ESCAPE) do dialog_close()
 }

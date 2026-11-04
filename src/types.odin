@@ -148,6 +148,19 @@ Layer :: struct {
 	mask_on:    bool, // mask applied when compositing
 	text:       Text_Info, // text.on: this is a text layer
 	shape:      ^Shape, // non-nil: a vector layer (shared, see vector.odin)
+	cels:       [dynamic]^Cel, // the other frames' tiles (see frames.odin); pix and mask are the current frame's
+	span_id:    int, // text and vector layers: compared with Frame.flat
+}
+
+// A layer's tiles in a frame other than the current one. Never changed in place, and shared by undo snapshots.
+Cel :: struct {
+	refs:       int,
+	pix, mask:  Tiles,
+}
+
+Frame :: struct {
+	duration: int, // milliseconds
+	flat:     int, // above 0: holds one flattened image, so the text and vector layers made before it (span_id below this) do not show on it
 }
 
 // Soft selection mask, shared between undo snapshots. Never modified in place.
@@ -162,6 +175,9 @@ State :: struct {
 	w, h:   int,
 	layers: [dynamic]Layer,
 	sel:    ^Mask, // nil = no selection
+	frames: [dynamic]Frame,
+	tags:   [dynamic]Tag,
+	active_frame: int, // the frame whose tiles are in Layer.pix and Layer.mask
 }
 
 Doc :: struct {
@@ -186,6 +202,9 @@ Doc :: struct {
 	sel_edges:    [dynamic]Sel_Edge,
 	sel_dirty:    bool,
 	thumb_dirty:  bool,
+	comp_lazy:    bool, // a frame was just picked: `comp` is out of date and the canvas draws from the frame cache
+	frame_t:      f64, // when it was picked
+	fc_used:      bool, // the frame cache holds something of this document
 }
 
 // Run of selection outline: `n` unit edges starting at (x, y).
@@ -217,37 +236,39 @@ Tool :: enum {
 	Hand,
 	Zoom,
 	Line, // after the rest: tool groups are saved by index
-	// switches rather than tools: clicking them in a group turns the grid / mirror painting / perspective guides on or off
+	// switches rather than tools: clicking them in a group turns them on or off
 	Grid,
 	Mirror,
 	Perspective,
+	Seamless, // the view repeats the canvas and brush dabs wrap across its edges (user-visible name: Tiled Mode)
 }
 
 TOOL_NAMES := [Tool]string {
-	.Brush          = "Brush (B)",
-	.Oil            = "Oil Paint (N)",
-	.Smudge         = "Smudge (R)",
-	.Eraser         = "Eraser (E)",
+	.Brush          = "Brush",
+	.Oil            = "Oil Paint",
+	.Smudge         = "Smudge",
+	.Eraser         = "Eraser",
 	.Blur           = "Blur / Sharpen",
-	.Dodge          = "Dodge / Burn (O)",
-	.Clone          = "Clone Stamp (S)",
-	.Bucket         = "Paint Bucket (G)",
-	.Gradient       = "Gradient (Shift+G)",
-	.Picker         = "Eyedropper (I)",
-	.Text           = "Text (Shift+T)",
-	.Select_Rect    = "Rectangular Marquee (M)",
-	.Select_Ellipse = "Elliptical Marquee (Shift+M)",
-	.Lasso          = "Lasso (L)",
-	.Wand           = "Magic Wand (W)",
-	.Move           = "Move (V)",
-	.Transform      = "Free Transform (T)",
-	.Crop           = "Crop (C)",
-	.Hand           = "Hand (H)",
-	.Zoom           = "Zoom (Z)",
-	.Line           = "Line / Polygon (U)",
-	.Grid           = "Grid on / off (Ctrl+;)",
-	.Mirror         = "Mirror painting on / off",
-	.Perspective    = "Perspective guides on / off",
+	.Dodge          = "Dodge / Burn",
+	.Clone          = "Clone Stamp",
+	.Bucket         = "Paint Bucket",
+	.Gradient       = "Gradient",
+	.Picker         = "Eyedropper",
+	.Text           = "Text",
+	.Select_Rect    = "Rectangular Marquee",
+	.Select_Ellipse = "Elliptical Marquee",
+	.Lasso          = "Lasso",
+	.Wand           = "Magic Wand",
+	.Move           = "Move",
+	.Transform      = "Free Transform",
+	.Crop           = "Crop",
+	.Hand           = "Hand",
+	.Zoom           = "Zoom",
+	.Line           = "Line / Polygon",
+	.Grid           = "Grid",
+	.Mirror         = "Mirror",
+	.Perspective    = "Perspective",
+	.Seamless       = "Tiled Mode",
 }
 
 Sel_Mode :: enum {

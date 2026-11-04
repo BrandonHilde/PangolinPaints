@@ -6,14 +6,14 @@ import "core:math"
 // Brush settings
 // ---------------------------------------------------------------------------
 
-Tip :: enum u8 {
+Brush_Tip :: enum u8 {
 	Round, // soft/hard ellipse
 	Bristle, // streaky, follows the stroke direction
 	Chalk, // grain eats into the dab
 	Flat, // squared-off tip, for calligraphy and knives
 }
 
-TIP_NAMES := [Tip]string {
+TIP_NAMES := [Brush_Tip]string {
 	.Round   = "Round",
 	.Bristle = "Bristle",
 	.Chalk   = "Chalk",
@@ -46,7 +46,7 @@ Brush :: struct {
 	grain:       int, // 0..100 paper texture
 	angle:       int, // 0..359
 	roundness:   int, // 5..100
-	tip:         Tip,
+	tip:         Brush_Tip,
 	follow:      bool, // tip rotates with the stroke direction
 	pressure:    Pressure,
 	taper:       int, // taper length in % of the brush size x 10
@@ -147,7 +147,7 @@ brush_from_ints :: proc(base: Brush, v: []int) -> Brush {
 	b.grain = clamp(a[8], 0, 100)
 	b.angle = clamp(a[9], 0, 359)
 	b.roundness = clamp(a[10], 5, 100)
-	b.tip = Tip(clamp(a[11], 0, len(Tip) - 1))
+	b.tip = Brush_Tip(clamp(a[11], 0, len(Brush_Tip) - 1))
 	b.follow = a[12] != 0
 	b.pressure = Pressure(clamp(a[13], 0, len(Pressure) - 1))
 	b.taper = clamp(a[14], 0, 1000)
@@ -779,7 +779,7 @@ Tip_Eval :: struct {
 	ca, sa:     f32, // rotation
 	inv_round:  f32,
 	hard:       f32,
-	tip:        Tip,
+	tip:        Brush_Tip,
 	grain:      f32,
 	bristles:   f32,
 	dry:        f32, // 0 = wet, 1 = bone dry (bristle drop-out)
@@ -965,7 +965,7 @@ dab_apply_one :: proc(s: ^Stroke, dab: Dab) {
 		dab_blur(s, &e, box, alpha)
 	case .Dodge:
 		dab_dodge(s, &e, box, alpha)
-	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective:
+	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective, .Seamless:
 	}
 	doc_dirty(d, box)
 }

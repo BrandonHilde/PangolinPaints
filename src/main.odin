@@ -6,43 +6,6 @@ import "core:os"
 import "core:strconv"
 import "core:strings"
 
-// UI scale, in percent: physical pixels per 100 logical ones.
-UI_SCALE_MIN :: 100
-UI_SCALE_MAX :: 400
-UI_SCALE_STEP :: 5
-UI_SCALE_AUTO_STEP :: 25
-// Auto aims to show about this much logical space on a full screen.
-UI_AUTO_W :: 1280
-UI_AUTO_H :: 720
-// The layout needs at least this much, whatever the scale.
-UI_MIN_W :: 900
-UI_MIN_H :: 560
-
-// A scale read from the preferences or the command line. 0 is Auto; 1-4 are the whole multiples
-// older versions stored.
-ui_scale_parse :: proc(v: int) -> int {
-	switch {
-	case v <= 0:
-		return 0
-	case v <= 4:
-		return v * 100
-	}
-	return clamp(v, UI_SCALE_MIN, UI_SCALE_MAX)
-}
-
-// What Auto picks for a monitor of this many physical pixels.
-ui_scale_auto :: proc(mon_w, mon_h: int) -> int {
-	pct := min(mon_w * 100 / UI_AUTO_W, mon_h * 100 / UI_AUTO_H)
-	return clamp(pct / UI_SCALE_AUTO_STEP * UI_SCALE_AUTO_STEP, UI_SCALE_MIN, UI_SCALE_MAX)
-}
-
-// The scale to use: the preference (0 = Auto), lowered if the window couldn't hold the layout at it.
-ui_scale_choose :: proc(pref, mon_w, mon_h, win_w, win_h: int) -> int {
-	want := pref > 0 ? pref : ui_scale_auto(mon_w, mon_h)
-	fit := min(win_w * 100 / UI_MIN_W, win_h * 100 / UI_MIN_H) / UI_SCALE_STEP * UI_SCALE_STEP
-	return max(min(want, fit), UI_SCALE_MIN)
-}
-
 // Paints a small sample so the UI can be inspected without user input (--demo).
 demo_setup :: proc() {
 	d := doc_new_filled(1200, 900, "demo", Color{240, 234, 220, 255})
@@ -112,12 +75,41 @@ demo_setup :: proc() {
 	d.modified = false
 }
 
+// Adds frames to the demo painting: copies with the sun moved along, each on its own cel (--demo-frames).
+demo_frames :: proc(n: int) {
+	d := doc
+	sel := d.sel // the demo's selection would keep the strokes out
+	d.sel = nil
+	defer d.sel = sel
+	for i in 1 ..< n {
+		doc_add_frame(d, true)
+		d.frames[i].duration = 120
+		d.active_layer = 2
+		tiles_fill(&d.layers[2].pix, Color{}, {})
+		sun := [?]Vec2{{860 - f32(i) * 90, 210 + f32(i) * 20}, {861 - f32(i) * 90, 211 + f32(i) * 20}}
+		brushes[.Brush].size = 160
+		brushes[.Brush].hardness = 30
+		if stroke_begin(.Brush, sun[0], Color{255, 236, 170, 255}) {
+			for k in 1 ..= 12 do stroke_move(sun[0] + (sun[1] - sun[0]) * (f32(k) / 12))
+			stroke_end()
+		}
+	}
+	t: Tag
+	name_set(&t.name, "Sunset")
+	t.from, t.to, t.color = 1, n - 1, Color{240, 150, 80, 255}
+	append(&d.tags, t)
+	d.active_layer = 1
+	set_frame(0)
+	doc_refresh_comp(d)
+	d.modified = false
+}
+
 main :: proc() {
 	shot_path := ""
 	win_w, win_h := 0, 0
-	scale_arg := -1
 	shot_frame := 8
 	demo := false
+	demo_frame_n := 0
 	dlg_arg := -1
 	menu_arg := -1
 	Script_Click :: struct {
@@ -125,6 +117,13 @@ main :: proc() {
 		pos:   Vec2,
 	}
 	clicks := make([dynamic]Script_Click)
+	hover: Script_Click // moves the pointer without clicking, for checking tooltips with --shot
+	Script_Drag :: struct {
+		frame:    int,
+		from, to: Vec2,
+	}
+	drags := make([dynamic]Script_Drag)
+	files_arg := ""
 	open_args := make([dynamic]string)
 	args := os.args
 	for i := 1; i < len(args); i += 1 {
@@ -134,7 +133,7 @@ main :: proc() {
 			shot_path = args[i + 1]
 			i += 1
 		case a == "--scale" && i + 1 < len(args):
-			scale_arg, _ = strconv.parse_int(args[i + 1])
+			if v, ok := strconv.parse_int(args[i + 1]); ok do ui_scale_arg = ui_scale_parse(v)
 			i += 1
 		case a == "--size" && i + 1 < len(args):
 			wh := strings.split(args[i + 1], "x", context.temp_allocator)
@@ -157,11 +156,15 @@ main :: proc() {
 			i += 1
 		case a == "--demo":
 			demo = true
+		case a == "--demo-frames" && i + 1 < len(args):
+			demo = true
+			demo_frame_n, _ = strconv.parse_int(args[i + 1])
+			i += 1
 		case a == "--dialog" && i + 1 < len(args):
 			dlg_arg, _ = strconv.parse_int(args[i + 1])
 			i += 1
 		case a == "--clicks" && i + 1 < len(args):
-			// "frame:x,y;frame:x,y": left clicks in window pixels, for checking the interface
+			// "frame:x,y;frame:x,y": left clicks in window pixels, for checking the interface with --shot
 			for part in strings.split(args[i + 1], ";", context.temp_allocator) {
 				fp := strings.split(part, ":", context.temp_allocator)
 				if len(fp) != 2 do continue
@@ -171,6 +174,35 @@ main :: proc() {
 				x, _ := strconv.parse_f32(xy[0])
 				y, _ := strconv.parse_f32(xy[1])
 				append(&clicks, Script_Click{f, {x, y}})
+			}
+			i += 1
+		case a == "--drag" && i + 1 < len(args):
+			// "frame:x0,y0,x1,y1;...": press at the first point on that frame, move to the second over the
+			// next few frames and release there, for checking drags with --shot
+			for part in strings.split(args[i + 1], ";", context.temp_allocator) {
+				fp := strings.split(part, ":", context.temp_allocator)
+				if len(fp) != 2 do continue
+				xy := strings.split(fp[1], ",", context.temp_allocator)
+				if len(xy) != 4 do continue
+				v: [4]f32
+				for s, k in xy do v[k], _ = strconv.parse_f32(s)
+				f, _ := strconv.parse_int(fp[0])
+				append(&drags, Script_Drag{f, {v[0], v[1]}, {v[2], v[3]}})
+			}
+			i += 1
+		case a == "--files" && i + 1 < len(args):
+			files_arg = args[i + 1] // the system's folder picker can't be scripted
+			i += 1
+		case a == "--hover" && i + 1 < len(args):
+			// "frame:x,y": from that frame on, the pointer rests there
+			fp := strings.split(args[i + 1], ":", context.temp_allocator)
+			if len(fp) == 2 {
+				xy := strings.split(fp[1], ",", context.temp_allocator)
+				if len(xy) == 2 {
+					hover.frame, _ = strconv.parse_int(fp[0])
+					hover.pos.x, _ = strconv.parse_f32(xy[0])
+					hover.pos.y, _ = strconv.parse_f32(xy[1])
+				}
 			}
 			i += 1
 		case a == "--menu" && i + 1 < len(args):
@@ -203,7 +235,6 @@ main :: proc() {
 	set_fg(fg)
 	tool_groups_default()
 	prefs_load()
-	if scale_arg >= 0 do ui_scale_pref = ui_scale_parse(scale_arg)
 	render_init()
 	brand_init()
 	oui_init()
@@ -211,6 +242,10 @@ main :: proc() {
 
 	if demo {
 		demo_setup()
+		if demo_frame_n > 1 {
+			demo_frames(demo_frame_n)
+			bottom_mode_set(.Animation)
+		}
 	} else {
 		d := doc_new_painting(new_w, new_h, "Untitled", new_bg_color(new_bg))
 		d.modified = false
@@ -226,7 +261,12 @@ main :: proc() {
 			fx_open(.Hue_Saturation)
 		case:
 			dialog_open(k)
+			dialog.confirm_doc = doc // the Confirm window needs a painting to ask about
 		}
+	}
+	if files_arg != "" {
+		files_set_dir(files_arg)
+		bottom_mode_set(.Files)
 	}
 	frame_no := 0
 	last_title: string
@@ -246,14 +286,29 @@ main :: proc() {
 				gfx.m_released[0], gfx.m_down[0] = true, false
 			}
 		}
+		for d in drags {
+			DRAG_STEPS :: 6
+			switch f := frame_no - d.frame; {
+			case f >= -2 && f < 0:
+				gfx.mouse = d.from
+			case f == 0:
+				gfx.mouse = d.from
+				gfx.m_pressed[0], gfx.m_down[0] = true, true
+			case f > 0 && f <= DRAG_STEPS:
+				gfx.mouse = d.from + (d.to - d.from) * f32(f) / DRAG_STEPS
+			case f == DRAG_STEPS + 1:
+				gfx.mouse = d.to
+				gfx.m_released[0], gfx.m_down[0] = true, false
+			}
+		}
+		if hover.frame > 0 && frame_no >= hover.frame do gfx.mouse = hover.pos
 		if gfx.quit {
 			gfx.quit = false
 			request_quit()
 		}
 
 		sw, sh := int(gfx.pw), int(gfx.ph)
-		mon_w, mon_h := gfx_monitor_size()
-		scale := f32(ui_scale_choose(ui_scale_pref, mon_w, mon_h, sw, sh)) / 100
+		scale := f32(ui_scale_wanted()) / 100
 		if ui.scale > 0 && scale != ui.scale {
 			views_rescale(ui.scale / scale)
 		}
@@ -275,6 +330,11 @@ main :: proc() {
 
 		text_update()
 		shortcuts_update()
+		// never more than one frame at a time: the first time round, frames take a while to prepare,
+		// and each should still get its turn so the next round can run at full speed
+		if playing && dialog.kind == .None && !text_edit.active {
+			playback_update(min(ui.dt, f32(max(doc.frames[doc.active_frame].duration, 10)) / 1000))
+		}
 		if status_t > 0 {
 			status_t -= ui.dt
 		}
@@ -286,7 +346,9 @@ main :: proc() {
 		main_ui()
 		oui_end_frame()
 		oui_render()
+		files_drag_run()
 		dialogs_run()
+		dialog_frame_end()
 		popup_run()
 		tooltip_draw()
 		if shot_path != "" && frame_no == shot_frame {

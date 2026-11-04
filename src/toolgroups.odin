@@ -121,19 +121,20 @@ group_key_wait := -1 // group waiting for a hotkey press, or -1
 
 tool_groups_default :: proc() {
 	tool_groups_clear()
-	add :: proc(key: KeyboardKey, tools: ..Tool) {
+	add :: proc(name: string, key: KeyboardKey, tools: ..Tool) {
 		g := Tool_Group {
 			key  = key,
 			last = tools[0],
 		}
+		name_set(&g.name, name)
 		append(&g.tools, ..tools)
 		append(&tool_groups, g)
 	}
-	add(.ONE, .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge)
-	add(.TWO, .Clone, .Bucket, .Gradient, .Line, .Picker, .Text)
-	add(.THREE, .Select_Rect, .Select_Ellipse, .Lasso, .Wand)
-	add(.FOUR, .Move, .Transform, .Crop)
-	add(.FIVE, .Hand, .Zoom)
+	add("Paint", .ONE, .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge)
+	add("Draw", .TWO, .Clone, .Bucket, .Gradient, .Line, .Picker, .Text)
+	add("Select", .THREE, .Select_Rect, .Select_Ellipse, .Lasso, .Wand)
+	add("Transform", .FOUR, .Move, .Transform, .Crop)
+	add("View", .FIVE, .Hand, .Zoom)
 }
 
 tool_group_activate :: proc(gi: int) {
@@ -204,7 +205,7 @@ tool_group_activate :: proc(gi: int) {
 	select_tool_in_group(pick, gi)
 }
 
-// Hotkey of a group holding only switches (grid, mirror, perspective). With none on, it turns on the last one
+// Hotkey of a group holding only switches (grid, mirror, perspective, tiled mode). With none on, it turns on the last one
 // used. While one is on and its settings are shown, it moves on to the next (turning the one
 // before off), and after the last turns them all off. While working with something else, it
 // turns the group's switches off.
@@ -420,7 +421,7 @@ panel_groups_bar :: proc(r: Rect) {
 	hline(r.x, r.y, r.w, C_BORDER)
 	ty := r.y + (r.h - FONT_CAP) / 2
 	x := r.x + 10
-	text(x, ty, "Groups:", C_TEXT_DIM)
+	tip_text(x, ty, "Groups:", C_TEXT_DIM, {"Tool groups", "Each group with its key, and its current tool. Click one, or press its key, to pick it."})
 	x += text_w("Groups:") + 10
 	limit := r.x + r.w - 10
 	if status_t > 0 {
@@ -469,7 +470,7 @@ panel_groups_bar :: proc(r: Rect) {
 		cw := 8 + label_w + 6 + text_w(ARROW) + 6 + target_w + 8
 		if x + cw > limit do break
 		cell := Rect{x, r.y + 3, cw, r.h - 6}
-		tip := key == "" ? title : fmt.tprintf("%s (%s)", title, key)
+		tip := Tip{key == "" ? title : fmt.tprintf("%s (%s)", title, key), "A tool group. Click, or press its key, to pick its last tool, and again to step through what it holds."}
 		clicked, held, hover := button_behavior(make_id(cell, "grpcell"), cell, tip)
 		if active {
 			draw_rrect(f32(cell.x), f32(cell.y), f32(cell.w), f32(cell.h), RADIUS, C_ACCENT_TINT)
@@ -509,9 +510,10 @@ dlg_group_rename :: proc() {
 		dialog_close()
 		return
 	}
-	text(c.x, c.y + 3, "Name", C_TEXT)
-	text_field(Rect{c.x + 50, c.y, c.w - 50, 14}, &dialog.name, "Leave empty for the default name")
-	ok, cancel := dialog_buttons(c)
+	NAME_TIP :: "The name shown at the top of the group. Leave it empty for the default name."
+	tip_text(c.x, c.y + 3, "Name", C_TEXT, {"Group name", NAME_TIP})
+	text_field(Rect{c.x + 50, c.y, c.w - 50, 14}, &dialog.name, {"Group name", NAME_TIP})
+	ok, cancel := dialog_buttons(c, "Keep this name (Enter).")
 	if cancel {
 		dialog_close()
 	}

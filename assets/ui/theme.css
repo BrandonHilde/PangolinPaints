@@ -6,7 +6,7 @@
  *
  *     :root { --accent: #6aa8ff; --panel: #202329; }
  *     #right { width: 300px; }
- *     #body { flex-direction: row-reverse; }     (tools on the right, colours and layers on the left)
+ *     #body { flex-direction: row-reverse; }     (tools on the right, colors and layers on the left)
  */
 
 :root {
@@ -44,14 +44,15 @@
 	background: var(--bg);
 }
 
-#menubar    { height: 24px; flex: none; }
-#options    { height: 30px; flex: none; }
+#menubar    { min-height: 24px; max-height: 40vh; flex: none; overflow: hidden; }
+#options    { height: 30px; max-height: 13vh; flex: none; }
 #body       { display: flex; flex-direction: row; flex: 1; min-height: 0; }
-#toolbar    { width: 148px; flex: none; }
+#toolbar    { width: 148px; max-width: 22vw; flex: none; }
 #center     { display: flex; flex-direction: column; flex: 1; min-width: 0; height: 100%; }
-#tabs       { height: 26px; flex: none; }
-#viewport   { flex: 1; min-height: 0; }
-#right      { width: 236px; flex: none; }
+#tabs       { height: 26px; max-height: 12vh; flex: none; }
+#viewport   { flex: 1; min-height: 40px; }
+#timeline   { height: 150px; max-height: 35vh; min-height: 24px; flex: 0 1 auto; }   /* gives way to the canvas in a very small window */
+#right      { width: 236px; max-width: 30vw; flex: none; }
 #status     { height: 20px; flex: none; }
 #groups-bar { height: 24px; flex: none; }
 
@@ -76,12 +77,12 @@ statusbar label.strong { color: var(--text); }
 statusbar label.message { color: var(--accent); }
 statusbar separator    { width: 0.5px; height: 11px; background: var(--ring-hi); }
 statusbar spacer       { flex: 1; }
-#status-tool           { width: 268px; overflow: hidden; }
-#cursor-info           { width: 140px; height: 100%; }
+#status-tool           { flex: 0 1 420px; min-width: 0; max-width: 45vw; overflow: hidden; }
+#cursor-info           { flex: 0 1 140px; min-width: 0; height: 100%; overflow: hidden; }
 
 /* ---- controls ----------------------------------------------------------------------------- */
 
-/* icons are a font: colour and size them like text */
+/* icons are a font: color and size them like text */
 .icon    { font-family: icons; font-size: 12px; line-height: 12px; }
 .icon.lg { font-size: 16px; line-height: 16px; }
 
@@ -105,10 +106,12 @@ spacer { display: block; flex: 1; }
 
 /* ---- menu bar ----------------------------------------------------------------------------- */
 
+/* the titles wrap in a narrow window or at a large UI scale, so every menu stays reachable */
 menubar {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	padding: 0 12px 0 7px;
+	padding: 3px 12px 3px 7px;
 	background: var(--panel-dark);
 	border-bottom: 0.5px solid var(--border);
 }
@@ -123,7 +126,7 @@ button.menu-title {
 }
 button.menu-title:hover { background: var(--hover); color: #ffffff; }
 button.menu-title.open  { background: var(--active); color: #ffffff; }
-#seamless, #canvas-mode { margin-left: 4px; }
+#canvas-mode { margin-left: 4px; }
 #doc-name { color: var(--text-dim); margin-left: 8px; white-space: nowrap; }
 
 /* ---- document tabs ------------------------------------------------------------------------ */
@@ -363,7 +366,55 @@ button.btn.blend-row { height: 20px; justify-content: flex-start; padding-left: 
 toolbar separator { height: 0.5px; margin: 6px 6px 0 6px; background: var(--ring-hi); flex: none; }
 #color-chips { height: 46px; margin: 7px 0 0 5px; flex: none; }
 
-/* ---- right panel: colour, swatches, layers, navigator ------------------------------------- */
+/* ---- timeline ----------------------------------------------------------------------------- */
+
+timeline {
+	display: flex;
+	flex-direction: column;
+	background: var(--panel);
+	border-top: 0.5px solid var(--border);
+}
+#timeline-bar {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: 24px;
+	padding: 0 6px;
+	flex: none;
+}
+button.icon-btn.tl-btn { position: relative; width: 22px; height: 17px; flex: none; }
+tl-gap { display: block; width: 8px; flex: none; }
+#timeline-bar button.combo, #timeline-bar button.btn, #timeline-bar slider-bar { height: 17px; margin-left: 2px; }
+#timeline-grid { flex: 1; min-height: 0; }
+#timeline.collapsed { height: 24px; }   /* panel hidden: only the bar stays */
+#bar-tools {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+	overflow: hidden;
+}
+#bottom-mode { margin-left: 8px; }
+
+/* ---- file browser (shares the timeline's panel) ------------------------------------------- */
+
+#files-path { flex: 1; min-width: 0; margin-left: 6px; color: var(--text-dim); white-space: nowrap; overflow: hidden; }
+#files-grid { flex: 1; min-height: 0; }
+#files-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	flex: 1;
+	min-height: 0;
+	background: var(--panel-dark);
+}
+#files-open { gap: 5px; height: 24px; padding: 0 12px; }
+
+/* ---- right panel: color, swatches, layers, navigator -------------------------------------- */
 
 sidepanel {
 	display: flex;

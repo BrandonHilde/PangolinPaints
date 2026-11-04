@@ -44,6 +44,11 @@ prefs_save :: proc() {
 	fmt.sbprintf(&sb, "jpg_quality=%d\n", export_quality)
 	fmt.sbprintf(&sb, "fg=%d\n", int(fg.r) << 16 | int(fg.g) << 8 | int(fg.b))
 	fmt.sbprintf(&sb, "bg=%d\n", int(bg.r) << 16 | int(bg.g) << 8 | int(bg.b))
+	fmt.sbprintf(&sb, "onion=%d\n", b2i(onion_on))
+	fmt.sbprintf(&sb, "onion_before=%d\n", onion_before)
+	fmt.sbprintf(&sb, "onion_after=%d\n", onion_after)
+	fmt.sbprintf(&sb, "onion_alpha=%d\n", onion_alpha)
+	files_prefs_write(&sb)
 	workspace_write(&sb)
 	write_file(prefs_path(), transmute([]u8)strings.to_string(sb))
 }
@@ -66,7 +71,7 @@ prefs_load :: proc() {
 		}
 		key := strings.trim_space(line[:eq])
 		sval := strings.trim_space(line[eq + 1:])
-		if workspace_apply_line(key, sval) {
+		if workspace_apply_line(key, sval) || files_prefs_read(key, sval) {
 			continue
 		}
 		val, vok := strconv.parse_int(sval)
@@ -76,6 +81,14 @@ prefs_load :: proc() {
 		switch key {
 		case "ui_scale":
 			ui_scale_pref = ui_scale_parse(val)
+		case "onion":
+			onion_on = val != 0
+		case "onion_before":
+			onion_before = clamp(val, 0, 5)
+		case "onion_after":
+			onion_after = clamp(val, 0, 5)
+		case "onion_alpha":
+			onion_alpha = clamp(val, 5, 100)
 		case "bg_mode":
 			bg_mode = clamp(val, 0, 3)
 		case "pixel_grid":

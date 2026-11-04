@@ -14,7 +14,10 @@ PRESET_ID :: u32(0xB2A5E7E1)
 // ---------------------------------------------------------------------------
 
 panels_init :: proc() {
-	oui_slot_register("logo", proc(r: Rect, _: int) {logo_draw(r.x, r.y + (r.h - LOGO_SIZE) / 2, 1)})
+	oui_slot_register("logo", proc(r: Rect, _: int) {
+		logo_draw(r.x, r.y + (r.h - LOGO_SIZE) / 2, 1)
+		tip_area(r, "logo", {"Pangolin Paints", "A painting and image editor. Help > About has the details."})
+	})
 	oui_slot_register("color_chips", proc(r: Rect, _: int) {panel_color_chips(r)})
 	oui_slot_register("color_picker", proc(r: Rect, _: int) {panel_color_picker(r)})
 	oui_slot_register("hex_field", proc(r: Rect, _: int) {panel_hex_field(r)})
@@ -25,6 +28,8 @@ panels_init :: proc() {
 	oui_slot_register("cursor_info", proc(r: Rect, _: int) {panel_cursor_info(r)})
 	oui_slot_register("groups_bar", proc(r: Rect, _: int) {panel_groups_bar(r)})
 	oui_slot_register("viewport", proc(r: Rect, _: int) {panel_viewport(r)})
+	oui_slot_register("timeline_grid", proc(r: Rect, _: int) {panel_timeline_grid(r)})
+	oui_slot_register("files_grid", proc(r: Rect, _: int) {panel_files_grid(r)})
 }
 
 main_ui :: proc() {
@@ -42,6 +47,7 @@ main_ui :: proc() {
 	oui.element(uictx, "center", "column", {id = "center"})
 	panel_tabs()
 	oui_slot("viewport", "viewport")
+	panel_timeline()
 	oui.end(uictx)
 	panel_right()
 	oui.end(uictx)
@@ -65,7 +71,7 @@ panel_viewport :: proc(viewport: Rect) {
 // Menu bar
 // ---------------------------------------------------------------------------
 
-MENU_TITLES := [?]string{"File", "Edit", "Image", "Adjust", "Filter", "Layer", "Select", "View", "Workspaces", "Help"}
+MENU_TITLES := [?]string{"File", "Edit", "Image", "Adjust", "Filter", "Layer", "Frame", "Select", "View", "Workspaces", "Help"}
 
 fx_item :: proc(fx: Fx) {
 	name := FX_DEFS[fx].name
@@ -86,8 +92,8 @@ menu_build :: proc(idx: int) {
 		item("Save", cmd = .Save)
 		item("Save As...", cmd = .Save_As)
 		popup_sep()
-		item("Place Image as Layer...", cmd = .Place_Image)
-		item("Export Image...", cmd = .Export)
+		item("Import as Layer...", cmd = .Place_Image)
+		item("Export...", cmd = .Export)
 		popup_sep()
 		item("Load Swatches...", cmd = .Swatches_Load)
 		item("Save Swatches...", cmd = .Swatches_Save)
@@ -102,7 +108,7 @@ menu_build :: proc(idx: int) {
 		item("Copy", cmd = .Copy)
 		item("Copy Merged", cmd = .Copy_Merged)
 		item("Paste as Layer", cmd = .Paste, enabled = clip.pix != nil)
-		item("Clear", cmd = .Clear)
+		item("Delete", cmd = .Clear)
 		popup_sep()
 		item("Fill with Foreground", cmd = .Fill_Fg)
 		item("Fill with Background", cmd = .Fill_Bg)
@@ -183,6 +189,24 @@ menu_build :: proc(idx: int) {
 		item("Apply Mask", cmd = .Mask_Apply, enabled = l.has_mask)
 		item("Delete Mask", cmd = .Mask_Delete, enabled = l.has_mask)
 	case 6:
+		item("New Frame", cmd = .Frame_New)
+		item("Duplicate Frame", cmd = .Frame_Dup)
+		item("New Frame from Visible", cmd = .Frame_From_Visible)
+		item("Delete Frame", cmd = .Frame_Del, enabled = len(d.frames) > 1)
+		popup_sep()
+		item("Move Frame Left", cmd = .Frame_Left, enabled = d.active_frame > 0)
+		item("Move Frame Right", cmd = .Frame_Right, enabled = d.active_frame < len(d.frames) - 1)
+		popup_sep()
+		item("Previous Frame", cmd = .Frame_Prev, enabled = len(d.frames) > 1)
+		item("Next Frame", cmd = .Frame_Next, enabled = len(d.frames) > 1)
+		item("First Frame", cmd = .Frame_First, enabled = len(d.frames) > 1)
+		item("Last Frame", cmd = .Frame_Last, enabled = len(d.frames) > 1)
+		item(playing ? "Pause" : "Play", cmd = .Play, enabled = len(d.frames) > 1)
+		popup_sep()
+		item("Frame Properties...", cmd = .Frame_Props)
+		item("Tags...", cmd = .Tags)
+		item("Onion Skin", cmd = .Toggle_Onion, checked = onion_on)
+	case 7:
 		item("Select All", cmd = .Select_All)
 		item("Deselect", cmd = .Deselect)
 		item("Invert Selection", cmd = .Invert_Sel)
@@ -191,10 +215,10 @@ menu_build :: proc(idx: int) {
 		item("Feather...", cmd = .Feather, enabled = d.sel != nil)
 		item("Grow...", cmd = .Grow, enabled = d.sel != nil)
 		item("Shrink...", cmd = .Shrink, enabled = d.sel != nil)
-	case 7:
+	case 8:
 		item("Zoom In", cmd = .Zoom_In)
 		item("Zoom Out", cmd = .Zoom_Out)
-		item("Fit on Screen", cmd = .Zoom_Fit)
+		item("Fit to Window", cmd = .Zoom_Fit)
 		item("100%", cmd = .Zoom_1)
 		item("200%", cmd = .Zoom_2)
 		popup_sep()
@@ -207,11 +231,13 @@ menu_build :: proc(idx: int) {
 		item("Perspective Guides", cmd = .Toggle_Perspective, checked = persp_on)
 		item("Navigator", cmd = .Toggle_Navigator, checked = show_navigator)
 		item("Canvas Mode", cmd = .Toggle_Canvas_Mode, checked = canvas_mode)
-		item("Seamless Mode", cmd = .Toggle_Seamless, checked = seamless_mode)
+		item("Tiled Mode", cmd = .Toggle_Seamless, checked = seamless_mode)
 		item("Cycle Transparency Display", cmd = .Cycle_Canvas_Bg)
 		popup_sep()
-		item("Preferences...", cmd = .Preferences)
-	case 8:
+		item("UI Scale...", cmd = .UI_Scale)
+		item("Timeline", cmd = .Toggle_Timeline, checked = bottom_mode == .Animation)
+		item("File Browser", cmd = .Toggle_Files, checked = bottom_mode == .Files)
+	case 9:
 		ws_refresh()
 		for e, i in ws_entries {
 			if i == len(WS_BUILTIN_NAMES) do popup_sep()
@@ -221,7 +247,7 @@ menu_build :: proc(idx: int) {
 		item("Manage Workspaces...", cmd = .Ws_Manage)
 		item("Import Workspace...", cmd = .Ws_Import)
 		item("Export Workspace...", cmd = .Ws_Export)
-	case 9:
+	case 10:
 		item("Keyboard Shortcuts", cmd = .Help_Keys)
 		item("About", cmd = .About)
 	}
@@ -239,6 +265,7 @@ panel_menubar :: proc() {
 		n := oui.button_begin(uictx, title, {class = is_open ? "menu-title open" : "menu-title"})
 		oui.label(uictx, "t", title)
 		oui.end(uictx)
+		oui_tip(n, menu_title_tip(title))
 		// menus drop from the bottom of the bar
 		r := oui_rect(n)
 		br := oui_rect(bar)
@@ -248,9 +275,9 @@ panel_menubar :: proc() {
 			menu_request = -1
 			popup_begin(id, anchor, 0, i)
 			menu_build(i)
-		} else if menu_open && ui.input_layer < 2 && in_rect(anchor, ui.mx, ui.my) {
+		} else if menu_open && ui.input_layer < 2 && in_rect(br.h > 30 ? r : anchor, ui.mx, ui.my) {
 			// while a menu is open the bar takes no clicks: moving along it switches menus,
-			// clicking the open one's title closes it
+			// clicking the open one's title closes it. A bar with wrapped rows has titles above each other.
 			if ui.pressed[0] && is_open {
 				popup_close()
 			} else if !is_open {
@@ -260,13 +287,11 @@ panel_menubar :: proc() {
 		}
 	}
 	oui.element_leaf(uictx, "spacer", "spacer")
-	if c, _ := oui_icon_button("seamless", .Seamless, "Seamless mode", {lit = seamless_mode, enabled = true}); c {
-		run_cmd(.Toggle_Seamless)
-	}
-	if c, _ := oui_icon_button("canvas-mode", .Canvas_Mode, "Canvas mode (Tab)", {lit = canvas_mode, enabled = true}); c {
+	if c, _ := oui_icon_button("canvas-mode", .Canvas_Mode, cmd_tip("Canvas Mode", .Toggle_Canvas_Mode), {lit = canvas_mode, enabled = true}); c {
 		run_cmd(.Toggle_Canvas_Mode)
 	}
-	oui.label(uictx, "doc", doc_display_name(doc), {id = "doc-name"})
+	// a very large UI scale needs the row more: the tab shows the name too
+	if ui.w >= 480 do oui_tip(oui.label(uictx, "doc", doc_display_name(doc), {id = "doc-name"}), {"Current painting", doc_status(doc)})
 }
 
 // ---------------------------------------------------------------------------
@@ -274,23 +299,24 @@ panel_menubar :: proc() {
 // ---------------------------------------------------------------------------
 
 panel_tabs :: proc() {
-	oui.element(uictx, "tabs", "tabbar", {id = "tabs"})
+	tabs_rect = oui_rect(oui.element(uictx, "tabs", "tabbar", {id = "tabs"}))
 	defer oui.end(uictx)
 	close_idx := -1
 	switch_idx := -1
 	for d, i in docs {
 		active := d == doc
 		t := oui.button_begin(uictx, fmt.tprintf("tab%x", uintptr(d)), {class = active ? "tab active" : "tab"})
+		oui_tip(t, {"", fmt.tprintf("%s Click to switch to it, middle-click to close it.", doc_status(d))})
 		if active do oui.element_leaf(uictx, "accent", "tab-accent")
 		oui.label(uictx, "name", doc_display_name(d))
-		if c, _ := oui_icon_button("close", .Close, "", {class = "tab-close", enabled = true}); c {
+		if c, _ := oui_icon_button("close", .Close, {"Close painting", "Close this painting. If it has unsaved changes you are asked first."}, {class = "tab-close", enabled = true}); c {
 			close_idx = i
 		}
 		oui.end(uictx)
 		if t.pressed do switch_idx = i // a press on the tab itself, not its close button
 		if t.hovered && ui.pressed[2] do close_idx = i
 	}
-	if c, _ := oui_icon_button("new", .Plus, "New painting", {id = "new-tab", enabled = true}); c {
+	if c, _ := oui_icon_button("new", .Plus, cmd_tip("New painting", .New), {id = "new-tab", enabled = true}); c {
 		run_cmd(.New)
 	}
 	if close_idx >= 0 {
@@ -329,7 +355,11 @@ TOOL_ICONS := [Tool]Icon {
 	.Grid           = .Grid,
 	.Mirror         = .Sym_X,
 	.Perspective    = .Perspective,
+	.Seamless       = .Seamless,
 }
+
+GROUP_RENAME_TIP :: "Choose the name shown at the top of this group."
+GROUP_REMOVE_TIP :: "Remove this group from the toolbar. Its tools stay available from the other groups' + buttons."
 
 panel_toolbar :: proc() {
 	oui.element(uictx, "toolbar", "toolbar", {id = "toolbar"})
@@ -342,21 +372,22 @@ panel_toolbar :: proc() {
 		// header: the name on the left, the hotkey as a keycap on the right
 		// (click the keycap for options; right-click the header for rename / remove)
 		hdr := oui.element(uictx, "head", "group-head")
+		oui_tip(hdr, {group_title(&g), "A tool group: tools, switches, colors or blend modes kept together. Right-click to rename or remove it."})
 		oui.label(uictx, "title", group_title(&g), {class = "group-title"})
 		waiting := group_key_wait == gi
 		label := waiting ? "..." : (g.key == .KEY_NULL ? "-" : key_name(g.key))
 		kc := oui.button_begin(uictx, "key", {class = label == "-" ? "keycap none" : "keycap", checked = waiting})
 		oui.label(uictx, "t", label)
 		oui.end(uictx)
-		oui_tip(kc, "Group hotkey (click for options)")
+		oui_tip(kc, {"Group hotkey", "Press this key to pick the group's last tool, and again to step through what it holds. Click to change the key, rename or remove the group, or use it for the pen's eraser end."})
 		oui.end(uictx)
 		bid := make_id({}, fmt.tprintf("grpbadge%d", gi))
 		if kc.clicked {
 			popup_begin(bid, oui_rect(kc), 120)
-			popup_item("Assign hotkey...", 0)
-			popup_item("Rename...", 3)
-			popup_item(g.pen_eraser ? "Pen eraser: off" : "Use for pen eraser", 2)
-			popup_item("Remove group", 1)
+			popup_item("Assign hotkey...", 0, tip = "Press a letter or number key next to make it this group's hotkey. Backspace clears it, Esc cancels.")
+			popup_item("Rename...", 3, tip = GROUP_RENAME_TIP)
+			popup_item(g.pen_eraser ? "Pen eraser: off" : "Use for pen eraser", 2, tip = "The eraser end of a tablet pen uses this group's last tool, instead of erasing. Only one group can do this.")
+			popup_item("Remove group", 1, tip = GROUP_REMOVE_TIP)
 		}
 		if ui.popup_result_id == bid {
 			switch ui.popup_result_val {
@@ -380,8 +411,8 @@ panel_toolbar :: proc() {
 		hid := make_id({}, fmt.tprintf("grphdr%d", gi))
 		if hdr.hovered && ui.released[1] && !popup.open {
 			popup_begin(hid, Rect{ui.mx, ui.my, 1, 1}, 110)
-			popup_item("Rename...", 3)
-			popup_item("Remove group", 1)
+			popup_item("Rename...", 3, tip = GROUP_RENAME_TIP)
+			popup_item("Remove group", 1, tip = GROUP_REMOVE_TIP)
 		}
 		if ui.popup_result_id == hid {
 			if ui.popup_result_val == 3 {
@@ -400,7 +431,7 @@ panel_toolbar :: proc() {
 			// the pen-eraser group keeps its own selection, separate from the pen tip's tool
 			lit := g.pen_eraser ? g.last == tool : t == tool && cur_group == gi
 			if tool_is_toggle(tool) do lit = tool_toggle_on(tool)
-			clicked, bn := oui_icon_button(fmt.tprintf("t%d", int(tool)), TOOL_ICONS[tool], TOOL_NAMES[tool], {class = "tool", lit = lit, enabled = true, icon_lg = true})
+			clicked, bn := oui_icon_button(fmt.tprintf("t%d", int(tool)), TOOL_ICONS[tool], tool_tip(tool), {class = "tool", lit = lit, enabled = true, icon_lg = true})
 			if clicked {
 				if tool_is_toggle(tool) {
 					tool_toggle(tool)
@@ -418,7 +449,7 @@ panel_toolbar :: proc() {
 			class := linked ? "color-chip linked" : (same ? "color-chip same" : "color-chip")
 			cn := oui.button_begin(uictx, fmt.tprintf("c%d", ci), {class = class, style = fmt.tprintf("background:#%02x%02x%02x", c.r, c.g, c.b)})
 			oui.end(uictx)
-			oui_tip(cn, color_hex(c))
+			oui_tip(cn, {fmt.tprintf("#%s", color_hex(c)), "Click to paint with this color, and to change it with the color picker. Right-click to remove it. The group's hotkey steps through its colors."})
 			if cn.clicked {
 				color_link_set(gi, ci)
 			} else if cn.hovered && ui.pressed[1] && !popup.open {
@@ -427,7 +458,7 @@ panel_toolbar :: proc() {
 		}
 		// blend modes are listed one per row, the active one highlighted
 		for b, bi in g.blends {
-			if obutton(BLEND_NAMES[b], 0, "Brush blend mode (right-click to remove)", true, b == brush_blend, key = fmt.tprintf("b%d", bi), class = "blend-row") {
+			if obutton(BLEND_NAMES[b], 0, {"", fmt.tprintf("The Brush tool's blend mode. %s Right-click to remove it.", BLEND_HELP[b])}, true, b == brush_blend, key = fmt.tprintf("b%d", bi), class = "blend-row") {
 				brush_blend = b
 			}
 			if bn := oui.find_node(uictx.build_parent, fmt.tprintf("b%d", bi)); bn != nil && bn.hovered && ui.pressed[1] && !popup.open {
@@ -436,7 +467,7 @@ panel_toolbar :: proc() {
 		}
 		can_add := is_colors ? n < 48 : (is_blends ? n < len(Blend) : n < len(Tool))
 		if can_add {
-			tip := "Add a tool, colours or brush blend modes to this group (right-click an item to remove it)"
+			tip := Tip{"Add to group", "Add a tool, a switch, colors or brush blend modes to this group. A group holds one of those kinds. Right-click an item to remove it."}
 			pid := make_id({}, fmt.tprintf("grpadd%d", gi))
 			add_clicked, add_node := oui_icon_button("add", .Plus, tip, {class = "tool quiet", enabled = true, icon_lg = true})
 			if add_clicked {
@@ -446,17 +477,17 @@ panel_toolbar :: proc() {
 				if !is_colors && !is_blends {
 					for tool in Tool {
 						if !tool_group_has(&g, tool) {
-							popup_item_icon(TOOL_NAMES[tool], int(tool), TOOL_ICONS[tool])
+							popup_item_icon(TOOL_NAMES[tool], int(tool), TOOL_ICONS[tool], TOOL_HELP[tool])
 						}
 					}
 					any_section = true
 				}
 				if !is_tools && !is_blends {
 					if any_section do popup_sep()
-					popup_item_swatch("Foreground colour", 100, fg)
-					popup_item("All current swatches", 101)
+					popup_item_swatch("Foreground color", 100, fg)
+					popup_item("All current swatches", 101, tip = "Add every color in the Swatches panel to this group.")
 					for p in Swatch_Preset {
-						popup_item_palette(SWATCH_PRESET_NAMES[p], 200 + int(p), p)
+						popup_item_palette(SWATCH_PRESET_NAMES[p], 200 + int(p), swatch_preset_colors(p), SWATCH_PRESET_HELP[p])
 					}
 					any_section = true
 				}
@@ -511,7 +542,7 @@ panel_toolbar :: proc() {
 		}
 	}
 	if len(tool_groups) < MAX_TOOL_GROUPS {
-		if obutton("+ New Group", 0, "Add an empty tool group", id = "new-group") {
+		if obutton("+ New Group", 0, {"", "Add an empty tool group, then use its + button to fill it with tools, colors or blend modes."}, id = "new-group") {
 			append(&tool_groups, Tool_Group{})
 		}
 	}
@@ -528,8 +559,9 @@ panel_color_chips :: proc(r: Rect) {
 	draw_shadow(f32(fgr.x), f32(fgr.y + 1), 24, 24, 4, 5, Color{0, 0, 0, 140})
 	draw_rrect(f32(fgr.x), f32(fgr.y), 24, 24, 4, fg)
 	draw_rrect_outline(f32(fgr.x), f32(fgr.y), 24, 24, 4, WHITE)
+	tip_area(fgr, "fgchip", {"Foreground color", "The color you paint with. Change it with the color panel, or hold Alt and click the canvas."})
 	if ui_hover(bgr) && !ui_hover(fgr) {
-		tooltip_hover(make_id(bgr, "bgchip"), "Background colour (click to swap)")
+		tooltip_hover(make_id(bgr, "bgchip"), {fmt.tprintf("Background color (%s)", shortcut_text(.Swap_Colors)), "Right-drag paints with this color. Click to swap it with the foreground color."})
 		if ui.pressed[0] {
 			run_cmd(.Swap_Colors)
 		}
@@ -550,6 +582,8 @@ panel_options :: proc() {
 		options_mirror()
 	} else if options_switch_on && options_switch == .Perspective && persp_on {
 		options_persp()
+	} else if options_switch_on && options_switch == .Seamless && seamless_mode {
+		options_seamless()
 	} else if paint_tool(t) {
 		options_brush(t)
 		if t == .Line do options_line()
@@ -560,11 +594,11 @@ panel_options :: proc() {
 	oui.element_leaf(uictx, "spacer", "spacer")
 	l := &doc.layers[doc.active_layer]
 	if l.has_mask {
-		if c, _ := oui_icon_button("mask", .Mask, "Paint on the layer mask (\\)", {lit = doc.edit_mask, enabled = true}); c {
+		if c, _ := oui_icon_button("mask", .Mask, cmd_tip("Edit Mask", .Mask_Edit), {lit = doc.edit_mask, enabled = true}); c {
 			run_cmd(.Mask_Edit)
 		}
 	}
-	if c, _ := oui_icon_button("lock-alpha", .Lock_Alpha, "Lock layer transparency (/)", {lit = l.lock_alpha, enabled = true}); c {
+	if c, _ := oui_icon_button("lock-alpha", .Lock_Alpha, cmd_tip("Lock Transparency", .Layer_Lock_Alpha), {lit = l.lock_alpha, enabled = true}); c {
 		run_cmd(.Layer_Lock_Alpha)
 	}
 }
@@ -583,44 +617,44 @@ options_brush :: proc(t: Tool) {
 		}
 	}
 	if len(names) > 0 {
-		if nv, ch := ocombo("preset", 96, names[:], cur, "Brush preset"); ch {
+		if nv, ch := ocombo("preset", 96, names[:], cur, {"Brush preset", "A ready-made brush for this tool. Picking one replaces all this tool's settings."}); ch {
 			pi := idx[nv]
 			brush_preset_idx[t] = pi
 			brushes[t] = presets[pi].b
 		}
 	}
-	oslider("Size", 92, &b.size, 1, BRUSH_MAX, "Brush size ([ and ])", "px", 2.5)
-	oslider("Opacity", 84, &b.opacity, 1, 100, "Opacity (Shift+number keys)", "%")
+	oslider("Size", 92, &b.size, 1, BRUSH_MAX, {"Brush size ([ and ])", HELP_SIZE}, "px", 2.5)
+	oslider("Opacity", 84, &b.opacity, 1, 100, {"Opacity (Shift+number keys)", HELP_OPACITY}, "%")
 	#partial switch t {
 	case .Brush, .Eraser, .Clone, .Line:
-		oslider("Flow", 70, &b.flow, 1, 100, "How fast paint builds up", "%")
-		oslider("Hard", 76, &b.hardness, 0, 100, "Hardness", "%")
-		if t == .Clone do ocheck("All layers", &b.clone_merged, "Sample all visible layers")
+		oslider("Flow", 70, &b.flow, 1, 100, {"Flow", HELP_FLOW}, "%")
+		oslider("Hard", 76, &b.hardness, 0, 100, {"Hardness", HELP_HARDNESS}, "%")
+		if t == .Clone do ocheck("All layers", &b.clone_merged, {"Sample all layers", HELP_CLONE_ALL})
 	case .Oil:
-		oslider("Load", 70, &b.load, 0, 100, "Paint on the brush (100 = never runs dry)", "%")
-		oslider("Wet", 66, &b.wet, 0, 100, "How much the brush mixes with paint on the canvas", "%")
-		oslider("Bristle", 76, &b.bristles, 0, 100, "Bristle streaks", "%")
-		oslider("Hard", 70, &b.hardness, 0, 100, "Hardness", "%")
+		oslider("Load", 70, &b.load, 0, 100, {"Paint load", HELP_LOAD}, "%")
+		oslider("Wet", 66, &b.wet, 0, 100, {"Wetness", HELP_WET}, "%")
+		oslider("Bristle", 76, &b.bristles, 0, 100, {"Bristles", HELP_BRISTLES}, "%")
+		oslider("Hard", 70, &b.hardness, 0, 100, {"Hardness", HELP_HARDNESS}, "%")
 	case .Smudge:
-		oslider("Strength", 84, &b.strength, 0, 100, "How far colour is dragged", "%")
-		oslider("Hard", 70, &b.hardness, 0, 100, "Hardness", "%")
+		oslider("Strength", 84, &b.strength, 0, 100, {"Strength", HELP_SMUDGE}, "%")
+		oslider("Hard", 70, &b.hardness, 0, 100, {"Hardness", HELP_HARDNESS}, "%")
 	case .Blur:
-		oslider("Strength", 84, &b.strength, 0, 100, "", "%")
+		oslider("Strength", 84, &b.strength, 0, 100, {"Strength", HELP_BLUR}, "%")
 		oui.element(uictx, "mode", "button-group")
-		if obutton("Blur", 46, "", true, !b.alt_mode) do b.alt_mode = false
-		if obutton("Sharpen", 52, "", true, b.alt_mode) do b.alt_mode = true
+		if obutton("Blur", 46, {"", "The brush softens what is under it."}, true, !b.alt_mode) do b.alt_mode = false
+		if obutton("Sharpen", 52, {"", "The brush crisps up what is under it."}, true, b.alt_mode) do b.alt_mode = true
 		oui.end(uictx)
 	case .Dodge:
-		oslider("Exposure", 84, &b.strength, 0, 100, "", "%")
+		oslider("Exposure", 84, &b.strength, 0, 100, {"Exposure", HELP_EXPOSURE}, "%")
 		oui.element(uictx, "mode", "button-group")
-		if obutton("Dodge", 46, "Lighten", true, !b.alt_mode) do b.alt_mode = false
-		if obutton("Burn", 40, "Darken", true, b.alt_mode) do b.alt_mode = true
+		if obutton("Dodge", 46, {"", "The brush lightens what is under it."}, true, !b.alt_mode) do b.alt_mode = false
+		if obutton("Burn", 40, {"", "The brush darkens what is under it."}, true, b.alt_mode) do b.alt_mode = true
 		oui.end(uictx)
 		TONES := [?]string{"Shadows", "Midtones", "Highlights"}
-		if nv, ch := ocombo("tone", 74, TONES[:], b.tone, "Tonal range"); ch do b.tone = nv
+		if nv, ch := ocombo("tone", 74, TONES[:], b.tone, {"Tonal range", HELP_TONES}); ch do b.tone = nv
 	}
-	oslider("Smooth", 84, &b.smoothing, 0, 100, "Stroke stabiliser", "%")
-	if obutton("More...", 58, "All brush settings (F5)") {
+	oslider("Smooth", 84, &b.smoothing, 0, 100, {"Smoothing", HELP_SMOOTHING}, "%")
+	if obutton("More...", 58, cmd_tip("Brush Settings", .Brush_Settings)) {
 		run_cmd(.Brush_Settings)
 	}
 }
@@ -628,9 +662,15 @@ options_brush :: proc(t: Tool) {
 options_other :: proc(t: Tool) {
 	sel_modes :: proc() {
 		labels := [?]string{"New", "Add", "Sub", "And"}
+		tips := [?]string{
+			"Each new selection replaces the last one.",
+			"Each new selection adds to the last one. Holding Shift does this for one selection.",
+			"Each new selection cuts away from the last one. Holding Alt does this for one selection.",
+			"Keep only where each new selection overlaps the last one. Holding Shift and Alt does this for one selection.",
+		}
 		oui.element(uictx, "sel-mode", "button-group")
 		for l, i in labels {
-			if obutton(l, 28, "", true, int(topts.sel_mode) == i) {
+			if obutton(l, 28, {l, tips[i]}, true, int(topts.sel_mode) == i) {
 				topts.sel_mode = Sel_Mode(i)
 			}
 		}
@@ -638,48 +678,48 @@ options_other :: proc(t: Tool) {
 	}
 	#partial switch t {
 	case .Bucket:
-		oslider("Tolerance", 100, &topts.tolerance, 0, 255)
-		oslider("Opacity", 90, &topts.fill_opacity, 1, 100, "", "%")
-		ocheck("Contiguous", &topts.contiguous)
-		ocheck("All layers", &topts.sample_merged, "Find the fill area from all visible layers")
-		ocheck("Smooth edge", &topts.antialias)
+		oslider("Tolerance", 100, &topts.tolerance, 0, 255, {"Tolerance", HELP_TOLERANCE})
+		oslider("Opacity", 90, &topts.fill_opacity, 1, 100, {"Fill opacity", HELP_FILL_OPACITY}, "%")
+		ocheck("Contiguous", &topts.contiguous, {"Contiguous", HELP_CONTIGUOUS})
+		ocheck("All layers", &topts.sample_merged, {"All layers", HELP_ALL_LAYERS})
+		ocheck("Smooth edge", &topts.antialias, {"Smooth edge", HELP_SMOOTH_EDGE})
 	case .Gradient:
-		ocombo_enum("shape", 80, GRAD_NAMES, &topts.grad_kind, "Gradient shape")
-		oslider("Opacity", 90, &topts.fill_opacity, 1, 100, "", "%")
-		ocheck("To transparent", &topts.grad_to_clear, "Foreground to transparent instead of foreground to background")
-		ocheck("Reverse", &topts.grad_reverse)
+		ocombo_enum("shape", 80, GRAD_NAMES, &topts.grad_kind, {"Gradient shape", "Linear runs straight along the drag, Radial spreads in a circle, Reflected runs both ways from the start, Diamond spreads as a square on its corner."})
+		oslider("Opacity", 90, &topts.fill_opacity, 1, 100, {"Fill opacity", HELP_FILL_OPACITY}, "%")
+		ocheck("To transparent", &topts.grad_to_clear, {"To transparent", "Fade from the foreground color to nothing, rather than to the background color."})
+		ocheck("Reverse", &topts.grad_reverse, {"Reverse", "Swap the two ends of the gradient."})
 		ohint("Drag across the canvas")
 	case .Picker:
 		SIZES := [?]string{"Point", "3 x 3 average", "5 x 5 average", "11 x 11 average"}
 		VALS := [?]int{1, 3, 5, 11}
 		cur := 0
 		for v, i in VALS do if v == topts.pick_size do cur = i
-		if nv, ch := ocombo("sample", 100, SIZES[:], cur, "Sample size"); ch do topts.pick_size = VALS[nv]
+		if nv, ch := ocombo("sample", 100, SIZES[:], cur, {"Sample size", "Read a single pixel, or the average of a square around it, which ignores grain and fine detail."}); ch do topts.pick_size = VALS[nv]
 		ohint("Click: foreground   Right click: background   (Alt with any brush)")
 	case .Select_Rect, .Select_Ellipse, .Lasso:
 		sel_modes()
-		oslider("Feather", 90, &topts.feather, 0, 200, "Soft edge radius", "px")
+		oslider("Feather", 90, &topts.feather, 0, 200, {"Feather", "How soft the edge of a new selection is, as a radius in canvas pixels."}, "px")
 		ohint("Shift: add   Alt: subtract   Drag inside a selection to move it")
 	case .Wand:
 		sel_modes()
-		oslider("Tolerance", 100, &topts.tolerance, 0, 255)
-		ocheck("Contiguous", &topts.contiguous)
-		ocheck("All layers", &topts.sample_merged)
-		ocheck("Smooth edge", &topts.antialias)
+		oslider("Tolerance", 100, &topts.tolerance, 0, 255, {"Tolerance", HELP_TOLERANCE})
+		ocheck("Contiguous", &topts.contiguous, {"Contiguous", HELP_CONTIGUOUS})
+		ocheck("All layers", &topts.sample_merged, {"All layers", HELP_ALL_LAYERS})
+		ocheck("Smooth edge", &topts.antialias, {"Smooth edge", HELP_SMOOTH_EDGE})
 	case .Text:
 		options_text()
 	case .Move:
 		ohint("Drag to move the selection (or the whole layer). Alt: copy. Arrows nudge, Shift x10.")
 	case .Transform:
 		if xform.active {
-			if obutton("Apply", 50, "Enter") do xform_commit()
-			if obutton("Cancel", 50, "Esc") do xform_cancel()
+			if obutton("Apply", 50, {"Apply (Enter)", "Keep the transformed result."}) do xform_commit()
+			if obutton("Cancel", 50, {"Cancel (Esc)", "Put everything back as it was."}) do xform_cancel()
 		}
 		ohint("Corners: scale (Shift: free)   Edges: stretch   Outside: rotate   Inside: move")
 	case .Crop:
 		if crop.active {
-			if obutton("Crop", 50, "Enter") do crop_commit()
-			if obutton("Cancel", 50, "Esc") do crop.active = false
+			if obutton("Crop", 50, {"Crop (Enter)", "Cut the canvas down to the marked area."}) do crop_commit()
+			if obutton("Cancel", 50, {"Cancel (Esc)", "Remove the marked area and leave the canvas as it is."}) do crop.active = false
 		}
 		ohint("Drag the area to keep (Shift: square). Enter or double click crops.")
 	case .Hand:
@@ -690,7 +730,7 @@ options_other :: proc(t: Tool) {
 }
 
 // ---------------------------------------------------------------------------
-// Right panel: colour, swatches, layers, navigator
+// Right panel: color, swatches, layers, navigator
 // ---------------------------------------------------------------------------
 
 drag_area :: proc(r: Rect, id: u32) -> (active: bool, fx, fy: f32) {
@@ -708,8 +748,8 @@ drag_area :: proc(r: Rect, id: u32) -> (active: bool, fx, fy: f32) {
 hex_buf: Name
 
 // Section heading: a dim caption with a hairline running to the right edge.
-osection :: proc(key, title: string) {
-	oui.element(uictx, key, "section-head")
+osection :: proc(key, title, desc: string) {
+	oui_tip(oui.element(uictx, key, "section-head"), {title, desc})
 	oui.label(uictx, "t", title)
 	oui.element_leaf(uictx, "line", "section-line")
 	oui.end(uictx)
@@ -723,43 +763,48 @@ panel_right :: proc() {
 	defer oui.end(uictx)
 
 	// --- colour picker ---------------------------------------------------
-	osection("color-head", color_linked() != nil ? "Color - editing toolbar colour" : "Color")
+	osection("color-head", color_linked() != nil ? "Color - editing toolbar color" : "Color", color_linked() != nil ? "Your changes here also change the toolbar color you picked, until you choose another color." : "The foreground color, the one you paint with.")
 	oui_slot("picker", "color_picker")
 	oui.element(uictx, "color-row", "row", {id = "color-row"})
-	oui.element_leaf(uictx, "fg", "color-chip", {id = "fg-chip", style = fmt.tprintf("background:#%02x%02x%02x", fg.r, fg.g, fg.b)})
-	if oswatch_button("bg", bg, "Background colour (click to swap)") do run_cmd(.Swap_Colors)
-	if c, _ := oui_icon_button("swap", .Swap, "Swap colors (X)", {id = "swap-colors", enabled = true}); c {
+	oui_tip(oui.element_leaf(uictx, "fg", "color-chip", {id = "fg-chip", style = fmt.tprintf("background:#%02x%02x%02x", fg.r, fg.g, fg.b)}), {"Foreground color", "The color you paint with. The sliders and fields here change it."})
+	if oswatch_button("bg", bg, {"Background color", "Right-drag paints with this color. Click to swap it with the foreground color."}) do run_cmd(.Swap_Colors)
+	if c, _ := oui_icon_button("swap", .Swap, cmd_tip("Swap colors", .Swap_Colors), {id = "swap-colors", enabled = true}); c {
 		run_cmd(.Swap_Colors)
 	}
 	oui_slot("hex", "hex_field")
 	h, s, v := int(fg_h + 0.5), int(fg_s * 100 + 0.5), int(fg_v * 100 + 0.5)
-	otext("hsv", fmt.tprintf("%d %d %d", h, s, v), "dim")
+	otext("hsv", fmt.tprintf("%d %d %d", h, s, v), "dim", {"Hue, saturation, value", "The foreground color as hue in degrees, then saturation and value in percent."})
 	oui.end(uictx)
 	rgb := [3]int{int(fg.r), int(fg.g), int(fg.b)}
 	names := [3]string{"R", "G", "B"}
 	classes := [3]string{"wide ch-r", "wide ch-g", "wide ch-b"}
+	tips := [3]Tip {
+		{"Red", "The amount of red in the foreground color, from 0 to 255."},
+		{"Green", "The amount of green in the foreground color, from 0 to 255."},
+		{"Blue", "The amount of blue in the foreground color, from 0 to 255."},
+	}
 	for i in 0 ..< 3 {
-		if oslider(names[i], 0, &rgb[i], 0, 255, class = classes[i]) {
+		if oslider(names[i], 0, &rgb[i], 0, 255, tips[i], class = classes[i]) {
 			picker_set_fg(Color{u8(rgb[0]), u8(rgb[1]), u8(rgb[2]), 255})
 		}
 	}
 
 	// --- swatches ----------------------------------------------------------
 	oui.element(uictx, "swatch-head", "row", {id = "swatch-head"})
-	otext("t", "Swatches", "dim")
+	otext("t", "Swatches", "dim", {"Swatches", "Colors kept ready to use, shared by all paintings. File > Load Swatches reads a palette from a file."})
 	oui.element_leaf(uictx, "spacer", "spacer")
-	if obutton("Presets", 54, "Load a swatch set") {
+	if obutton("Presets", 54, {"", "Replace the swatches with one of the ready-made sets."}) {
 		r := oui_rect(oui_last)
 		popup_begin(SWATCH_PRESET_ID, r, 110)
 		for p in Swatch_Preset {
-			popup_item(SWATCH_PRESET_NAMES[p], int(p))
+			popup_item(SWATCH_PRESET_NAMES[p], int(p), tip = SWATCH_PRESET_HELP[p])
 		}
 	}
-	if c, _ := oui_icon_button("add", .Plus, "Add foreground colour", {enabled = true}); c {
+	if c, _ := oui_icon_button("add", .Plus, {"Add swatch", "Add the foreground color to the swatches."}, {enabled = true}); c {
 		append(&swatches, fg)
 		swatch_sel = len(swatches) - 1
 	}
-	if c, _ := oui_icon_button("remove", .Minus, "Remove selected swatch", {enabled = len(swatches) > 1}); c {
+	if c, _ := oui_icon_button("remove", .Minus, {"Remove swatch", "Remove the swatch with the outline. Click a swatch to select it."}, {enabled = len(swatches) > 1}); c {
 		if swatch_sel >= 0 && swatch_sel < len(swatches) {
 			ordered_remove(&swatches, swatch_sel)
 			swatch_sel = clamp(swatch_sel, 0, len(swatches) - 1)
@@ -776,16 +821,16 @@ panel_right :: proc() {
 	rows := clamp(i32((len(swatches) + int(cols) - 1) / int(cols)), 1, 3)
 	oui_slot("swatches", "swatches", style = fmt.tprintf("height:%dpx", rows * cell + 4))
 	oui.element(uictx, "recent-row", "row", {id = "recent-row"})
-	otext("t", "Recent", "dim")
+	otext("t", "Recent", "dim", {"Recent colors", "The colors you have painted with lately, newest first."})
 	oui_slot("recent", "recent")
 	oui.end(uictx)
 
 	// --- layers --------------------------------------------------------------
-	osection("layers-head", "Layers")
+	osection("layers-head", "Layers", "The stack of layers in this painting, topmost first. Tools change the active layer.")
 	l := &d.layers[d.active_layer]
 	thumbs_refresh(d)
 	oui.element(uictx, "layer-props", "row", {id = "layer-props"})
-	if nv, ch := ocombo("blend", 92, blend_names_slice(), int(l.blend), "Blend mode"); ch {
+	if nv, ch := ocombo("blend", 92, blend_names_slice(), int(l.blend), {"Blend mode", BLEND_TIP}); ch {
 		history_push(d)
 		l.blend = Blend(nv)
 		doc_touch_all(d)
@@ -797,7 +842,7 @@ panel_right :: proc() {
 		history_push(d)
 		op_pushed = true
 	}
-	if oslider("Opacity", 0, &op, 0, 100, "Layer opacity", "%", class = "wide") {
+	if oslider("Opacity", 0, &op, 0, 100, {"Layer opacity", "How solid the active layer is: 100 covers what is below, 0 hides it."}, "%", class = "wide") {
 		l.opacity = u8(op * 255 / 100)
 		doc_touch_all(d)
 	}
@@ -807,7 +852,7 @@ panel_right :: proc() {
 	oui.end(uictx)
 	oui_slot("layer-list", "layer_list")
 	oui.element(uictx, "layer-buttons", "row", {id = "layer-buttons"})
-	lb :: proc(key: string, ic: Icon, tip: string, enabled := true, lit := false) -> bool {
+	lb :: proc(key: string, ic: Icon, tip: Tip, enabled := true, lit := false) -> bool {
 		c, _ := oui_icon_button(key, ic, tip, {class = "layer-btn", enabled = enabled, lit = lit})
 		return c
 	}
@@ -816,24 +861,24 @@ panel_right :: proc() {
 		oui.label(uictx, "icon", icon_text(.Layer), {class = "icon"})
 		oui.label(uictx, "badge", icon_text(.Plus), {class = "icon badge"})
 		oui.end(uictx)
-		oui_tip(n, "New layer (Ctrl+Shift+N)")
+		oui_tip(n, cmd_tip("New layer", .Layer_New))
 		if n.clicked do run_cmd(.Layer_New)
 	}
-	if lb("dup", .Copy, "Duplicate layer") do run_cmd(.Layer_Dup)
-	if lb("del", .Trash, "Delete layer", len(d.layers) > 1) do run_cmd(.Layer_Del)
-	if lb("up", .Up, "Move layer up", d.active_layer < len(d.layers) - 1) do run_cmd(.Layer_Up)
-	if lb("down", .Down, "Move layer down", d.active_layer > 0) do run_cmd(.Layer_Down)
-	if lb("merge", .Merge, "Merge down (Ctrl+E)", d.active_layer > 0) do run_cmd(.Layer_Merge)
+	if lb("dup", .Copy, cmd_tip("Duplicate layer", .Layer_Dup)) do run_cmd(.Layer_Dup)
+	if lb("del", .Trash, cmd_tip("Delete layer", .Layer_Del), len(d.layers) > 1) do run_cmd(.Layer_Del)
+	if lb("up", .Up, cmd_tip("Move layer up", .Layer_Up), d.active_layer < len(d.layers) - 1) do run_cmd(.Layer_Up)
+	if lb("down", .Down, cmd_tip("Move layer down", .Layer_Down), d.active_layer > 0) do run_cmd(.Layer_Down)
+	if lb("merge", .Merge, cmd_tip("Merge down", .Layer_Merge), d.active_layer > 0) do run_cmd(.Layer_Merge)
 	if l.has_mask {
-		if lb("mask", .Mask, "Delete mask", lit = true) do run_cmd(.Mask_Delete)
+		if lb("mask", .Mask, cmd_tip("Delete mask", .Mask_Delete), lit = true) do run_cmd(.Mask_Delete)
 	} else {
-		if lb("mask", .Mask, d.sel != nil ? "Add mask from selection" : "Add layer mask") {
+		if lb("mask", .Mask, d.sel != nil ? cmd_tip("Add mask from selection", .Mask_From_Sel) : cmd_tip("Add layer mask", .Mask_Add)) {
 			run_cmd(d.sel != nil ? .Mask_From_Sel : .Mask_Add)
 		}
 	}
 	oui.end(uictx)
 	if show_navigator {
-		osection("nav-head", "Navigator")
+		osection("nav-head", "Navigator", "The whole canvas, with a box around what the view shows.")
 		oui_slot("navigator", "navigator")
 	}
 }
@@ -845,6 +890,8 @@ panel_color_picker :: proc(r: Rect) {
 	draw_gradient(f32(sv.x), f32(sv.y), f32(sv.w), f32(sv.h), WHITE, hsv_to_rgb(fg_h, 1, 1), false)
 	draw_gradient(f32(sv.x), f32(sv.y), f32(sv.w), f32(sv.h), Color{0, 0, 0, 0}, Color{0, 0, 0, 255})
 	outline_rect(sv, C_RING_HI)
+	tip_area(sv, "sv", {"Saturation and value", "Drag to set the foreground color: left to right from gray to full color, top to bottom from bright to dark."})
+	tip_area(hue, "hue", {"Hue", "Drag up or down to choose the hue of the foreground color."})
 	if act, fx, fy := drag_area(sv, make_id(sv, "sv")); act {
 		picker_set_fg_hsv(fg_h, fx, 1 - fy)
 	}
@@ -874,7 +921,7 @@ panel_hex_field :: proc(hr: Rect) {
 	if ui.focus_id != hid {
 		name_set(&hex_buf, color_hex(fg))
 	}
-	if ch, sub := text_field(hr, &hex_buf, "Hex colour (RRGGBB)"); ch || sub {
+	if ch, sub := text_field(hr, &hex_buf, {"Hex color", "The foreground color as a hex code, RRGGBB. Type or paste one here."}); ch || sub {
 		if c, ok := parse_hex(name_str(&hex_buf)); ok {
 			picker_set_fg(c)
 		}
@@ -901,7 +948,7 @@ panel_swatches :: proc(pal: Rect) {
 			draw_rrect_outline(f32(sr.x - 1), f32(sr.y - 1), f32(sr.w), f32(sr.h), 3, C_ACCENT)
 		}
 		if ui_hover(sr) && ui_hover(pal) {
-			tooltip_hover(make_id(sr, "sw"), color_hex(c))
+			tooltip_hover(make_id(sr, "sw"), {fmt.tprintf("#%s", color_hex(c)), "Click to make this the foreground color, right-click for the background color."})
 			if ui.pressed[0] {
 				set_fg(c)
 				swatch_sel = i
@@ -923,7 +970,7 @@ panel_recent :: proc(r: Rect) {
 		draw_rrect(f32(sr.x), f32(sr.y), 12, 12, 2, c)
 		draw_rrect_outline(f32(sr.x), f32(sr.y), 12, 12, 2, C_RING_HI)
 		if ui_hover(sr) {
-			tooltip_hover(make_id(sr, "rc"), color_hex(c))
+			tooltip_hover(make_id(sr, "rc"), {fmt.tprintf("#%s", color_hex(c)), "Click to make this the foreground color, right-click for the background color."})
 			if ui.pressed[0] do set_fg(c)
 			if ui.pressed[1] do bg = c
 		}
@@ -951,7 +998,7 @@ thumbs_refresh :: proc(d: ^Doc) {
 	if !(d.thumb_dirty || thumbs_doc != d || len(thumbs) < len(d.layers) * 2) {
 		return
 	}
-	if (stroke.active || drag.active) && ui.time - thumbs_t < 0.3 {
+	if (stroke.active || drag.active || playing) && ui.time - thumbs_t < 0.3 {
 		return
 	}
 	thumbs_t = ui.time
@@ -1033,6 +1080,10 @@ panel_layer_list :: proc(list: Rect) {
 		}
 		hline(row.x, ry + LAYER_ROW_H - 1, row.w, C_RING)
 		eye := Rect{row.x + 5, ry + (LAYER_ROW_H - 12) / 2, 12, 12}
+		// the row's own tip comes first: what lies inside it asks later and wins
+		in_list := ui_hover(list)
+		if in_list do tip_area(row, "layer-row", {name_str(&ly.name), "Click to make this the active layer. Drag to change its place in the stack, double-click for its properties, right-click for more."})
+		if in_list do tip_area(rect_inset(eye, -3), "layer-eye", {"Visible", "Click to show or hide this layer."})
 		icon(.Eye, eye.x, eye.y, ly.visible ? C_TEXT : C_TEXT_OFF)
 		th := Rect{row.x + 22, ry + (LAYER_ROW_H - THUMB_H) / 2, THUMB_W, THUMB_H}
 		draw_checker(th, 3)
@@ -1040,6 +1091,7 @@ panel_layer_list :: proc(list: Rect) {
 			draw_tex_at(thumbs[li * 2].tex, th.x, th.y)
 		}
 		outline_rect(rect_inset(th, -1), active && !d.edit_mask ? C_ACCENT : C_RING_HI)
+		if in_list do tip_area(th, "layer-thumb", {name_str(&ly.name), "Click to paint on this layer's pixels. An outline shows it is what tools change. Drag to change its place in the stack."})
 		tx := th.x + THUMB_W + 6
 		mr := Rect{tx, th.y, THUMB_W, THUMB_H}
 		if ly.has_mask {
@@ -1050,6 +1102,7 @@ panel_layer_list :: proc(list: Rect) {
 				draw_line_i(mr.x, mr.y, mr.x + mr.w, mr.y + mr.h, C_DANGER)
 			}
 			outline_rect(rect_inset(mr, -1), active && d.edit_mask ? C_ACCENT : C_RING_HI)
+			if in_list do tip_area(mr, "layer-mask", {"Layer mask", "Click to paint on the mask: black hides, white reveals. Shift-click turns the mask's effect on or off, which a red line shows."})
 			tx += THUMB_W + 6
 		}
 		name_r := Rect{tx, ry + 5, row.x + row.w - tx - 4, 10}
@@ -1061,18 +1114,22 @@ panel_layer_list :: proc(list: Rect) {
 		ix := row.x + row.w - 16
 		if ly.text.on {
 			icon(.Text, ix, ry + 17, C_TEXT_DIM)
+			if in_list do tip_area({ix, ry + 17, 12, 12}, "layer-text", {"Text layer", "This layer's text can still be edited. Click it with the Text tool."})
 			ix -= 13
 		}
 		if ly.shape != nil {
 			icon(.Curve, ix, ry + 17, C_TEXT_DIM)
+			if in_list do tip_area({ix, ry + 17, 12, 12}, "layer-vector", {"Vector layer", "This layer is made of outlines, which stay sharp when it is moved or resized."})
 			ix -= 13
 		}
 		if ly.locked {
 			icon(.Lock, ix, ry + 17, C_ACCENT)
+			if in_list do tip_area({ix, ry + 17, 12, 12}, "layer-locked", {"Locked", "This layer can't be changed. Unlock it in its properties."})
 			ix -= 13
 		}
 		if ly.lock_alpha {
 			icon(.Lock_Alpha, ix, ry + 17, C_ACCENT)
+			if in_list do tip_area({ix, ry + 17, 12, 12}, "layer-alpha", cmd_tip("Transparency locked", .Layer_Lock_Alpha))
 		}
 		// right-click: select the layer and open its menu (on release, so the press doesn't close it)
 		if ui_hover(row) && ui_hover(list) && ui.released[1] && !popup.open {
@@ -1156,7 +1213,7 @@ panel_layer_list :: proc(list: Rect) {
 panel_navigator :: proc(r: Rect) {
 	d := doc
 	ctl_well(r)
-	if !tex_valid(tex_canvas) || tex_doc != d {
+	if !d.comp_lazy && (!tex_valid(tex_canvas) || tex_doc != d) {
 		return
 	}
 	z := min(f32(r.w - 8) / f32(d.w), f32(r.h - 8) / f32(d.h))
@@ -1174,6 +1231,7 @@ panel_navigator :: proc(r: Rect) {
 	draw_rect_outline(vr, C_ACCENT)
 	draw_rect_outline({vr.x + hair(), vr.y + hair(), vr.w - 2 * hair(), vr.h - 2 * hair()}, Color{0, 0, 0, 120})
 	clip_end()
+	tip_area(r, "navigator", {"Navigator", "Click or drag to move the view to that part of the canvas."})
 	if act, fx, fy := drag_area(r, make_id(r, "nav")); act {
 		// centre the view on the clicked point
 		px := (f32(r.x) + fx * f32(r.w - 1) - dst.x) / z
@@ -1270,13 +1328,13 @@ panel_status :: proc() {
 	oui.element(uictx, "status", "statusbar", {id = "status"})
 	defer oui.end(uictx)
 	if status_t > 0 {
-		oui.label(uictx, "tool", name_str(&status_msg), {id = "status-tool", class = "message"})
+		oui_tip(oui.label(uictx, "tool", name_str(&status_msg), {id = "status-tool", class = "message"}), {"Messages", "Messages from the program appear here, such as why an action could not be done."})
 	} else {
-		label := TOOL_NAMES[cur_tool]
+		label := tool_title(cur_tool)
 		if (cur_tool == .Brush || cur_tool == .Oil || cur_tool == .Text) && brush_blend != .Normal {
 			label = fmt.tprintf("%s - %s", label, BLEND_NAMES[brush_blend])
 		}
-		oui.label(uictx, "tool", label, {id = "status-tool"})
+		oui_tip(oui.label(uictx, "tool", fmt.tprintf("%s:  %s", label, TOOL_HINT[cur_tool]), {id = "status-tool"}), tool_tip(cur_tool))
 	}
 	oui.separator(uictx, "sep0")
 	// the readout under the pointer changes every frame, so it is drawn by hand
@@ -1284,26 +1342,32 @@ panel_status :: proc() {
 	if d.sel != nil {
 		b := d.sel.bbox
 		oui.separator(uictx, "sep1")
-		oui.label(uictx, "sel", fmt.tprintf("Sel %dx%d", b.x1 - b.x0, b.y1 - b.y0))
+		oui_tip(oui.label(uictx, "sel", fmt.tprintf("Sel %dx%d", b.x1 - b.x0, b.y1 - b.y0)), {"Selection", "The width and height of the box around the selection, in pixels. Ctrl+D clears it."})
 	}
 	oui.element_leaf(uictx, "spacer", "spacer")
 	l := &d.layers[d.active_layer]
-	oui.label(uictx, "target", d.edit_mask ? fmt.tprintf("%s (mask)", name_str(&l.name)) : name_str(&l.name))
+	oui_tip(oui.label(uictx, "target", d.edit_mask ? fmt.tprintf("%s (mask)", name_str(&l.name)) : name_str(&l.name)), {"Active layer", "The layer tools change. It says (mask) when you are painting on its mask."})
 	oui.separator(uictx, "sep2")
-	oui.label(uictx, "size", fmt.tprintf("%d x %d", d.w, d.h))
+	if len(d.frames) > 1 {
+		oui_tip(oui.label(uictx, "frame", fmt.tprintf("Frame %d / %d", d.active_frame + 1, len(d.frames))), {"Current frame", "The frame you are working on. View > Timeline shows them all, and , and . step through them."})
+		oui.separator(uictx, "sep-frame")
+	}
+	oui_tip(oui.label(uictx, "size", fmt.tprintf("%d x %d", d.w, d.h)), {"Canvas size", "Width by height in pixels. Change it with Image > Image Size or Canvas Size."})
 	oui.separator(uictx, "sep3")
-	oui.label(uictx, "zoom", fmt.tprintf("%d%%", int(d.zoom * 100 + 0.5)), {class = "strong"})
+	oui_tip(oui.label(uictx, "zoom", fmt.tprintf("%d%%", int(d.zoom * 100 + 0.5)), {class = "strong"}), {"Zoom", "Use the mouse wheel to zoom, Ctrl+0 to fit the canvas and Ctrl+1 for 100%."})
 }
 
 // Pixel position and colour under the pointer, in the status bar.
 panel_cursor_info :: proc(r: Rect) {
 	d := doc
+	tip_area(r, "cursor-info", {"Under the pointer", "The position on the canvas in pixels, from the top left corner, and the color you see there."})
 	if !hover_valid || !pt_in_doc(hover_pt) do return
 	ty := r.y + (r.h - FONT_CAP) / 2
 	q := ipt(hover_pt)
+	textf(r.x, ty, C_TEXT, "%d, %d", q.x, q.y)
+	if d.comp_lazy do return // the composite is only made once frames stop changing
 	doc_refresh_comp(d)
 	c := d.comp[q.y * d.w + q.x]
-	textf(r.x, ty, C_TEXT, "%d, %d", q.x, q.y)
 	swr := Rect{r.x + 74, r.y + (r.h - 10) / 2, 10, 10}
 	draw_rrect(f32(swr.x), f32(swr.y), 10, 10, 2, c)
 	draw_rrect_outline(f32(swr.x), f32(swr.y), 10, 10, 2, C_RING_HI)

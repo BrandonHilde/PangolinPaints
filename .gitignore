@@ -11,3 +11,4 @@ PangolinPaints
 .xdp-*
 shots/
 *.dll
+src/shared_*.odin

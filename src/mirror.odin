@@ -88,7 +88,7 @@ mirror_center_input :: proc(p: Vec2, over: bool) -> bool {
 		if !ui.down[0] {
 			mirror_drag = false
 			mirror_placing = false
-			set_status("Mirror centre placed")
+			set_status("Mirror center placed")
 		}
 		return true
 	}
@@ -98,7 +98,7 @@ mirror_center_input :: proc(p: Vec2, over: bool) -> bool {
 // Toggle items that can sit in tool groups ---------------------------------------------
 
 tool_is_toggle :: proc(t: Tool) -> bool {
-	return t == .Grid || t == .Mirror || t == .Perspective
+	return t == .Grid || t == .Mirror || t == .Perspective || t == .Seamless
 }
 
 tool_toggle_on :: proc(t: Tool) -> bool {
@@ -109,12 +109,14 @@ tool_toggle_on :: proc(t: Tool) -> bool {
 		return mirror_on
 	case .Perspective:
 		return persp_on
+	case .Seamless:
+		return seamless_mode
 	}
 	return false
 }
 
 // The options bar shows the last thing picked: a tool, or one of these switches.
-options_switch: Tool // .Grid, .Mirror or .Perspective while its settings are shown
+options_switch: Tool // .Grid, .Mirror, .Perspective or .Seamless while its settings are shown
 options_switch_on: bool
 
 options_show_tool :: proc() {
@@ -141,6 +143,8 @@ switch_set :: proc(t: Tool, on: bool) {
 		run_cmd(.Toggle_Mirror)
 	case .Perspective:
 		run_cmd(.Toggle_Perspective)
+	case .Seamless:
+		run_cmd(.Toggle_Seamless)
 	}
 }
 
@@ -154,26 +158,34 @@ switch_changed :: proc(t: Tool) {
 }
 
 options_grid :: proc() {
-	oicon("icon", .Grid, "switch-icon")
-	otext("title", "Grid", "switch-title")
-	oslider("W", 84, &grid_w, 1, 1024, "Grid cell width", "px", 2)
-	oslider("H", 84, &grid_h, 1, 1024, "Grid cell height", "px", 2)
-	oslider("Angle", 92, &grid_angle, -90, 90, "Grid rotation about the canvas centre", "deg")
-	ocheck("Snap", &snap_grid, "Tools snap to the grid while it is shown (Ctrl+Shift+;)")
-	if obutton("Grid Off", 66, "Hide the grid (Ctrl+;)") do run_cmd(.Toggle_Grid)
+	oicon("icon", .Grid, "switch-icon", cmd_tip("Grid", .Toggle_Grid))
+	otext("title", "Grid", "switch-title", cmd_tip("Grid", .Toggle_Grid))
+	oslider("W", 84, &grid_w, 1, 1024, {"Cell width", "How wide each grid cell is, in canvas pixels. Shift moves along round sizes."}, "px", 2)
+	oslider("H", 84, &grid_h, 1, 1024, {"Cell height", "How tall each grid cell is, in canvas pixels. Shift moves along round sizes."}, "px", 2)
+	oslider("Angle", 92, &grid_angle, -90, 90, {"Grid angle", "Turn the grid about the center of the canvas. Snapping follows the turned lines. Shift moves by 5 degrees."}, "deg")
+	ocheck("Snap", &snap_grid, cmd_tip("Snap to Grid", .Toggle_Snap))
+	if obutton("Grid Off", 66, cmd_tip("Grid", .Toggle_Grid)) do run_cmd(.Toggle_Grid)
 }
 
 options_mirror :: proc() {
-	oicon("icon", .Sym_X, "switch-icon")
-	otext("title", "Mirror", "switch-title")
-	oslider("Mirrors", 90, &mirror_count, 1, MIRROR_MAX, "Number of mirror lines (each one doubles the copies)")
-	oslider("Angle", 92, &mirror_angle, 0, 179, "Angle of the first mirror line (90: left / right)", "deg")
-	if obutton("Move Center", 84, "Click or drag on the canvas to place the mirror centre", true, mirror_placing) {
+	oicon("icon", .Sym_X, "switch-icon", cmd_tip("Mirror", .Toggle_Mirror))
+	otext("title", "Mirror", "switch-title", cmd_tip("Mirror", .Toggle_Mirror))
+	oslider("Mirrors", 90, &mirror_count, 1, MIRROR_MAX, {"Mirror lines", "How many mirror lines run through the center. Each stroke is painted twice per line: 1 mirrors left and right, 6 makes a snowflake."})
+	oslider("Angle", 92, &mirror_angle, 0, 179, {"Mirror angle", "The angle of the first mirror line: 90 is upright, for a left and right mirror. Shift moves by 5 degrees."}, "deg")
+	if obutton("Move Center", 84, {"Move Center", "After clicking this, click or drag on the canvas to place the center the mirror lines run through. Esc cancels."}, true, mirror_placing) {
 		mirror_placing = !mirror_placing
-		if mirror_placing do set_status("Click or drag on the canvas to place the mirror centre (Esc cancels)")
+		if mirror_placing do set_status("Click or drag on the canvas to place the mirror center (Esc cancels)")
 	}
-	if obutton("Reset", 46, "Centre the mirror on the canvas") {
+	if obutton("Reset", 46, {"Reset center", "Put the mirror center back in the middle of the canvas."}) {
 		mirror_cx, mirror_cy = 0.5, 0.5
 	}
-	if obutton("Mirror Off", 72, "Turn mirror painting off") do run_cmd(.Toggle_Mirror)
+	if obutton("Mirror Off", 72, cmd_tip("Mirror", .Toggle_Mirror)) do run_cmd(.Toggle_Mirror)
+}
+
+// Tiled Mode has nothing to adjust: its settings are the reminder of what it does, and the way out.
+options_seamless :: proc() {
+	oicon("icon", .Seamless, "switch-icon", cmd_tip("Tiled Mode", .Toggle_Seamless))
+	otext("title", "Tiled Mode", "switch-title", cmd_tip("Tiled Mode", .Toggle_Seamless))
+	ohint("Strokes wrap across the canvas edges, for textures that repeat.")
+	if obutton("Tiled Off", 66, cmd_tip("Tiled Mode", .Toggle_Seamless)) do run_cmd(.Toggle_Seamless)
 }

@@ -245,13 +245,13 @@ render_persp :: proc(d: ^Doc, vp: Rect) {
 }
 
 options_persp :: proc() {
-	oicon("icon", .Perspective, "switch-icon")
-	otext("title", "Perspective", "switch-title")
+	oicon("icon", .Perspective, "switch-icon", cmd_tip("Perspective", .Toggle_Perspective))
+	otext("title", "Perspective", "switch-title", cmd_tip("Perspective", .Toggle_Perspective))
 	n, y := persp_points, persp_horizon_y(doc)
-	oslider("Points", 84, &persp_points, 1, PERSP_MAX, "Vanishing points: 1 looks straight on, 2 at a corner, 3 up or down as well")
+	oslider("Points", 84, &persp_points, 1, PERSP_MAX, {"Vanishing points", "How many points the guides fan out from: 1 looks straight on, 2 looks at a corner, 3 also looks up or down. Drag the points on the canvas to place them."})
 	if persp_points != n do persp_layout(persp_points, y)
-	oslider("Lines", 84, &persp_lines, 2, 64, "Guide lines drawn from each vanishing point")
-	ocheck("Snap", &persp_snap, "Brush strokes and lines follow the guide closest to the way they set off")
-	if obutton("Reset", 46, "Put the vanishing points back in their default places") do persp_layout(persp_points, 0.4)
-	if obutton("Perspective Off", 100, "Hide the perspective guides") do run_cmd(.Toggle_Perspective)
+	oslider("Lines", 84, &persp_lines, 2, 64, {"Guide lines", "How many guide lines are drawn from each vanishing point. This only changes what you see: strokes can follow a guide through any point."})
+	ocheck("Snap", &persp_snap, {"Snap to guides", "Brush strokes and lines follow the guide closest to the way they set off, and keep to it until released."})
+	if obutton("Reset", 46, {"Reset points", "Put the vanishing points and the horizon back in their default places."}) do persp_layout(persp_points, 0.4)
+	if obutton("Perspective Off", 100, cmd_tip("Perspective", .Toggle_Perspective)) do run_cmd(.Toggle_Perspective)
 }

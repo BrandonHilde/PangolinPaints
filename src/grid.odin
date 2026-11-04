@@ -156,17 +156,17 @@ render_snap_marker :: proc(p: Vec2) {
 dlg_grid :: proc() {
 	c := dialog_frame("Grid", 280, 170)
 	y := c.y
-	row_int(c, y, "Cell width (px)", &dialog.a, 1, 4096)
+	row_int(c, y, "Cell width (px)", &dialog.a, 1, 4096, "How wide each grid cell is, in canvas pixels.")
 	y += 20
-	row_int(c, y, "Cell height (px)", &dialog.b, 1, 4096)
+	row_int(c, y, "Cell height (px)", &dialog.b, 1, 4096, "How tall each grid cell is, in canvas pixels.")
 	y += 22
-	row_slider(c, y, "Line opacity", &dialog.c, 5, 100, "%")
+	row_slider(c, y, "Line opacity", &dialog.c, 5, 100, "%", "How strongly the grid lines show. It has no effect on your painting.")
 	y += 20
-	row_slider(c, y, "Angle", &dialog.d, -90, 90, "deg")
+	row_slider(c, y, "Angle", &dialog.d, -90, 90, "deg", "Turn the grid about the center of the canvas. Snapping follows the turned lines.")
 	y += 20
-	checkbox(c.x, y, "Show grid", &dialog.flag)
-	checkbox(c.x + 110, y, "Snap to grid", &dialog.flag2, "Every tool snaps to the grid while it is shown")
-	ok, cancel := dialog_buttons(c)
+	checkbox(c.x, y, "Show grid", &dialog.flag, {"Show grid", "Draw the grid over the canvas. Tools only snap while it is shown."})
+	checkbox(c.x + 110, y, "Snap to grid", &dialog.flag2, {"Snap to grid", "While the grid is shown, strokes, shapes, selections and moves land on its lines."})
+	ok, cancel := dialog_buttons(c, "Use these grid settings (Enter).")
 	if cancel {
 		dialog_close()
 	}

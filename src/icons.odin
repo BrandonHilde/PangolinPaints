@@ -63,6 +63,11 @@ Icon :: enum {
 	Canvas_Mode,
 	Seamless,
 	Perspective,
+	Film,
+	Folder,
+	Eye_Off,
+	Refresh,
+	Play,
 }
 
 ICON_SVG := [Icon]string {
@@ -122,6 +127,11 @@ ICON_SVG := [Icon]string {
 	.Canvas_Mode = #load("../assets/icons/canvas_mode.svg", string),
 	.Seamless = #load("../assets/icons/seamless.svg", string),
 	.Perspective = #load("../assets/icons/perspective.svg", string),
+	.Film = #load("../assets/icons/film.svg", string),
+	.Folder = #load("../assets/icons/folder.svg", string),
+	.Eye_Off = #load("../assets/icons/eye_off.svg", string),
+	.Refresh = #load("../assets/icons/refresh.svg", string),
+	.Play = #load("../assets/icons/play.svg", string),
 }
 
 @(private = "file")

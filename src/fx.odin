@@ -46,6 +46,7 @@ Fx_Param :: struct {
 	def:     int,
 	suffix:  string,
 	div:     int, // display value / div (e.g. gamma 100 = 1.00)
+	help:    string, // what the slider does
 }
 
 Fx_Def :: struct {
@@ -55,35 +56,106 @@ Fx_Def :: struct {
 	flag_def: bool,
 	choice:  []string, // optional combo (channel / tonal range)
 	heavy:   bool, // preview only after the slider is released
+	help:      string, // what the effect does, for its menu item
+	flag_help: string, // what the checkbox does
+	choice_help: string, // what the combo picks
 }
 
 FX_DEFS := [Fx]Fx_Def {
-	.Brightness_Contrast = {name = "Brightness / Contrast", params = {{"Brightness", -100, 100, 0, "", 1}, {"Contrast", -100, 100, 0, "", 1}}},
-	.Levels = {name = "Levels", params = {{"Input black", 0, 254, 0, "", 1}, {"Input white", 1, 255, 255, "", 1}, {"Gamma", 10, 500, 100, "", 100}, {"Output black", 0, 255, 0, "", 1}, {"Output white", 0, 255, 255, "", 1}}, choice = {"RGB", "Red", "Green", "Blue"}},
-	.Hue_Saturation = {name = "Hue / Saturation", params = {{"Hue", -180, 180, 0, "", 1}, {"Saturation", -100, 100, 0, "", 1}, {"Lightness", -100, 100, 0, "", 1}}, flag = "Colorize"},
-	.Color_Balance = {name = "Color Balance", params = {{"Cyan / Red", -100, 100, 0, "", 1}, {"Magenta / Green", -100, 100, 0, "", 1}, {"Yellow / Blue", -100, 100, 0, "", 1}}, choice = {"Shadows", "Midtones", "Highlights"}, flag = "Preserve luminosity", flag_def = true},
-	.Vibrance = {name = "Vibrance", params = {{"Vibrance", -100, 100, 0, "", 1}, {"Saturation", -100, 100, 0, "", 1}}},
-	.Exposure = {name = "Exposure", params = {{"Exposure", -500, 500, 0, " stops", 100}, {"Offset", -50, 50, 0, "", 100}, {"Gamma", 10, 500, 100, "", 100}}},
-	.Temperature = {name = "Temperature / Tint", params = {{"Temperature", -100, 100, 0, "", 1}, {"Tint", -100, 100, 0, "", 1}}},
-	.Posterize = {name = "Posterize", params = {{"Levels", 2, 64, 6, "", 1}}},
-	.Threshold = {name = "Threshold", params = {{"Level", 0, 255, 128, "", 1}}},
-	.Sepia = {name = "Sepia", params = {{"Amount", 0, 100, 80, "%", 1}}},
-	.Invert = {name = "Invert"},
-	.Desaturate = {name = "Desaturate"},
-	.Gaussian_Blur = {name = "Gaussian Blur", params = {{"Radius", 1, 2500, 30, " px", 10}}},
-	.Box_Blur = {name = "Box Blur", params = {{"Radius", 1, 200, 4, " px", 1}}},
-	.Motion_Blur = {name = "Motion Blur", params = {{"Angle", -180, 180, 0, " deg", 1}, {"Distance", 1, 500, 20, " px", 1}}},
-	.Radial_Blur = {name = "Radial (Zoom) Blur", params = {{"Amount", 0, 100, 20, "", 1}, {"Centre X", 0, 100, 50, "%", 1}, {"Centre Y", 0, 100, 50, "%", 1}}, heavy = true},
-	.Unsharp_Mask = {name = "Unsharp Mask", params = {{"Amount", 0, 500, 100, "%", 1}, {"Radius", 1, 1000, 15, " px", 10}, {"Threshold", 0, 255, 0, "", 1}}},
-	.Add_Noise = {name = "Add Noise", params = {{"Amount", 0, 100, 10, "%", 1}}, flag = "Monochromatic", flag_def = true},
-	.Median = {name = "Median (Despeckle)", params = {{"Radius", 1, 20, 2, " px", 1}}, heavy = true},
-	.Oil_Paint = {name = "Oil Paint", params = {{"Brush radius", 1, 15, 4, " px", 1}, {"Detail levels", 4, 64, 20, "", 1}}, heavy = true},
-	.Kuwahara = {name = "Painterly (Kuwahara)", params = {{"Radius", 1, 15, 4, " px", 1}}, heavy = true},
-	.Emboss = {name = "Emboss", params = {{"Light angle", -180, 180, 135, " deg", 1}, {"Height", 1, 10, 3, "", 1}}, flag = "Keep colour", flag_def = true},
-	.Find_Edges = {name = "Find Edges"},
-	.Pixelate = {name = "Pixelate", params = {{"Cell size", 2, 256, 8, " px", 1}}},
-	.Vignette = {name = "Vignette", params = {{"Amount", -100, 100, 40, "", 1}, {"Softness", 0, 100, 50, "", 1}}},
-	.Canvas_Texture = {name = "Canvas Texture", params = {{"Weave size", 1, 8, 3, "", 1}, {"Strength", 0, 100, 35, "%", 1}}},
+	.Brightness_Contrast = {name = "Brightness / Contrast", help = "Make the layer lighter or darker, and push its tones apart or together.", params = {
+		{"Brightness", -100, 100, 0, "", 1, "Lighten (above 0) or darken (below 0) every tone."},
+		{"Contrast", -100, 100, 0, "", 1, "Push light and dark tones apart (above 0) or toward mid gray (below 0)."},
+	}},
+	.Levels = {name = "Levels", help = "Set which tones become black and white, and how bright the midtones are.", choice = {"RGB", "Red", "Green", "Blue"}, choice_help = "Adjust all color channels together, or only one of them.", params = {
+		{"Input black", 0, 254, 0, "", 1, "Tones at or below this become black."},
+		{"Input white", 1, 255, 255, "", 1, "Tones at or above this become white."},
+		{"Gamma", 10, 500, 100, "", 100, "Brighten (above 1) or darken (below 1) the midtones, leaving black and white in place."},
+		{"Output black", 0, 255, 0, "", 1, "The darkest tone in the result. Raise it to fade the shadows."},
+		{"Output white", 0, 255, 255, "", 1, "The lightest tone in the result. Lower it to dull the highlights."},
+	}},
+	.Hue_Saturation = {name = "Hue / Saturation", help = "Shift the colors around the color wheel, make them stronger or weaker, or tint the layer with one color.", flag = "Colorize", flag_help = "Give the whole layer a single hue, set with the Hue and Saturation sliders.", params = {
+		{"Hue", -180, 180, 0, "", 1, "Shift every color around the color wheel, in degrees."},
+		{"Saturation", -100, 100, 0, "", 1, "Make colors stronger (above 0) or closer to gray (below 0)."},
+		{"Lightness", -100, 100, 0, "", 1, "Move colors toward white (above 0) or black (below 0)."},
+	}},
+	.Color_Balance = {name = "Color Balance", help = "Shift the shadows, midtones or highlights toward a color.", choice = {"Shadows", "Midtones", "Highlights"}, choice_help = "The tones the sliders change.", flag = "Preserve luminosity", flag_def = true, flag_help = "Keep the brightness of each pixel, so only its color changes.", params = {
+		{"Cyan / Red", -100, 100, 0, "", 1, "Shift these tones toward cyan (below 0) or red (above 0)."},
+		{"Magenta / Green", -100, 100, 0, "", 1, "Shift these tones toward magenta (below 0) or green (above 0)."},
+		{"Yellow / Blue", -100, 100, 0, "", 1, "Shift these tones toward yellow (below 0) or blue (above 0)."},
+	}},
+	.Vibrance = {name = "Vibrance", help = "Strengthen muted colors more than ones already vivid, which is kinder to skin tones than Saturation.", params = {
+		{"Vibrance", -100, 100, 0, "", 1, "Change color strength, mostly in colors that are still muted."},
+		{"Saturation", -100, 100, 0, "", 1, "Change the strength of every color by the same amount."},
+	}},
+	.Exposure = {name = "Exposure", help = "Change the brightness in stops, as if a photo had been exposed for longer or shorter.", params = {
+		{"Exposure", -500, 500, 0, " stops", 100, "Each stop up doubles the light, and each stop down halves it. This mostly moves the highlights."},
+		{"Offset", -50, 50, 0, "", 100, "Add or take away the same light everywhere. This mostly moves the shadows."},
+		{"Gamma", 10, 500, 100, "", 100, "Brighten (above 1) or darken (below 1) the midtones."},
+	}},
+	.Temperature = {name = "Temperature / Tint", help = "Correct the white balance: make the layer warmer or cooler, greener or more magenta.", params = {
+		{"Temperature", -100, 100, 0, "", 1, "Make colors cooler and bluer (below 0) or warmer and more orange (above 0)."},
+		{"Tint", -100, 100, 0, "", 1, "Make colors greener (below 0) or more magenta (above 0)."},
+	}},
+	.Posterize = {name = "Posterize", help = "Reduce each color channel to a few flat steps, like a screen print.", params = {
+		{"Levels", 2, 64, 6, "", 1, "How many steps each color channel keeps. Fewer steps make broader bands."},
+	}},
+	.Threshold = {name = "Threshold", help = "Turn each pixel pure black or pure white, by how light it is.", params = {
+		{"Level", 0, 255, 128, "", 1, "Tones above this become white, and the rest black."},
+	}},
+	.Sepia = {name = "Sepia", help = "Tint the layer with warm brown, like an old photograph.", params = {
+		{"Amount", 0, 100, 80, "%", 1, "How much of the sepia look to mix in."},
+	}},
+	.Invert = {name = "Invert", help = "Turn the layer into its negative: light becomes dark and each color its opposite."},
+	.Desaturate = {name = "Desaturate", help = "Remove all color from the layer, leaving shades of gray."},
+	.Gaussian_Blur = {name = "Gaussian Blur", help = "Soften the layer smoothly, like an out of focus lens.", params = {
+		{"Radius", 1, 2500, 30, " px", 10, "How far each pixel spreads. Larger is blurrier."},
+	}},
+	.Box_Blur = {name = "Box Blur", help = "Soften the layer by averaging each pixel with a square around it. Quick, with a boxier look than Gaussian.", params = {
+		{"Radius", 1, 200, 4, " px", 1, "How far the averaged square reaches. Larger is blurrier."},
+	}},
+	.Motion_Blur = {name = "Motion Blur", help = "Streak the layer in one direction, as if it moved during the exposure.", params = {
+		{"Angle", -180, 180, 0, " deg", 1, "The direction of the streaks. Shift moves by 5 degrees."},
+		{"Distance", 1, 500, 20, " px", 1, "How long the streaks are."},
+	}},
+	.Radial_Blur = {name = "Radial (Zoom) Blur", help = "Streak the layer outward from a point, as if zooming during the exposure.", heavy = true, params = {
+		{"Amount", 0, 100, 20, "", 1, "How long the streaks are."},
+		{"Center X", 0, 100, 50, "%", 1, "How far across the canvas the point is that stays sharp."},
+		{"Center Y", 0, 100, 50, "%", 1, "How far down the canvas the point is that stays sharp."},
+	}},
+	.Unsharp_Mask = {name = "Unsharp Mask", help = "Sharpen the layer by raising the contrast along its edges.", params = {
+		{"Amount", 0, 500, 100, "%", 1, "How strongly edges are sharpened."},
+		{"Radius", 1, 1000, 15, " px", 10, "How wide a band around each edge is sharpened."},
+		{"Threshold", 0, 255, 0, "", 1, "Leave alone differences smaller than this, which keeps skin and sky from turning grainy."},
+	}},
+	.Add_Noise = {name = "Add Noise", help = "Sprinkle random grain over the layer.", flag = "Monochromatic", flag_def = true, flag_help = "Make the grain gray, like film. Off, each color channel gets its own.", params = {
+		{"Amount", 0, 100, 10, "%", 1, "How strong the grain is."},
+	}},
+	.Median = {name = "Median (Despeckle)", help = "Replace each pixel with the middle value around it, which removes specks while keeping edges.", heavy = true, params = {
+		{"Radius", 1, 20, 2, " px", 1, "How far to look around each pixel. Larger removes bigger specks, and more detail."},
+	}},
+	.Oil_Paint = {name = "Oil Paint", help = "Turn the layer into dabs of flat color, like a thick oil painting.", heavy = true, params = {
+		{"Brush radius", 1, 15, 4, " px", 1, "How large the dabs are."},
+		{"Detail levels", 4, 64, 20, "", 1, "How many tones the dabs can take. Fewer gives bolder, flatter patches."},
+	}},
+	.Kuwahara = {name = "Painterly (Kuwahara)", help = "Smooth the layer into patches of color while keeping edges crisp, for a painted look.", heavy = true, params = {
+		{"Radius", 1, 15, 4, " px", 1, "How large the patches are."},
+	}},
+	.Emboss = {name = "Emboss", help = "Light the layer from the side, so it looks pressed into or raised from the surface.", flag = "Keep color", flag_def = true, flag_help = "Keep the layer's colors under the relief. Off, the result is gray.", params = {
+		{"Light angle", -180, 180, 135, " deg", 1, "The direction the light comes from. Shift moves by 5 degrees."},
+		{"Height", 1, 10, 3, "", 1, "How deep the relief looks."},
+	}},
+	.Find_Edges = {name = "Find Edges", help = "Keep only the outlines where the layer changes sharply, for a sketch-like result."},
+	.Pixelate = {name = "Pixelate", help = "Turn the layer into large square blocks of color.", params = {
+		{"Cell size", 2, 256, 8, " px", 1, "How large the blocks are."},
+	}},
+	.Vignette = {name = "Vignette", help = "Darken or lighten the corners of the canvas, drawing the eye to the middle.", params = {
+		{"Amount", -100, 100, 40, "", 1, "Darken the edges (above 0) or lighten them (below 0)."},
+		{"Softness", 0, 100, 50, "", 1, "How gradually the effect fades toward the middle."},
+	}},
+	.Canvas_Texture = {name = "Canvas Texture", help = "Lay a woven canvas pattern over the layer, as if it were painted on cloth.", params = {
+		{"Weave size", 1, 8, 3, "", 1, "How coarse the weave is."},
+		{"Strength", 0, 100, 35, "%", 1, "How strongly the weave shows."},
+	}},
 }
 
 Fx_State :: struct {
@@ -209,8 +281,9 @@ dlg_fx :: proc() {
 	c := dialog_frame(def.name, 300, 64 + rows * 20 + extra + 18, docked = true)
 	y := c.y
 	if def.choice != nil {
-		text(c.x, y + 3, fxs.fx == .Levels ? "Channel" : "Tones", C_TEXT)
-		if nv, ch := combo(Rect{c.x + 100, y, 120, 14}, def.choice, fxs.choice); ch {
+		choice_tip := Tip{fxs.fx == .Levels ? "Channel" : "Tones", def.choice_help}
+		tip_text(c.x, y + 3, choice_tip.title, C_TEXT, choice_tip)
+		if nv, ch := combo(Rect{c.x + 100, y, 120, 14}, def.choice, fxs.choice, choice_tip); ch {
 			fxs.choice = nv
 			fxs.dirty = true
 		}
@@ -218,9 +291,9 @@ dlg_fx :: proc() {
 	}
 	held := false
 	for &p, i in def.params {
-		text(c.x, y + 3, p.name, C_TEXT)
+		tip_text(c.x, y + 3, p.name, C_TEXT, {p.name, p.help})
 		r := Rect{c.x + 100, y, c.w - 100, 14}
-		if slider(r, &fxs.v[i], p.lo, p.hi, "", "", p.suffix, 1, p.div) {
+		if slider(r, &fxs.v[i], p.lo, p.hi, "", {p.name, p.help}, p.suffix, 1, p.div) {
 			fxs.dirty = true
 		}
 		if ui.active_id == make_id(r, "") && ui.down[0] {
@@ -229,12 +302,12 @@ dlg_fx :: proc() {
 		y += 20
 	}
 	if def.flag != "" {
-		if checkbox(c.x, y, def.flag, &fxs.flag) {
+		if checkbox(c.x, y, def.flag, &fxs.flag, {def.flag, def.flag_help}) {
 			fxs.dirty = true
 		}
 		y += 18
 	}
-	if checkbox(c.x, y, "Preview", &fxs.preview) {
+	if checkbox(c.x, y, "Preview", &fxs.preview, {"Preview", "Show the effect on the canvas while you change the settings. It is only applied when you press OK."}) {
 		fxs.dirty = true
 	}
 	if def.heavy && held {
@@ -248,12 +321,12 @@ dlg_fx :: proc() {
 			live_store(live.orig)
 		}
 	}
-	if button(Rect{c.x, c.y + c.h - 16, 60, 16}, "Reset", "Back to the default settings") {
+	if button(Rect{c.x, c.y + c.h - 16, 60, 16}, "Reset", {"", "Put every setting of this effect back to its default."}) {
 		for p, i in def.params do fxs.v[i] = p.def
 		fxs.flag = def.flag_def
 		fxs.dirty = true
 	}
-	ok, cancel := dialog_buttons(c)
+	ok, cancel := dialog_buttons(c, "Apply this to the active layer (Enter).")
 	if cancel {
 		live_cancel()
 		dialog_close()
@@ -310,8 +383,9 @@ curves_apply :: proc() {
 dlg_curves :: proc() {
 	c := dialog_frame("Curves", 300, 352, docked = true)
 	CH := [?]string{"RGB", "Red", "Green", "Blue"}
-	text(c.x, c.y + 3, "Channel", C_TEXT)
-	if nv, ch := combo(Rect{c.x + 60, c.y, 90, 14}, CH[:], curves.channel); ch {
+	CH_TIP :: "Shape all color channels together, or only one of them. Each keeps its own curve."
+	tip_text(c.x, c.y + 3, "Channel", C_TEXT, {"Channel", CH_TIP})
+	if nv, ch := combo(Rect{c.x + 60, c.y, 90, 14}, CH[:], curves.channel, {"Channel", CH_TIP}); ch {
 		curves.channel = nv
 		curves.grab = -1
 	}
@@ -406,18 +480,19 @@ dlg_curves :: proc() {
 		draw_frect({s.x - 2, s.y - 2, 4, 4}, WHITE)
 	}
 	outline_rect(g, C_BORDER)
+	tip_area(g, "curve", {"Curve", "The tones of the layer go in along the bottom and come out up the side, with its histogram behind. Click to add a point, drag to shape the curve, right-click a point to remove it."})
 	text(c.x, g.y + g.h + 6, "Click: add point   Drag: shape   Right click: remove", C_TEXT_DIM)
 	if curves.dirty && curves.grab < 0 || curves.dirty && ui.time - curves_last_t > 0.08 {
 		curves.dirty = false
 		curves_last_t = ui.time
 		curves_apply()
 	}
-	if button(Rect{c.x, c.y + c.h - 16, 60, 16}, "Reset") {
+	if button(Rect{c.x, c.y + c.h - 16, 60, 16}, "Reset", {"", "Make this channel's curve a straight line again."}) {
 		clear(pts)
 		append(pts, Vec2{0, 0}, Vec2{255, 255})
 		curves.dirty = true
 	}
-	ok, cancel := dialog_buttons(c)
+	ok, cancel := dialog_buttons(c, "Apply this to the active layer (Enter).")
 	if cancel {
 		live_cancel()
 		dialog_close()

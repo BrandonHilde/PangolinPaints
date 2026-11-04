@@ -105,6 +105,10 @@ mip_request :: proc(d: ^Doc, k: int) -> Texture {
 
 // Draws the canvas pixels into `dst`, picking a sampling strategy from the on-screen scale.
 draw_canvas_tex :: proc(d: ^Doc, dst: FRect) {
+	if d.comp_lazy {
+		frame_cache_draw(d, dst)
+		return
+	}
 	z := dst.w / f32(d.w)
 	k := 0
 	for k < MAX_MIP && z * f32(int(1) << uint(k + 1)) <= 1 {
@@ -149,7 +153,9 @@ render_canvas :: proc(vp: Rect) {
 	fill_rect(vp, C_VIEWPORT)
 	clip_begin(vp)
 	defer clip_end()
-	render_refresh(d)
+	// a frame just picked is drawn from the frame cache; once things settle, the real composite takes over
+	if d.comp_lazy && !playing && ui.time - d.frame_t > 0.25 do doc_refresh_comp(d)
+	if !d.comp_lazy do render_refresh(d)
 
 	z := d.zoom
 	cw := f32(d.w) * z
@@ -159,6 +165,7 @@ render_canvas :: proc(vp: Rect) {
 	draw_shadow(dst.x, dst.y + 3, dst.w, dst.h, 0, 14, Color{0, 0, 0, 150})
 	draw_canvas_bg(dst)
 	draw_canvas_tex(d, dst)
+	onion_draw(d, dst)
 	if seamless_mode {
 		// the surrounding 8 copies, so the image can be judged as a repeating texture
 		for ty in -1 ..= 1 {

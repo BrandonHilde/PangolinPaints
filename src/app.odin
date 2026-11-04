@@ -119,6 +119,7 @@ recent_push :: proc(c: Color) {
 }
 
 add_doc :: proc(d: ^Doc) {
+	stop_playback()
 	append(&docs, d)
 	doc = d
 	d.view_init = false
@@ -126,6 +127,7 @@ add_doc :: proc(d: ^Doc) {
 
 switch_doc :: proc(i: int) {
 	if i >= 0 && i < len(docs) && docs[i] != doc {
+		stop_playback()
 		tools_commit_pending()
 		doc = docs[i]
 	}
@@ -142,6 +144,7 @@ doc_index :: proc(d: ^Doc) -> int {
 
 close_doc :: proc(d: ^Doc) {
 	if d == doc {
+		stop_playback()
 		tools_commit_pending()
 	}
 	i := doc_index(d)
@@ -152,6 +155,7 @@ close_doc :: proc(d: ^Doc) {
 	if tex_doc == d {
 		tex_doc = nil
 	}
+	frame_cache_drop(d)
 	doc_destroy(d)
 	if len(docs) == 0 {
 		nd := doc_new_painting(1600, 1200, "Untitled", Color{255, 255, 255, 255})

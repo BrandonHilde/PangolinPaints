@@ -201,7 +201,7 @@ render_line_preview :: proc(d: ^Doc) {
 }
 
 options_line :: proc() {
-	ocheck("Outline", &line_outline, "Paint the line with the brush settings")
-	ocheck("Fill closed", &line_fill, "Fill shapes closed by clicking the first point with the foreground colour")
+	ocheck("Outline", &line_outline, {"Outline", "Paint the line with the brush settings. Turn it off, with Fill closed on, to get a filled shape without an edge."})
+	ocheck("Fill closed", &line_fill, {"Fill closed", "Fill a shape with the foreground color when it is closed by clicking its first point."})
 	ohint(line_active() ? "Double click / Enter: finish   Click first point: close   Esc: cancel" : "Drag: line   Click: polygon points (Shift: 15 degrees)")
 }

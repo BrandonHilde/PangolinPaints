@@ -147,7 +147,7 @@ workspace_builtin :: proc(i: int) {
 	case 3:
 		tool_groups_clear()
 		ws_group("Draw", .ONE, false, .Brush, .Line, .Eraser, .Smudge)
-		ws_group("Colour", .TWO, false, .Picker, .Bucket, .Gradient)
+		ws_group("Color", .TWO, false, .Picker, .Bucket, .Gradient)
 		ws_group("View", .THREE, false, .Hand, .Zoom)
 		ws_group("Pen", .KEY_NULL, true, .Eraser, .Smudge)
 	}
@@ -304,23 +304,25 @@ dlg_workspaces :: proc() {
 	n := len(ws_entries)
 	for e, i in ws_entries do names[i] = e.name
 	dialog.a = clamp(dialog.a, 0, n - 1)
-	text(c.x, y + 3, "Workspace", C_TEXT)
-	if nv, ch := combo(Rect{c.x + 80, y, c.w - 80, 14}, names[:n], dialog.a); ch {
+	PICK_TIP :: "The workspace the Load and Delete buttons act on. A workspace holds tool groups, swatches and brush settings."
+	tip_text(c.x, y + 3, "Workspace", C_TEXT, {"Workspace", PICK_TIP})
+	if nv, ch := combo(Rect{c.x + 80, y, c.w - 80, 14}, names[:n], dialog.a, {"Workspace", PICK_TIP}); ch {
 		dialog.a = nv
 	}
 	y += 22
-	if button(Rect{c.x, y, 60, 16}, "Load", "Switch to the selected workspace") {
+	if button(Rect{c.x, y, 60, 16}, "Load", {"", "Switch to the selected workspace. Your current tool groups are replaced, so save them first if you want to keep them."}) {
 		workspace_apply_index(dialog.a)
 	}
 	saved := ws_entries[dialog.a].builtin < 0
-	if button(Rect{c.x + 66, y, 60, 16}, "Delete", "Delete the selected saved workspace", saved) {
+	if button(Rect{c.x + 66, y, 60, 16}, "Delete", {"", "Delete the selected saved workspace. The built-in ones cannot be deleted."}, saved) {
 		workspace_delete_index(dialog.a)
 		ws_refresh()
 	}
 	y += 24
-	text(c.x, y + 3, "Save as", C_TEXT)
-	text_field(Rect{c.x + 80, y, c.w - 80 - 66, 14}, &dialog.name, "Name for the current tool set-up")
-	if button(Rect{c.x + c.w - 60, y - 1, 60, 16}, "Save", "Save the current tool set-up as a workspace") {
+	SAVE_TIP :: "A name for the current tool groups, swatches and brush settings."
+	tip_text(c.x, y + 3, "Save as", C_TEXT, {"Save as", SAVE_TIP})
+	text_field(Rect{c.x + 80, y, c.w - 80 - 66, 14}, &dialog.name, {"Save as", SAVE_TIP})
+	if button(Rect{c.x + c.w - 60, y - 1, 60, 16}, "Save", {"", "Save the current tool groups, swatches and brush settings as a workspace under this name."}) {
 		if workspace_save_named(name_str(&dialog.name)) {
 			ws_refresh()
 			for e, i in ws_entries {
@@ -329,14 +331,14 @@ dlg_workspaces :: proc() {
 		}
 	}
 	y += 24
-	if button(Rect{c.x, y, 80, 16}, "Import...", "Load a workspace file and add it to the list") {
+	if button(Rect{c.x, y, 80, 16}, "Import...", {"", cmd_help(.Ws_Import)}) {
 		workspace_import()
 		ws_refresh()
 	}
-	if button(Rect{c.x + 86, y, 80, 16}, "Export...", "Save the current tool set-up to a workspace file") {
+	if button(Rect{c.x + 86, y, 80, 16}, "Export...", {"", cmd_help(.Ws_Export)}) {
 		workspace_export()
 	}
-	ok, _ := dialog_buttons(c, "Close", "")
+	ok, _ := dialog_buttons(c, "Close this window (Enter or Esc).", "Close", "")
 	if ok {
 		dialog_close()
 	}

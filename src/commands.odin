@@ -60,6 +60,21 @@ Cmd :: enum {
 	Mask_Apply,
 	Mask_Edit,
 	Mask_Enable,
+	// frame
+	Frame_New,
+	Frame_Dup,
+	Frame_From_Visible,
+	Frame_Del,
+	Frame_Left,
+	Frame_Right,
+	Frame_Prev,
+	Frame_Next,
+	Frame_First,
+	Frame_Last,
+	Play,
+	Tags,
+	Frame_Props,
+	Toggle_Onion,
 	// select
 	Select_All,
 	Deselect,
@@ -85,6 +100,9 @@ Cmd :: enum {
 	Toggle_Canvas_Mode,
 	Toggle_Seamless,
 	Cycle_Canvas_Bg,
+	UI_Scale,
+	Toggle_Timeline,
+	Toggle_Files,
 	// help
 	Help_Keys,
 	About,
@@ -132,6 +150,7 @@ Cmd :: enum {
 	Tool_Grid,
 	Tool_Mirror,
 	Tool_Perspective,
+	Tool_Seamless,
 	// adjustments and filters (must stay in the same order as `Fx`)
 	Fx_First,
 	Fx_Last = Fx_First + len(Fx) - 1,
@@ -181,6 +200,15 @@ SHORTCUTS := [?]Shortcut {
 	{.Layer_Merge, .E, true, false, false},
 	{.Layer_Lock_Alpha, .SLASH, false, false, false},
 	{.Mask_Edit, .BACKSLASH, false, false, false},
+	{.Frame_New, .N, false, false, true},
+	{.Frame_Prev, .COMMA, false, false, false},
+	{.Frame_Next, .PERIOD, false, false, false},
+	{.Frame_First, .HOME, false, false, false},
+	{.Frame_First, .COMMA, false, true, false},
+	{.Frame_Last, .END, false, false, false},
+	{.Frame_Last, .PERIOD, false, true, false},
+	{.Play, .ENTER, false, false, false},
+	{.Toggle_Onion, .O, false, false, true},
 	{.Select_All, .A, true, false, false},
 	{.Deselect, .D, true, false, false},
 	{.Invert_Sel, .I, true, true, false},
@@ -209,18 +237,18 @@ SHORTCUTS := [?]Shortcut {
 	{.Tool_Bucket, .G, false, false, false},
 	{.Tool_Gradient, .G, false, true, false},
 	{.Tool_Picker, .I, false, false, false},
-	{.Tool_Text, .T, false, true, false},
+	{.Tool_Text, .T, false, false, false},
 	{.Tool_Select_Rect, .M, false, false, false},
 	{.Tool_Select_Ellipse, .M, false, true, false},
-	{.Tool_Lasso, .L, false, false, false},
+	{.Tool_Lasso, .Q, false, false, false},
 	{.Tool_Wand, .W, false, false, false},
 	{.Tool_Move, .V, false, false, false},
-	{.Tool_Transform, .T, false, false, false},
+	{.Tool_Transform, .T, false, true, false},
 	{.Tool_Transform, .T, true, false, false},
 	{.Tool_Crop, .C, false, false, false},
 	{.Tool_Hand, .H, false, false, false},
 	{.Tool_Zoom, .Z, false, false, false},
-	{.Tool_Line, .U, false, false, false},
+	{.Tool_Line, .L, false, false, false},
 	{.Swap_Colors, .X, false, false, false},
 	{.Default_Colors, .D, false, false, false},
 	{.Brush_Smaller, .LEFT_BRACKET, false, false, false},
@@ -276,6 +304,14 @@ key_name :: proc(k: KeyboardKey) -> string {
 		return "/"
 	case .BACKSLASH:
 		return "\\"
+	case .COMMA:
+		return ","
+	case .PERIOD:
+		return "."
+	case .HOME:
+		return "Home"
+	case .END:
+		return "End"
 	}
 	return "?"
 }
@@ -295,7 +331,7 @@ shortcut_text :: proc(cmd: Cmd) -> string {
 
 cmd_repeats :: proc(c: Cmd) -> bool {
 	#partial switch c {
-	case .Brush_Smaller, .Brush_Bigger, .Undo, .Redo, .Zoom_In, .Zoom_Out:
+	case .Brush_Smaller, .Brush_Bigger, .Undo, .Redo, .Zoom_In, .Zoom_Out, .Frame_Prev, .Frame_Next:
 		return true
 	}
 	return false
@@ -386,16 +422,20 @@ select_tool :: proc(t: Tool) {
 
 run_cmd :: proc(cmd: Cmd) {
 	d := doc
-	if cmd >= .Tool_Brush && cmd <= .Tool_Perspective {
+	if cmd >= .Tool_Brush && cmd <= .Tool_Seamless {
 		select_tool_in_group(Tool(int(cmd) - int(Cmd.Tool_Brush)))
 		return
 	}
 	// commands below act on the document; finish pending interactions first
 	#partial switch cmd {
-	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap, .Grid_Settings, .Toggle_Mirror, .Toggle_Perspective, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
+	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap, .Grid_Settings, .Toggle_Mirror, .Toggle_Perspective, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .UI_Scale, .Toggle_Timeline, .Toggle_Files, .Toggle_Onion, .Play, .Frame_Prev, .Frame_Next, .Frame_First, .Frame_Last, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
 	case .Opacity_10 ..= .Opacity_100:
 	case:
 		tools_commit_pending()
+	}
+	#partial switch cmd {
+	case .Undo, .Redo:
+		stop_playback()
 	}
 	if cmd >= .Fx_First && cmd <= .Fx_Last {
 		fx_open(Fx(int(cmd) - int(Cmd.Fx_First)))
@@ -412,7 +452,7 @@ run_cmd :: proc(cmd: Cmd) {
 		return
 	}
 	switch cmd {
-	case .None, .Tool_Brush ..= .Tool_Perspective, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
+	case .None, .Tool_Brush ..= .Tool_Seamless, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
 	case .New:
 		dialog_open(.New_Doc)
 	case .Open:
@@ -560,6 +600,51 @@ run_cmd :: proc(cmd: Cmd) {
 			doc_touch_all(d)
 		}
 
+	case .Frame_New:
+		doc_add_frame(d, false)
+		timeline_reveal()
+	case .Frame_Dup:
+		doc_add_frame(d, true)
+		timeline_reveal()
+	case .Frame_From_Visible:
+		doc_frame_from_visible(d)
+		timeline_reveal()
+	case .Frame_Del:
+		if !doc_delete_frame(d) {
+			set_status("Cannot delete the only frame")
+		}
+	case .Frame_Left:
+		doc_move_frame(d, -1)
+	case .Frame_Right:
+		doc_move_frame(d, 1)
+	case .Frame_Prev:
+		stop_playback()
+		set_frame(d.active_frame - 1 < 0 ? len(d.frames) - 1 : d.active_frame - 1)
+	case .Frame_Next:
+		stop_playback()
+		set_frame(d.active_frame + 1 >= len(d.frames) ? 0 : d.active_frame + 1)
+	case .Frame_First:
+		stop_playback()
+		set_frame(0)
+	case .Frame_Last:
+		stop_playback()
+		set_frame(len(d.frames) - 1)
+	case .Play:
+		if playing {
+			stop_playback()
+		} else if len(d.frames) > 1 {
+			tools_commit_pending()
+			playing = true
+			play_timer = 0
+			play_dir = 1
+		}
+	case .Tags:
+		dialog_open(.Tags)
+	case .Frame_Props:
+		dialog_open(.Frame_Props)
+	case .Toggle_Onion:
+		onion_on = !onion_on
+
 	case .Select_All:
 		history_push(d)
 		doc_sel_all(d)
@@ -624,8 +709,16 @@ run_cmd :: proc(cmd: Cmd) {
 		canvas_mode = !canvas_mode
 	case .Toggle_Seamless:
 		seamless_mode = !seamless_mode
+		switch_changed(.Seamless)
+		set_status(seamless_mode ? "Tiled Mode on: strokes wrap around the canvas edges" : "Tiled Mode off")
 	case .Cycle_Canvas_Bg:
 		bg_mode = (bg_mode + 1) % 4
+	case .UI_Scale:
+		dialog_open(.UI_Scale)
+	case .Toggle_Timeline:
+		bottom_mode_set(bottom_mode == .Animation ? .Hidden : .Animation)
+	case .Toggle_Files:
+		bottom_mode_set(bottom_mode == .Files ? .Hidden : .Files)
 
 	case .Help_Keys:
 		dialog_open(.Shortcuts)
@@ -651,3 +744,8 @@ run_cmd :: proc(cmd: Cmd) {
 }
 
 BRUSH_MAX :: 1000
+
+// A frame was just added: show the timeline, unless the panel is in use for something else.
+timeline_reveal :: proc() {
+	if bottom_mode == .Hidden do bottom_mode_set(.Animation)
+}

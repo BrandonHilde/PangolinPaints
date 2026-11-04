@@ -2,6 +2,8 @@ package pangolin
 
 import "core:fmt"
 import "core:math"
+import "core:os"
+import "core:thread"
 
 MAX_UNDO :: 100
 
@@ -25,6 +27,9 @@ layer_destroy :: proc(l: ^Layer) {
 	if l.has_mask {
 		tiles_destroy(&l.mask)
 	}
+	for c in l.cels do cel_release(c)
+	delete(l.cels)
+	l.cels = nil
 }
 
 // Copy of a layer sharing all tiles.
@@ -34,6 +39,14 @@ layer_share :: proc(l: ^Layer) -> Layer {
 	n.shape = shape_share(l.shape)
 	if l.has_mask {
 		n.mask = tiles_share(&l.mask)
+	}
+	n.cels = nil
+	if len(l.cels) > 0 {
+		n.cels = make([dynamic]^Cel, len(l.cels))
+		for c, i in l.cels {
+			if c != nil do c.refs += 1
+			n.cels[i] = c
+		}
 	}
 	return n
 }
@@ -110,6 +123,11 @@ state_clone :: proc(s: ^State) -> State {
 		append(&r.layers, layer_share(&l))
 	}
 	r.sel = mask_share(s.sel)
+	r.frames = make([dynamic]Frame, len(s.frames))
+	copy(r.frames[:], s.frames[:])
+	r.tags = make([dynamic]Tag, len(s.tags))
+	copy(r.tags[:], s.tags[:])
+	r.active_frame = s.active_frame
 	return r
 }
 
@@ -119,6 +137,8 @@ state_destroy :: proc(s: ^State) {
 	}
 	delete(s.layers)
 	mask_release(s.sel)
+	delete(s.frames)
+	delete(s.tags)
 	s^ = {}
 }
 
@@ -126,6 +146,7 @@ doc_new :: proc(w, h: int, title := "Painting") -> ^Doc {
 	d := new(Doc)
 	d.w, d.h = w, h
 	append(&d.layers, layer_make("Background", w, h))
+	append(&d.frames, Frame{duration = FRAME_DEFAULT_MS})
 	d.zoom = 1
 	name_set(&d.title, title)
 	d.comp = make([]Color, w * h)
@@ -163,11 +184,18 @@ doc_dirty :: proc(d: ^Doc, b: Box) {
 	}
 	d.comp_dirty = box_union(d.comp_dirty, cb)
 	d.thumb_dirty = true
+	d.comp_lazy = false
+	if d.fc_used {
+		// a text or vector layer shows on every frame
+		l := &d.layers[clamp(d.active_layer, 0, len(d.layers) - 1)]
+		frame_cache_drop(d, layer_spans(l) ? -1 : d.active_frame)
+	}
 }
 
 doc_dirty_all :: proc(d: ^Doc) {
 	doc_dirty(d, doc_box(d))
 	d.sel_dirty = true
+	frame_cache_drop(d)
 }
 
 // Call after anything that changed pixels.
@@ -194,6 +222,7 @@ doc_clamp :: proc(d: ^Doc) {
 }
 
 history_push :: proc(d: ^Doc) {
+	stop_playback() // every edit comes through here
 	append(&d.undo, state_clone(&d.s))
 	for len(d.undo) > MAX_UNDO {
 		state_destroy(&d.undo[0])
@@ -265,7 +294,7 @@ can_edit :: proc() -> bool {
 		set_status("Layer is hidden")
 		return false
 	}
-	layer_rasterize(l) // editing the pixels directly rasterises a text or vector layer
+	layer_rasterize(doc, l) // editing the pixels directly rasterises a text or vector layer
 	return true
 }
 
@@ -446,7 +475,8 @@ mix_px :: proc(a, b: Color, t: f32) -> Color {
 // ---------------------------------------------------------------------------
 
 // Composite all visible layers inside box `b` into `out` (full w*h buffer).
-composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color) {
+// `flat`: the frame's Frame.flat, which can hide text and vector layers. A layer with no tiles (an empty cel) is skipped.
+composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat := 0) {
 	w := d.w
 	for y in b.y0 ..< b.y1 {
 		for x in b.x0 ..< b.x1 {
@@ -458,7 +488,7 @@ composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color) {
 			x0, x1 := max(b.x0, tx * TILE), min(b.x1, (tx + 1) * TILE)
 			y0, y1 := max(b.y0, ty * TILE), min(b.y1, (ty + 1) * TILE)
 			for &l in layers {
-				if !l.visible || l.opacity == 0 {
+				if !l.visible || l.opacity == 0 || len(l.pix.t) == 0 || flat_hides(flat, &l) {
 					continue
 				}
 				ti := ty * l.pix.tw + tx
@@ -467,7 +497,7 @@ composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color) {
 					continue
 				}
 				mt: ^Tile = nil
-				use_mask := l.has_mask && l.mask_on
+				use_mask := l.has_mask && l.mask_on && len(l.mask.t) > 0
 				if use_mask {
 					mt = l.mask.t[ti]
 				}
@@ -501,17 +531,55 @@ composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color) {
 	}
 }
 
+// composite_box on several threads when the area is large. They only read tiles (no refcounts) and each
+// writes its own rows of `out`.
+composite_box_fast :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat := 0) {
+	Band :: struct {
+		d:      ^Doc,
+		layers: []Layer,
+		b:      Box,
+		out:    []Color,
+		flat:   int,
+	}
+	MAX_BANDS :: 8
+	n := clamp(os.get_processor_core_count(), 1, MAX_BANDS)
+	if n < 2 || (b.x1 - b.x0) * (b.y1 - b.y0) < 1 << 20 {
+		composite_box(d, layers, b, out, flat)
+		return
+	}
+	bands: [MAX_BANDS]Band
+	threads: [MAX_BANDS]^thread.Thread
+	for i in 0 ..< n {
+		rows := b.y1 - b.y0
+		bands[i] = {d, layers, Box{b.x0, b.y0 + rows * i / n, b.x1, b.y0 + rows * (i + 1) / n}, out, flat}
+		if i == 0 do continue // this thread does the first band itself
+		t := thread.create(proc(t: ^thread.Thread) {
+			band := (^Band)(t.data)
+			composite_box(band.d, band.layers, band.b, band.out, band.flat)
+		})
+		t.data = &bands[i]
+		thread.start(t)
+		threads[i] = t
+	}
+	composite_box(d, layers, bands[0].b, out, flat)
+	for t in threads[1:n] {
+		thread.join(t)
+		thread.destroy(t)
+	}
+}
+
 doc_refresh_comp :: proc(d: ^Doc) {
 	if len(d.comp) != d.w * d.h {
 		delete(d.comp)
 		d.comp = make([]Color, d.w * d.h)
 		d.comp_dirty = doc_box(d)
 	}
+	d.comp_lazy = false
 	b := box_clip(d.comp_dirty, d.w, d.h)
 	if box_empty(b) {
 		return
 	}
-	composite_box(d, d.layers[:], b, d.comp)
+	composite_box_fast(d, d.layers[:], b, d.comp, frame_flat_id(d, d.active_frame))
 	d.comp_dirty = {}
 	d.tex_dirty = box_union(d.tex_dirty, b)
 }
@@ -519,7 +587,7 @@ doc_refresh_comp :: proc(d: ^Doc) {
 // Full composite into a new buffer (export, copy merged, sample merged).
 doc_flat :: proc(d: ^Doc, allocator := context.allocator) -> []Color {
 	out := make([]Color, d.w * d.h, allocator)
-	composite_box(d, d.layers[:], doc_box(d), out)
+	composite_box(d, d.layers[:], doc_box(d), out, frame_flat_id(d, d.active_frame))
 	return out
 }
 
@@ -609,21 +677,25 @@ doc_merge_down :: proc(d: ^Doc) -> bool {
 		return false
 	}
 	history_push(d)
-	up := &d.layers[i]
+	// both become plain per-frame pixels first
+	layer_rasterize(d, &d.layers[i])
+	layer_rasterize(d, &d.layers[i - 1])
+	doc_each_frame(d, &i, proc(d: ^Doc, f: int, data: rawptr) {
+		i := (^int)(data)^
+		up := &d.layers[i]
+		lo := &d.layers[i - 1]
+		if tiles_count(&up.pix) == 0 && !(lo.has_mask && lo.mask_on) do return
+		op := f32(up.opacity) / 255
+		src := layer_masked(d, up)
+		dst := layer_masked(d, lo)
+		for p in 0 ..< len(dst) {
+			dst[p] = blend_px(dst[p], src[p], op, up.blend)
+		}
+		tiles_from_buf(&lo.pix, d.w, d.h, dst, {})
+	})
 	lo := &d.layers[i - 1]
-	op := f32(up.opacity) / 255
-	src := layer_masked(d, up)
-	dst := layer_masked(d, lo)
-	for p in 0 ..< len(dst) {
-		dst[p] = blend_px(dst[p], src[p], op, up.blend)
-	}
-	if lo.has_mask {
-		tiles_destroy(&lo.mask)
-		lo.has_mask = false
-	}
-	tiles_from_buf(&lo.pix, d.w, d.h, dst, {})
-	layer_rasterize(lo)
-	layer_destroy(up)
+	if lo.has_mask do layer_mask_remove(lo) // it is in the pixels now, on every frame
+	layer_destroy(&d.layers[i])
 	ordered_remove(&d.layers, i)
 	d.active_layer = i - 1
 	d.edit_mask = false
@@ -632,18 +704,37 @@ doc_merge_down :: proc(d: ^Doc) -> bool {
 }
 
 doc_flatten :: proc(d: ^Doc) -> bool {
-	if len(d.layers) <= 1 && !d.layers[0].has_mask {
+	if len(d.layers) <= 1 && !d.layers[0].has_mask && !layer_spans(&d.layers[0]) && len(d.frames) <= 1 {
 		return false
 	}
 	history_push(d)
-	flat := doc_flat(d, context.temp_allocator)
+	buf := make([]Color, d.w * d.h)
+	defer delete(buf)
 	nl := layer_make("Background", d.w, d.h)
-	tiles_from_buf(&nl.pix, d.w, d.h, flat, {})
+	layer_cels_fit(&nl, len(d.frames))
+	for f in 0 ..< len(d.frames) {
+		frame_composite(d, f, buf)
+		if f == d.active_frame {
+			tiles_from_buf(&nl.pix, d.w, d.h, buf, {})
+			continue
+		}
+		g := tiles_make(d.w, d.h)
+		tiles_from_buf(&g, d.w, d.h, buf, {})
+		if tiles_count(&g) == 0 {
+			tiles_destroy(&g)
+			continue
+		}
+		c := new(Cel)
+		c.refs = 1
+		c.pix = g
+		nl.cels[f] = c
+	}
 	for &l in d.layers {
 		layer_destroy(&l)
 	}
 	clear(&d.layers)
 	append(&d.layers, nl)
+	for &fr in d.frames do fr.flat = 0
 	d.active_layer = 0
 	d.edit_mask = false
 	doc_touch_all(d)
@@ -666,10 +757,27 @@ doc_add_mask :: proc(d: ^Doc, from_sel: bool) -> bool {
 			buf[i] = Color{v, v, v, 255}
 		}
 		tiles_from_buf(&l.mask, d.w, d.h, buf, MASK_EMPTY)
+		// the same mask on every frame
+		if !layer_spans(l) && len(d.frames) > 1 {
+			m := Mask_Share{d.active_layer, tiles_share(&l.mask)}
+			defer tiles_destroy(&m.tiles)
+			doc_each_frame(d, &m, proc(d: ^Doc, f: int, data: rawptr) {
+				m := (^Mask_Share)(data)
+				l := &d.layers[m.layer]
+				tiles_destroy(&l.mask)
+				l.mask = tiles_share(&m.tiles)
+			})
+		}
 	}
 	d.edit_mask = true
 	doc_touch_all(d)
 	return true
+}
+
+@(private = "file")
+Mask_Share :: struct {
+	layer: int,
+	tiles: Tiles,
 }
 
 doc_delete_mask :: proc(d: ^Doc, apply: bool) -> bool {
@@ -679,19 +787,37 @@ doc_delete_mask :: proc(d: ^Doc, apply: bool) -> bool {
 	}
 	history_push(d)
 	if apply {
-		on := l.mask_on
-		l.mask_on = true
-		px := layer_masked(d, l)
-		l.mask_on = on
-		tiles_from_buf(&l.pix, d.w, d.h, px, {})
-		layer_rasterize(l)
+		layer_rasterize(d, l)
+		li := d.active_layer
+		doc_each_frame(d, &li, proc(d: ^Doc, f: int, data: rawptr) {
+			l := &d.layers[(^int)(data)^]
+			on := l.mask_on
+			l.mask_on = true
+			px := layer_masked(d, l)
+			l.mask_on = on
+			tiles_from_buf(&l.pix, d.w, d.h, px, {})
+		})
 	}
-	tiles_destroy(&l.mask)
-	l.has_mask = false
-	l.mask_on = false
+	layer_mask_remove(l)
 	d.edit_mask = false
 	doc_touch_all(d)
 	return true
+}
+
+// Removes a layer's mask on every frame. A cel a snapshot also holds is replaced, not changed.
+@(private = "file")
+layer_mask_remove :: proc(l: ^Layer) {
+	tiles_destroy(&l.mask)
+	l.has_mask = false
+	l.mask_on = false
+	for &c in l.cels {
+		if c == nil || len(c.mask.t) == 0 do continue
+		n := new(Cel)
+		n.refs = 1
+		n.pix = tiles_share(&c.pix)
+		cel_release(c)
+		c = n
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -706,29 +832,50 @@ doc_remap :: proc(d: ^Doc, nw, nh: int, f: proc(src: []Color, sw, sh: int, dst: 
 	defer delete(src)
 	dst := make([]Color, nw * nh)
 	defer delete(dst)
+	// text becomes pixels; vector layers keep their outlines, moved once
 	for &l in d.layers {
-		tiles_to_buf(&l.pix, d.w, d.h, src, {})
-		f(src, d.w, d.h, dst, nw, nh, ctx, {})
-		tiles_destroy(&l.pix)
-		l.text.on = false
+		if l.text.on {
+			layer_rasterize(d, &l)
+		}
 		if l.shape != nil {
 			ns := shape_transformed(l.shape, m)
 			shape_release(l.shape)
 			l.shape = ns
 		}
-		l.pix = tiles_make(nw, nh)
-		tiles_from_buf(&l.pix, nw, nh, dst, {})
-		if l.has_mask {
-			tiles_to_buf(&l.mask, d.w, d.h, src, MASK_EMPTY)
-			f(src, d.w, d.h, dst, nw, nh, ctx, MASK_EMPTY)
-			tiles_destroy(&l.mask)
-			l.mask = tiles_make(nw, nh)
-			tiles_from_buf(&l.mask, nw, nh, dst, MASK_EMPTY)
+	}
+	saved := d.active_frame
+	for fi in 0 ..< len(d.frames) {
+		frame_switch(d, fi) // (an empty cel comes back at the old size)
+		for &l in d.layers {
+			if layer_spans(&l) && fi > 0 do continue // their tiles are not per frame
+			if tiles_count(&l.pix) > 0 {
+				tiles_to_buf(&l.pix, d.w, d.h, src, {})
+				f(src, d.w, d.h, dst, nw, nh, ctx, {})
+				tiles_destroy(&l.pix)
+				l.pix = tiles_make(nw, nh)
+				tiles_from_buf(&l.pix, nw, nh, dst, {})
+			} else {
+				tiles_destroy(&l.pix)
+				l.pix = tiles_make(nw, nh)
+			}
+			if l.has_mask {
+				if tiles_count(&l.mask) > 0 {
+					tiles_to_buf(&l.mask, d.w, d.h, src, MASK_EMPTY)
+					f(src, d.w, d.h, dst, nw, nh, ctx, MASK_EMPTY)
+					tiles_destroy(&l.mask)
+					l.mask = tiles_make(nw, nh)
+					tiles_from_buf(&l.mask, nw, nh, dst, MASK_EMPTY)
+				} else {
+					tiles_destroy(&l.mask)
+					l.mask = tiles_make(nw, nh)
+				}
+			}
 		}
 	}
 	mask_release(d.sel)
 	d.sel = nil
 	d.w, d.h = nw, nh
+	frame_switch(d, saved) // every cel has the new size now
 	for &l, i in d.layers {
 		if l.shape != nil do shape_render_layer(d, i)
 	}
@@ -890,6 +1037,13 @@ doc_content_bounds :: proc(d: ^Doc) -> (b: Box, ok: bool) {
 		if lb, lok := tiles_bounds(&l.pix, d.w, d.h, {}); lok {
 			b = box_union(b, lb)
 			ok = true
+		}
+		for c in l.cels {
+			if c == nil do continue
+			if lb, lok := tiles_bounds(&c.pix, d.w, d.h, {}); lok {
+				b = box_union(b, lb)
+				ok = true
+			}
 		}
 	}
 	return

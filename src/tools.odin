@@ -173,7 +173,10 @@ sel_mode_now :: proc() -> Sel_Mode {
 
 begin_drag :: proc(btn: int, p: Vec2) {
 	t := eff_tool()
-	if t != .Hand && t != .Zoom do options_show_tool() // the options bar follows the tool in use
+	if t != .Hand && t != .Zoom {
+		options_show_tool() // the options bar follows the tool in use
+		stop_playback()
+	}
 	d := doc
 	drag.active = true
 	drag.btn = btn
@@ -297,7 +300,7 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		}
 	case .Crop:
 		crop_mouse_down(p)
-	case .Hand, .Grid, .Mirror, .Perspective:
+	case .Hand, .Grid, .Mirror, .Perspective, .Seamless:
 		drag.active = false
 	case .Zoom:
 		drag.active = false
@@ -405,7 +408,7 @@ update_drag :: proc(p: Vec2) {
 		crop_mouse_drag(p)
 	case .Text:
 		if drag.moved do text_drag(p)
-	case .Bucket, .Wand, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective:
+	case .Bucket, .Wand, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective, .Seamless:
 	}
 }
 
@@ -467,7 +470,7 @@ end_drag :: proc() {
 		crop_mouse_up()
 	case .Line:
 		line_mouse_up(drag.cur)
-	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom, .Grid, .Mirror, .Perspective:
+	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom, .Grid, .Mirror, .Perspective, .Seamless:
 	}
 	drag.active = false
 }
@@ -479,7 +482,7 @@ canvas_update :: proc(vp: Rect) {
 	if !d.view_init {
 		view_fit(d)
 	}
-	over := ui.layer == ui.input_layer && in_rect(vp, ui.mx, ui.my)
+	over := ui.layer == ui.input_layer && in_rect(vp, ui.mx, ui.my) && !files_dragging()
 	mx := ui.ptr.x / ui.scale
 	my := ui.ptr.y / ui.scale
 	p := screen_to_canvas(mx, my)
@@ -533,7 +536,7 @@ canvas_update :: proc(vp: Rect) {
 		switch t {
 		case .Hand:
 			ui.cursor = .RESIZE_ALL
-		case .Grid, .Mirror, .Perspective:
+		case .Grid, .Mirror, .Perspective, .Seamless:
 		case .Zoom:
 			ui.cursor = .POINTING_HAND
 		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Line:
@@ -594,8 +597,10 @@ view_fit :: proc(d: ^Doc) {
 	if vp.w <= 0 || vp.h <= 0 {
 		return
 	}
-	zx := f32(vp.w - 40) / f32(d.w)
-	zy := f32(vp.h - 40) / f32(d.h)
+	// a small viewport (a very large UI scale) keeps its room for the painting
+	margin := min(40, min(vp.w, vp.h) / 5)
+	zx := f32(vp.w - margin) / f32(d.w)
+	zy := f32(vp.h - margin) / f32(d.h)
 	z := clamp(min(zx, zy), ZOOM_MIN, ZOOM_MAX)
 	if z > 1 {
 		z = f32(int(z))

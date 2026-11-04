@@ -6,18 +6,41 @@ import "core:os"
 import "core:strconv"
 import "core:strings"
 
-choose_scale :: proc() -> i32 {
-	if ui_scale_pref > 0 {
-		return i32(ui_scale_pref)
-	}
-	mh := gfx_monitor_height()
+// UI scale, in percent: physical pixels per 100 logical ones.
+UI_SCALE_MIN :: 100
+UI_SCALE_MAX :: 400
+UI_SCALE_STEP :: 5
+UI_SCALE_AUTO_STEP :: 25
+// Auto aims to show about this much logical space on a full screen.
+UI_AUTO_W :: 1280
+UI_AUTO_H :: 720
+// The layout needs at least this much, whatever the scale.
+UI_MIN_W :: 900
+UI_MIN_H :: 560
+
+// A scale read from the preferences or the command line. 0 is Auto; 1-4 are the whole multiples
+// older versions stored.
+ui_scale_parse :: proc(v: int) -> int {
 	switch {
-	case mh >= 2000:
-		return 3
-	case mh >= 1350:
-		return 2
+	case v <= 0:
+		return 0
+	case v <= 4:
+		return v * 100
 	}
-	return 1
+	return clamp(v, UI_SCALE_MIN, UI_SCALE_MAX)
+}
+
+// What Auto picks for a monitor of this many physical pixels.
+ui_scale_auto :: proc(mon_w, mon_h: int) -> int {
+	pct := min(mon_w * 100 / UI_AUTO_W, mon_h * 100 / UI_AUTO_H)
+	return clamp(pct / UI_SCALE_AUTO_STEP * UI_SCALE_AUTO_STEP, UI_SCALE_MIN, UI_SCALE_MAX)
+}
+
+// The scale to use: the preference (0 = Auto), lowered if the window couldn't hold the layout at it.
+ui_scale_choose :: proc(pref, mon_w, mon_h, win_w, win_h: int) -> int {
+	want := pref > 0 ? pref : ui_scale_auto(mon_w, mon_h)
+	fit := min(win_w * 100 / UI_MIN_W, win_h * 100 / UI_MIN_H) / UI_SCALE_STEP * UI_SCALE_STEP
+	return max(min(want, fit), UI_SCALE_MIN)
 }
 
 // Paints a small sample so the UI can be inspected without user input (--demo).
@@ -92,6 +115,7 @@ demo_setup :: proc() {
 main :: proc() {
 	shot_path := ""
 	win_w, win_h := 0, 0
+	scale_arg := -1
 	shot_frame := 8
 	demo := false
 	dlg_arg := -1
@@ -110,7 +134,7 @@ main :: proc() {
 			shot_path = args[i + 1]
 			i += 1
 		case a == "--scale" && i + 1 < len(args):
-			ui_scale_pref, _ = strconv.parse_int(args[i + 1])
+			scale_arg, _ = strconv.parse_int(args[i + 1])
 			i += 1
 		case a == "--size" && i + 1 < len(args):
 			wh := strings.split(args[i + 1], "x", context.temp_allocator)
@@ -179,6 +203,7 @@ main :: proc() {
 	set_fg(fg)
 	tool_groups_default()
 	prefs_load()
+	if scale_arg >= 0 do ui_scale_pref = ui_scale_parse(scale_arg)
 	render_init()
 	brand_init()
 	oui_init()
@@ -227,13 +252,14 @@ main :: proc() {
 		}
 
 		sw, sh := int(gfx.pw), int(gfx.ph)
-		ui.scale = choose_scale()
-		// never let the logical resolution drop below what the layout needs
-		for ui.scale > 1 && (sw / int(ui.scale) < 900 || sh / int(ui.scale) < 560) {
-			ui.scale -= 1
+		mon_w, mon_h := gfx_monitor_size()
+		scale := f32(ui_scale_choose(ui_scale_pref, mon_w, mon_h, sw, sh)) / 100
+		if ui.scale > 0 && scale != ui.scale {
+			views_rescale(ui.scale / scale)
 		}
+		ui.scale = scale
 		gfx_set_scale(ui.scale)
-		ui.w, ui.h = max(sw / int(ui.scale), 1), max(sh / int(ui.scale), 1)
+		ui.w, ui.h = max(int(f32(sw) / ui.scale), 1), max(int(f32(sh) / ui.scale), 1)
 
 		ui_begin_frame()
 		ui.input_layer = (dialog.kind != .None ? 2 : 0) + (popup.open ? 1 : 0)

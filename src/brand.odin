@@ -22,11 +22,11 @@ brand_init :: proc() {
 // Draws the logo LOGO_SIZE * scale logical px wide, rendered at the window's physical resolution.
 logo_draw :: proc(x, y, scale: i32) {
 	size := LOGO_SIZE * scale
-	px := size * i32(gfx.scale)
+	px := phys_size(size)
 	t, ok := logo_cache[px]
 	if !ok {
 		t = tex_from_pixels(svg_render(LOGO_SVG, int(px), int(px), context.temp_allocator), int(px), int(px), .Point)
 		logo_cache[px] = t
 	}
-	draw_tex(t, {0, 0, f32(px), f32(px)}, {f32(x), f32(y), f32(size), f32(size)})
+	draw_tex_exact(t, {0, 0, f32(px), f32(px)}, f32(x), f32(y))
 }

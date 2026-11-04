@@ -1,6 +1,7 @@
 package pangolin
 
 import "core:fmt"
+import "core:math"
 import "core:strings"
 
 Dialog_Kind :: enum {
@@ -42,7 +43,7 @@ Dialog :: struct {
 
 dialog: Dialog
 
-ui_scale_pref := 0 // 0 = auto
+ui_scale_pref := 0 // percent; 0 = auto
 
 DIALOG_W_DEFAULT :: 260
 
@@ -88,8 +89,10 @@ dialog_open :: proc(k: Dialog_Kind) {
 		dialog.b = 100
 		dialog.c = int(export_format)
 	case .Prefs:
-		dialog.a = ui_scale_pref
+		dialog.a = ui_scale_pref // to go back to on Cancel
 		dialog.b = bg_mode
+		dialog.d = ui_scale_pref
+		dialog.flag = ui_scale_pref == 0
 	case .Curves:
 		if !curves_open() {
 			dialog.kind = .None
@@ -565,17 +568,27 @@ dlg_brush_settings :: proc() {
 	}
 }
 
-UI_SCALE_NAMES := [?]string{"Auto", "1x", "2x", "3x", "4x"}
 BG_MODE_NAMES := [?]string{"Checkerboard", "Black", "White", "Grey"}
 
 dlg_prefs :: proc() {
-	c := dialog_frame("Preferences", 290, 150)
+	c := dialog_frame("Preferences", 290, 164)
 	y := c.y
-	text(c.x, y + 3, "UI scale", C_TEXT)
-	if nv, ch := combo(Rect{c.x + 130, y, 100, 14}, UI_SCALE_NAMES[:], dialog.a); ch {
-		dialog.a = nv
+	// Auto shows what it picked; a chosen scale stays as chosen even while the window limits it
+	shown := int(math.round(ui.scale * 100))
+	if dialog.flag do dialog.d = shown
+	if slider(Rect{c.x, y, c.w - 56, 14}, &dialog.d, UI_SCALE_MIN, UI_SCALE_MAX, "UI scale", "Size of the whole interface", "%", snap_to = UI_SCALE_STEP) {
+		dialog.flag = false
 	}
-	y += 20
+	checkbox(c.x + c.w - 48, y + 1, "Auto", &dialog.flag, "Size the interface to fit the screen it's on")
+	// applied once the mouse is up: the slider would move under a drag otherwise
+	if !ui.down[0] {
+		ui_scale_pref = dialog.flag ? 0 : dialog.d
+	}
+	y += 18
+	if !dialog.flag && shown < dialog.d {
+		text(c.x, y, fmt.tprintf("This window only fits %d%%", shown), C_TEXT_DIM)
+	}
+	y += 14
 	text(c.x, y + 3, "Transparency shown as", C_TEXT)
 	if nv, ch := combo(Rect{c.x + 130, y, 100, 14}, BG_MODE_NAMES[:], dialog.b); ch {
 		dialog.b = nv
@@ -586,10 +599,10 @@ dlg_prefs :: proc() {
 	checkbox(c.x, y, "Show navigator", &show_navigator)
 	ok, cancel := dialog_buttons(c)
 	if cancel {
+		ui_scale_pref = dialog.a
 		dialog_close()
 	}
 	if ok {
-		ui_scale_pref = dialog.a
 		bg_mode = dialog.b
 		dialog_close()
 	}

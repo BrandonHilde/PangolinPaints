@@ -480,8 +480,8 @@ canvas_update :: proc(vp: Rect) {
 		view_fit(d)
 	}
 	over := ui.layer == ui.input_layer && in_rect(vp, ui.mx, ui.my)
-	mx := ui.ptr.x / f32(ui.scale)
-	my := ui.ptr.y / f32(ui.scale)
+	mx := ui.ptr.x / ui.scale
+	my := ui.ptr.y / ui.scale
 	p := screen_to_canvas(mx, my)
 	// grid snapping applies to the action, not to hovering: handles stay reachable
 	if drag.active && tool_snaps(drag.tool) {
@@ -512,8 +512,8 @@ canvas_update :: proc(vp: Rect) {
 		drag.pan_active = true
 	}
 	if drag.pan_active {
-		d.ox += gfx.mouse_delta.x / f32(ui.scale)
-		d.oy += gfx.mouse_delta.y / f32(ui.scale)
+		d.ox += gfx.mouse_delta.x / ui.scale
+		d.oy += gfx.mouse_delta.y / ui.scale
 		ui.cursor = .RESIZE_ALL
 		if !ui.down[2] && !(t == .Hand && ui.down[0]) {
 			drag.pan_active = false
@@ -604,6 +604,15 @@ view_fit :: proc(d: ^Doc) {
 	d.ox = math.floor(f32(vp.x) + (f32(vp.w) - f32(d.w) * z) / 2)
 	d.oy = math.floor(f32(vp.y) + (f32(vp.h) - f32(d.h) * z) / 2)
 	d.view_init = true
+}
+
+// Views are in logical units: `k` (old UI scale / new) keeps every painting where it is on screen.
+views_rescale :: proc(k: f32) {
+	for d in docs {
+		d.zoom = clamp(d.zoom * k, ZOOM_MIN, ZOOM_MAX)
+		d.ox *= k
+		d.oy *= k
+	}
 }
 
 // ---------------------------------------------------------------------------

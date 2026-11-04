@@ -213,10 +213,11 @@ gfx_time :: proc() -> f64 {
 	return f64(sdl.GetPerformanceCounter() - gfx.t0) / f64(sdl.GetPerformanceFrequency())
 }
 
-// The display the window opened on, in pixels.
-gfx_monitor_height :: proc() -> int {
-	dm := sdl.GetDesktopDisplayMode(sdl.GetPrimaryDisplay())
-	return dm != nil ? int(dm.h) : 1080
+// The display the window is on, in physical pixels.
+gfx_monitor_size :: proc() -> (w, h: int) {
+	dm := sdl.GetDesktopDisplayMode(sdl.GetDisplayForWindow(gfx.win))
+	if dm == nil do return 1920, 1080
+	return int(f32(dm.w) * dm.pixel_density), int(f32(dm.h) * dm.pixel_density)
 }
 
 gfx_set_title :: proc(s: string) {
@@ -472,11 +473,11 @@ gfx_show_cursor :: proc(show: bool) {
 
 // Frame ----------------------------------------------------------------------
 
-gfx_set_scale :: proc(s: i32) {
-	if f32(s) != gfx.scale {
+gfx_set_scale :: proc(s: f32) {
+	if s != gfx.scale {
 		shape_clear_cache()
 	}
-	gfx.scale = f32(s)
+	gfx.scale = s
 	sdl.SetRenderScale(gfx.ren, gfx.scale, gfx.scale)
 }
 
@@ -610,6 +611,16 @@ draw_tex :: proc(t: Texture, src: sdl.FRect, dst: sdl.FRect, tint := WHITE) {
 	sdl.SetTextureAlphaMod(t.t, tint.a)
 	s, d := src, dst
 	sdl.RenderTexture(gfx.ren, t.t, &s, &d)
+}
+
+// A logical size in whole physical pixels, for textures rendered at the screen's resolution.
+phys_size :: proc(size: i32) -> i32 {
+	return i32(math.round(f32(size) * gfx.scale))
+}
+
+// Part of a texture, texel for physical pixel: stays crisp at fractional UI scales.
+draw_tex_exact :: proc(t: Texture, src: sdl.FRect, x, y: f32, tint := WHITE) {
+	draw_tex(t, src, {snap(x), snap(y), src.w / gfx.scale, src.h / gfx.scale}, tint)
 }
 
 // A texture tiled over `dst` (each repeat is `cell` logical units wide and tall).

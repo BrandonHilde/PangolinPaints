@@ -314,8 +314,8 @@ handle_draw :: proc(p: Vec2) {
 // Brush outline (ellipse in the brush's shape), drawn thicker for small brushes.
 render_cursor :: proc(d: ^Doc) {
 	t := eff_tool()
-	mx := ui.ptr.x / f32(ui.scale)
-	my := ui.ptr.y / f32(ui.scale)
+	mx := ui.ptr.x / ui.scale
+	my := ui.ptr.y / ui.scale
 	if !paint_tool(t) || persp_hover >= 0 || persp_grab >= 0 {
 		return
 	}

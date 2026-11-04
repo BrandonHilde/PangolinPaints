@@ -101,6 +101,10 @@ enabled in the Wacom driver's tablet properties.
 | Enter / Esc | apply / cancel transform or crop |
 
 ## Customising the interface
+Edit > Preferences has the UI scale: a slider from 100% to 400%, or Auto, the default, which sizes the interface to the
+screen the window is on (150% at 1080p, 200% at 1440p, 300% at 4K). A window too small to hold the layout lowers the
+scale until it fits.
+
 The interface is laid out and styled with CSS through [OdinUI](https://gitlab.com/patrick.pixelshuffle/odinui). The
 default theme is [assets/ui/theme.css](assets/ui/theme.css). To change it, create `theme.css` next to the executable:
 it is applied on top of the default theme and reloaded while the program runs, so it only needs what you change.
@@ -118,7 +122,7 @@ dialogs, menus). Icons are a font (`font-family: icons`), so `color` and `font-s
 ## Developer flags
 `--selftest` (tests), `--bench` (timings on a 4000x3000 canvas), `--brush-sheet out.png` (one stroke per preset),
 `--icon-sheet out.png` (every icon at each size and UI scale, and the logo),
-`--demo` (sample painting), `--shot file.png` (screenshot after a few frames),
+`--demo` (sample painting), `--scale 150` (UI scale in percent, 0 for Auto), `--shot file.png` (screenshot after a few frames),
 `--clicks "frame:x,y;..."` (left clicks at window pixels on those frames, for checking the interface with `--shot`).
 
 Icons are SVG files in `assets/icons` (24 x 24, drawn in `currentColor` with round-capped 2 px strokes) and the logo is

@@ -148,7 +148,7 @@ icons_build_atlas :: proc(px: int) -> Texture {
 
 // The atlas for icons drawn `size` logical px wide, rebuilt when the UI scale changes.
 icon_atlas :: proc(size: i32) -> (Texture, i32) {
-	px := size * i32(gfx.scale)
+	px := phys_size(size)
 	a := icon_atlases[size]
 	if a.px != px || !tex_valid(a.tex) {
 		tex_destroy(&a.tex)

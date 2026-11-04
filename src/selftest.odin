@@ -51,6 +51,25 @@ selftest :: proc() -> int {
 	blue := Color{30, 60, 220, 255}
 	white := Color{255, 255, 255, 255}
 
+	// --- UI scale -----------------------------------------------------------
+	{
+		check(ui_scale_auto(1366, 768) == 100, "auto scale on a small laptop")
+		check(ui_scale_auto(1920, 1080) == 150, "auto scale at 1080p")
+		check(ui_scale_auto(2560, 1440) == 200, "auto scale at 1440p")
+		check(ui_scale_auto(3840, 2160) == 300, "auto scale at 4K")
+		check(ui_scale_auto(7680, 4320) == 400, "auto scale tops out")
+		check(ui_scale_auto(1080, 1920) == 100, "auto scale on a portrait monitor goes by its width")
+		check(ui_scale_choose(0, 3840, 2160, 3264, 1836) == 300, "auto applies to a large window")
+		check(ui_scale_choose(0, 3840, 2160, 1280, 800) == 140, "auto lowered to fit a small window")
+		check(ui_scale_choose(350, 3840, 2160, 3840, 2160) == 350, "a chosen scale beats auto")
+		check(ui_scale_choose(100, 3840, 2160, 3840, 2160) == 100, "a chosen scale can be smaller than auto")
+		check(ui_scale_choose(400, 1920, 1080, 900, 560) == 100, "the smallest window still gets 100%")
+		check(ui_scale_parse(0) == 0, "stored auto")
+		check(ui_scale_parse(2) == 200, "stored multiple from older versions")
+		check(ui_scale_parse(125) == 125, "stored percent")
+		check(ui_scale_parse(9000) == UI_SCALE_MAX, "stored scale clamped")
+	}
+
 	// --- tiles --------------------------------------------------------------
 	{
 		g := tiles_make(150, 70)

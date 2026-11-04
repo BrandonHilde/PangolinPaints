@@ -96,7 +96,7 @@ oui_slot :: proc(key, name: string, arg := 0, class := "slot", style := "") -> ^
 // is up; keys only while one of its text fields has focus, so Space, Enter and the arrows keep
 // working as shortcuts.
 oui_begin_frame :: proc() {
-	oui.set_scale(uictx, f32(ui.scale))
+	oui.set_scale(uictx, ui.scale)
 	inp: oui.Input
 	inp.viewport = {f32(gfx.pw), f32(gfx.ph)}
 	inp.dt = ui.dt

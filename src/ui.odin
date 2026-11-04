@@ -43,7 +43,7 @@ shade :: proc(c: Color, k: f32) -> Color {
 
 UI :: struct {
 	w, h:                int, // logical window size
-	scale:               i32,
+	scale:               f32, // physical pixels per logical one
 	mx, my:              i32,
 	pmx, pmy:            i32,
 	ptr:                 Vec2, // pointer in window pixels at full precision (the pen tip while the pen drives)
@@ -190,7 +190,7 @@ clip_end :: proc() {
 
 icon :: proc(ic: Icon, x, y: i32, c: Color, size: i32 = ICON_SIZE) {
 	tex, px := icon_atlas(size)
-	draw_tex(tex, {f32(int(ic) * int(px)), 0, f32(px), f32(px)}, {f32(x), f32(y), f32(size), f32(size)}, c)
+	draw_tex_exact(tex, {f32(int(ic) * int(px)), 0, f32(px), f32(px)}, f32(x), f32(y), c)
 }
 
 icon_centered :: proc(ic: Icon, r: Rect, c: Color, size: i32 = ICON_SIZE) {
@@ -242,8 +242,8 @@ ui_begin_frame :: proc() {
 	}
 	ui.ptr = m
 	ui.pmx, ui.pmy = ui.mx, ui.my
-	ui.mx = i32(m.x) / ui.scale
-	ui.my = i32(m.y) / ui.scale
+	ui.mx = i32(m.x / ui.scale)
+	ui.my = i32(m.y / ui.scale)
 	for i in 0 ..< 3 {
 		ui.down[i] = gfx.m_down[i]
 		ui.pressed[i] = gfx.m_pressed[i]
@@ -498,8 +498,9 @@ slider_chunk :: proc(v, lo, hi: int, suffix: string, curve: f32, dir := 0) -> in
 	return clamp(n * step, lo, hi)
 }
 
-// `tint` colours the filled part (the colour picker uses its channel colours).
-slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix := "", curve: f32 = 1, div := 1, tint_in := Color{}) -> bool {
+// `tint` colours the filled part (the colour picker uses its channel colours). `snap_to` limits a
+// straight slider to multiples of it above `lo`.
+slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix := "", curve: f32 = 1, div := 1, tint_in := Color{}, snap_to := 1) -> bool {
 	tint := tint_in == {} ? C_ACCENT : tint_in
 	id := make_id(r, label)
 	_, held, hover := button_behavior(id, r, tip)
@@ -509,7 +510,7 @@ slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix :
 		if curve != 1 {
 			t = math.pow(t, curve)
 		}
-		nv := lo + int(t * f32(hi - lo) + 0.5)
+		nv := lo + int(t * f32(hi - lo) / f32(snap_to) + 0.5) * snap_to
 		nv = clamp(nv, lo, hi)
 		if ui.shift do nv = slider_chunk(nv, lo, hi, suffix, curve)
 		if nv != v^ {
@@ -518,7 +519,7 @@ slider :: proc(r: Rect, v: ^int, lo, hi: int, label: string, tip := "", suffix :
 		}
 	}
 	if hover && ui.wheel != 0 {
-		step := 1
+		step := snap_to
 		if curve != 1 {
 			step = max(v^ / 10, 1)
 		}

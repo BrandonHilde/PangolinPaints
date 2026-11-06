@@ -156,7 +156,7 @@ take it on), `--size WxH`, `--scale N` (UI scale in percent for this run: not sa
 `--icon-sheet out.png` (every icon at each size and UI scale, and the logo).
 
 Icons are SVG files in `assets/icons` (24 x 24, drawn in `currentColor` with round-capped 2 px strokes) and the logo is
-`assets/logo.svg`; both are built into the executable and rasterised at the screen's resolution by `src/svg.odin`.
+`assets/icon`; both are built into the executable and rasterised at the screen's resolution by `src/svg.odin`.
 
 ## License
 BSD 3-Clause. See [LICENSE](LICENSE).

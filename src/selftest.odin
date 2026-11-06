@@ -973,6 +973,8 @@ selftest :: proc() -> int {
 		delete(pm)
 	}
 
+	check(icons_ok(), "the app icon is there at every size")
+
 	if fails == 0 {
 		fmt.println("selftest: all passed")
 	} else {
@@ -1109,7 +1111,7 @@ icon_sheet :: proc(path: string) -> int {
 	ly := 10 + rows * row_h
 	x := 10
 	for s in ([?]int{16, 32, 48, 64, 128, 256}) {
-		lp := svg_render(LOGO_SVG, s, s, context.temp_allocator)
+		lp := logo_pixels_at(i32(s))
 		put(pix, w, h, lp, s, s, x, ly, WHITE)
 		x += s + 12
 	}

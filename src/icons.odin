@@ -68,6 +68,7 @@ Icon :: enum {
 	Eye_Off,
 	Refresh,
 	Play,
+	Node_Graph,
 }
 
 ICON_SVG := [Icon]string {
@@ -125,6 +126,7 @@ ICON_SVG := [Icon]string {
 	.Lock_Alpha = #load("../assets/icons/lock_alpha.svg", string),
 	.Text = #load("../assets/icons/text.svg", string),
 	.Canvas_Mode = #load("../assets/icons/canvas_mode.svg", string),
+	.Node_Graph = #load("../assets/icons/node_graph.svg", string),
 	.Seamless = #load("../assets/icons/seamless.svg", string),
 	.Perspective = #load("../assets/icons/perspective.svg", string),
 	.Film = #load("../assets/icons/film.svg", string),

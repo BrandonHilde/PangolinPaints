@@ -66,7 +66,6 @@ Macro_Cmd :: struct {
 
 // Commands that are nodes as they are. The tools (Tool_Brush ..= Tool_Seamless) are added to these.
 MACRO_CMDS := [?]Macro_Cmd {
-	{.Save, "File", "Save"},
 	{.Cut, "Edit", "Cut"},
 	{.Copy, "Edit", "Copy"},
 	{.Copy_Merged, "Edit", "Copy Merged"},
@@ -133,6 +132,7 @@ MACRO_CMD_NODES := [?]struct {
 	{.Rotate_Any, "image.Rotate"},
 	{.Layer_Props, "layer.Opacity"},
 	{.Export, "file.Export"},
+	{.Save, "file.Save"},
 }
 
 // Commands that are not nodes: they ask for a file, open a window, only change the view, or would undo the macro itself.
@@ -207,8 +207,8 @@ color :: proc(key, name: string, def: Color, help: string) -> Macro_Setting {
 }
 
 @(private = "file")
-text_setting :: proc(key, name, def, help: string) -> Macro_Setting {
-	return {key = key, name = name, type = .Text, def = {text = def}, help = help}
+text_setting :: proc(key, name, def, help: string, browse := false) -> Macro_Setting {
+	return {key = key, name = name, type = .Text, def = {text = def}, help = help, browse = browse}
 }
 
 @(private = "file")
@@ -317,7 +317,9 @@ macro_catalogue_build :: proc() {
 		choice("format", "Format", formats, 0, "The file format. A PNG sequence and an animated GIF need more than one frame."),
 		num("quality", "Quality", 1, 100, 90, "", "JPEG quality: higher looks better and makes a bigger file."),
 		num("scale", "Scale", 1, 1000, 100, "%", "The size of the exported image, as a percentage of the painting."),
-		text_setting("path", "File", "{dir}/{name}.{ext}", "Where to write it. {dir} is the painting's folder, {name} its file name, {frame} the frame number and {ext} the format's extension."))
+		text_setting("path", "File", "{dir}/{name}.{ext}", "Where to write it: type it, or pick it with the ... button. {dir} is the painting's folder, {name} its file name, {frame} the frame number and {ext} the format's extension.", true))
+	node("file.Save", "Save", "File", "Save the painting with all its layers as a .ppnt project, without asking where.",
+		text_setting("path", "File", "", "Leave it empty to save to the painting's own file. Or set where to save it, typed or picked with the ... button: the painting then belongs to that file. {dir} is the painting's folder and {name} its file name.", true))
 }
 
 // Why the active layer can't be changed, or "".
@@ -424,6 +426,15 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 		f := macro_int(args, 0) - 1
 		if f < 0 || f >= len(d.frames) do return false, "there is no such frame"
 		set_frame(f)
+	case "file.Save":
+		if t := strings.trim_space(args[0].text); t != "" {
+			path, pok, pmsg := macro_export_path(d, t, "ppnt")
+			if !pok do return false, pmsg
+			if !file_save_to(d, path) do return false, "it could not be saved"
+		} else {
+			if d.path == "" do return false, "the painting has never been saved: choose a file in the Save node"
+			if !file_save(d, false) do return false, "it could not be saved"
+		}
 	case "file.Export":
 		f := Export_Format(macro_int(args, 0))
 		if int(f) >= EXPORT_STILL_FORMATS && len(d.frames) < 2 do return false, "this format needs more than one frame"
@@ -461,10 +472,6 @@ macro_exec_cmd :: proc(d: ^Doc, c: Cmd) -> (ok: bool, msg: string) {
 		if !l.has_mask do return false, "the layer has no mask"
 	case .Paste:
 		if clip.pix == nil do return false, "the clipboard is empty"
-	case .Save:
-		if d.path == "" do return false, "the painting has never been saved, so it has no file to save to"
-		if !file_save(d, false) do return false, "it could not be saved"
-		return true, ""
 	}
 	run_cmd(c)
 	return true, ""
@@ -531,7 +538,12 @@ macro_export_path :: proc(d: ^Doc, tmpl, ext: string) -> (path: string, ok: bool
 		if dir == "" do return "", false, "the painting has never been saved, so the file needs a full path"
 		p = fmt.tprintf("%s/%s", dir, p)
 	}
-	if path_ext(p) == "" do p = fmt.tprintf("%s.%s", p, ext)
+	// the file gets the format's extension, whatever was typed
+	if path_ext(p) == "" {
+		p = fmt.tprintf("%s.%s", p, ext)
+	} else if lower_ext(p) != fmt.tprintf(".%s", ext) {
+		p = fmt.tprintf("%s.%s", strings.trim_suffix(p, path_ext(p)), ext)
+	}
 	return p, true, ""
 }
 

@@ -306,6 +306,9 @@ panel_menubar :: proc() {
 	if macro_recording() && obutton("Stop Recording", 0, {"Recording a macro", "The commands you use are being recorded as a macro. Click to stop and save it."}, true, true, id = "rec-stop") {
 		run_cmd(.Macro_Record)
 	}
+	if c, _ := oui_icon_button("node-editor", .Node_Graph, cmd_tip("Node Editor", .Macro_Editor), {lit = macro_editor_on(), enabled = true}); c {
+		run_cmd(.Macro_Editor)
+	}
 	if c, _ := oui_icon_button("canvas-mode", .Canvas_Mode, cmd_tip("Canvas Mode", .Toggle_Canvas_Mode), {lit = canvas_mode, enabled = true}); c {
 		run_cmd(.Toggle_Canvas_Mode)
 	}

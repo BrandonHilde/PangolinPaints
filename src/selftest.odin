@@ -1193,6 +1193,25 @@ selftest :: proc() -> int {
 		d.path = ""
 		_, epok, _ = macro_export_path(d, "{dir}/x.png", "png")
 		check(!epok, "an unsaved painting has no {dir}")
+		ep, epok, _ = macro_export_path(d, "C:/out/pic.png", "jpg")
+		check(epok && ep == "C:/out/pic.jpg", "an export gets its format's extension")
+		sv := macro_new("Save")
+		s1 := macro_add_node(sv, "file.Save", 200, 0)
+		macro_link(sv, macro_start(sv), s1.id)
+		sok, smsg, _ := macro_run(sv)
+		check(!sok && strings.contains(smsg, "never been saved"), "Save on a painting with no file and no file set says so")
+		macro_free(sv)
+
+		// the node search: names, then choices picked in advance
+		hits := macro_search("soft light")
+		check(len(hits) > 0 && hits[0].def.id == "layer.Blend" && hits[0].def.settings[hits[0].setting].choices[hits[0].choice] == "Soft Light", "typing a blend mode finds Layer Blend Mode with it picked")
+		hits = macro_search("png")
+		check(len(hits) > 0 && hits[0].def.id == "file.Export" && hits[0].def.settings[hits[0].setting].choices[hits[0].choice] == "png", "typing a format finds Export set to it")
+		hits = macro_search("gaussian")
+		check(len(hits) > 0 && hits[0].def.id == "fx.Gaussian_Blur" && hits[0].setting < 0, "typing a node's name finds the node first")
+		hits = macro_search("")
+		check(len(hits) == len(macro_shared_defs()) - 1 + len(macro_catalogue()), "with nothing typed, every node but Start is offered")
+		check(len(macro_search("zzzz")) == 0, "nothing matches nonsense")
 	}
 
 	check(icons_ok(), "the app icon is there at every size")

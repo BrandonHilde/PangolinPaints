@@ -435,6 +435,8 @@ run_cmd :: proc(cmd: Cmd) {
 	d := doc
 	if id, ok := macro_cmd_id(cmd); ok {
 		macro_record(id)
+	} else if cmd == .Save {
+		macro_record("file.Save")
 	} else if cmd >= .Opacity_10 && cmd <= .Opacity_100 {
 		macro_record("brush.Opacity", "opacity", fmt.tprint((int(cmd) - int(Cmd.Opacity_10) + 1) * 10))
 	}

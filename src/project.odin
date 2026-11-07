@@ -425,6 +425,11 @@ file_save :: proc(d: ^Doc, save_as: bool) -> bool {
 			path = fmt.tprintf("%s.ppnt", p)
 		}
 	}
+	return file_save_to(d, path)
+}
+
+// Saves the painting to `path` without asking; from then on it is the painting's file.
+file_save_to :: proc(d: ^Doc, path: string) -> bool {
 	data := project_encode(d)
 	if !write_file(path, data) {
 		show_message("Save", fmt.tprintf("Could not write %s", path_basename(path)))

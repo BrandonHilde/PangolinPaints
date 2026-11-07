@@ -706,8 +706,9 @@ export_run :: proc(f: Export_Format, quality, scale_pct: int) {
 	}
 }
 
-// Writes the export to `path` without asking. `msg` says what was written, or why it failed.
-export_to_path :: proc(d: ^Doc, path: string, f: Export_Format, quality, scale_pct: int) -> (ok: bool, msg: string) {
+// Writes the export to `path` without asking: the visible image, or with `layer` >= 0 that layer alone (a still
+// format only). `msg` says what was written, or why it failed.
+export_to_path :: proc(d: ^Doc, path: string, f: Export_Format, quality, scale_pct: int, layer := -1) -> (ok: bool, msg: string) {
 	fail := fmt.tprintf("Failed to write %s", path_basename(path))
 	#partial switch f {
 	case .GIF:
@@ -719,7 +720,13 @@ export_to_path :: proc(d: ^Doc, path: string, f: Export_Format, quality, scale_p
 		if n == 0 do return false, fail
 		return true, fmt.tprintf("Exported %d frames as %s_001.png ...", n, path_stem(path))
 	}
-	pix, w, h := export_frame_pixels(d, d.active_frame, scale_pct)
+	pix: []Color
+	w, h: int
+	if layer >= 0 {
+		pix, w, h = export_layer_pixels(d, layer, scale_pct)
+	} else {
+		pix, w, h = export_frame_pixels(d, d.active_frame, scale_pct)
+	}
 	defer delete(pix)
 	data := export_encode(pix, w, h, f, quality)
 	if data == nil || !write_file(path, data) do return false, fail
@@ -746,7 +753,19 @@ export_png_sequence :: proc(d: ^Doc, path: string, scale_pct: int) -> int {
 export_frame_pixels :: proc(d: ^Doc, f, scale_pct: int) -> (pix: []Color, w, h: int) {
 	pix = make([]Color, d.w * d.h)
 	frame_composite(d, f, pix)
-	w, h = d.w, d.h
+	return export_scaled(pix, d.w, d.h, scale_pct)
+}
+
+// One layer's own pixels in the current frame, whether it is shown or not and whatever its opacity and blend mode, at
+// the export scale. The caller frees it.
+export_layer_pixels :: proc(d: ^Doc, layer, scale_pct: int) -> (pix: []Color, w, h: int) {
+	pix = layer_flat(d, &d.layers[layer], context.allocator)
+	return export_scaled(pix, d.w, d.h, scale_pct)
+}
+
+// `pix` scaled to `scale_pct` (it is freed if a new buffer replaces it).
+export_scaled :: proc(pix_in: []Color, w_in, h_in, scale_pct: int) -> (pix: []Color, w, h: int) {
+	pix, w, h = pix_in, w_in, h_in
 	if scale_pct != 100 {
 		nw, nh := max(w * scale_pct / 100, 1), max(h * scale_pct / 100, 1)
 		out := make([]Color, nw * nh)

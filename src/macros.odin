@@ -58,6 +58,37 @@ macro_renamed :: proc(old, new: string) {
 	tool_groups_rename_macro(old, new)
 }
 
+// A copy of the painting where the Document wire splits: each branch starts from it.
+Macro_Snap :: struct {
+	s:            State,
+	active_layer: int,
+	edit_mask:    bool,
+}
+
+macro_snapshot :: proc() -> rawptr {
+	if doc == nil do return nil
+	sn := new(Macro_Snap)
+	sn^ = {state_clone(&doc.s), doc.active_layer, doc.edit_mask}
+	return sn
+}
+
+macro_restore :: proc(p: rawptr) {
+	sn := (^Macro_Snap)(p)
+	d := doc
+	state_destroy(&d.s)
+	d.s = state_clone(&sn.s)
+	d.active_layer, d.edit_mask = sn.active_layer, sn.edit_mask
+	doc_clamp(d)
+	doc_touch_all(d)
+	d.sel_dirty = true
+}
+
+macro_snapshot_free :: proc(p: rawptr) {
+	sn := (^Macro_Snap)(p)
+	state_destroy(&sn.s)
+	free(sn)
+}
+
 Macro_Cmd :: struct {
 	cmd:  Cmd,
 	cat:  string,
@@ -147,7 +178,8 @@ MACRO_CMD_EXCLUDED := [?]Cmd {
 
 SEL_MODES := [4]string{"replace", "add", "subtract", "intersect"}
 SEL_UNITS := [2]string{"pixels", "percent"}
-LAYER_PICKS := [5]string{"above", "below", "top", "bottom", "number"}
+LAYER_PICKS := [6]string{"name", "above", "below", "top", "bottom", "number"}
+EXPORT_WHAT := [2]string{"image", "active layer"}
 
 @(private = "file")
 cat: [dynamic]Macro_Def
@@ -285,9 +317,13 @@ macro_catalogue_build :: proc() {
 	node("image.Rotate", "Rotate by Angle", "Image", cmd_help(.Rotate_Any), num("angle", "Angle", -359, 359, 90, " deg", "How far to turn the painting, clockwise. Negative angles turn it counter-clockwise."))
 
 	// layers
-	node("layer.Pick", "Pick Layer", "Layer", "Make another layer the active one.",
-		choice("which", "Layer", LAYER_PICKS[:], 0, "The layer above or below the active one, the top or bottom layer, or a layer by its number."),
-		num("number", "Number", 1, 10000, 1, "", "With Layer set to number: 1 is the bottom layer."))
+	pick_name := text_setting("name", "Name", "Layer 1", "The layer's name, as the layer list shows it. Capitals don't matter; if no layer has exactly this name, the first whose name contains it is picked.")
+	pick_name.only = "which=name"
+	pick_number := num("number", "Number", 1, 10000, 1, "", "The layer's number: 1 is the bottom layer.")
+	pick_number.only = "which=number"
+	node("layer.Pick", "Pick Layer", "Layer", "Make another layer the active one, so the steps after this work on it: by its name, next to the active one, the top or bottom one, or by its number.",
+		choice("which", "Layer", LAYER_PICKS[:], 0, "How to find the layer: by its name, the one above or below the active layer, the top or bottom layer, or by its number."),
+		pick_name, pick_number)
 	node("layer.Opacity", "Layer Opacity", "Layer", "Set how solid the active layer is.", num("opacity", "Opacity", 0, 100, 100, "%", "100 covers what is below, 0 hides it."))
 	node("layer.Blend", "Layer Blend Mode", "Layer", "Set how the active layer mixes with the layers below it.", choice("blend", "Blend mode", blends, 0, BLEND_TIP))
 	node("layer.Visible", "Show or Hide Layer", "Layer", "Show or hide the active layer.", flag("visible", "Visible", true, "Show the layer. A hidden layer can't be painted on and isn't exported."))
@@ -313,16 +349,25 @@ macro_catalogue_build :: proc() {
 	}
 
 	// file
-	node("file.Export", "Export", "File", "Save a flat copy of the visible layers, without asking where.",
-		choice("format", "Format", formats, 0, "The file format. A PNG sequence and an animated GIF need more than one frame."),
+	node("file.Export", "Export", "File", "Save a flat copy of the visible layers, or of the active layer alone, without asking where.",
+		choice("what", "What", EXPORT_WHAT[:], 0, "The whole picture (all visible layers), or only the active layer: pick the layer first with Pick Layer."),
+		choice("format", "Format", formats, 0, "The file format. A PNG sequence and an animated GIF need more than one frame, and export the whole picture."),
 		num("quality", "Quality", 1, 100, 90, "", "JPEG quality: higher looks better and makes a bigger file."),
-		num("scale", "Scale", 1, 1000, 100, "%", "The size of the exported image, as a percentage of the painting."),
+		num("scale", "Scale", 10, 400, 100, "%", "The size of the exported image, as a percentage of the painting."),
 		text_setting("path", "File", "{dir}/{name}.{ext}", "Where to write it: type it, or pick it with the ... button. {dir} is the painting's folder, {name} its file name, {frame} the frame number and {ext} the format's extension.", true))
 	node("file.Save", "Save", "File", "Save the painting with all its layers as a .ppnt project, without asking where.",
 		text_setting("path", "File", "", "Leave it empty to save to the painting's own file. Or set where to save it, typed or picked with the ... button: the painting then belongs to that file. {dir} is the painting's folder and {name} its file name.", true))
 }
 
 // Why the active layer can't be changed, or "".
+// The layer called `name` (any capitals), else the first whose name contains it, or -1. The top one first, as listed.
+layer_by_name :: proc(d: ^Doc, name: string) -> int {
+	#reverse for &l, i in d.layers do if strings.equal_fold(name_str(&l.name), name) do return i
+	low := strings.to_lower(name, context.temp_allocator)
+	#reverse for &l, i in d.layers do if strings.contains(strings.to_lower(name_str(&l.name), context.temp_allocator), low) do return i
+	return -1
+}
+
 @(private = "file")
 layer_problem :: proc(d: ^Doc) -> string {
 	l := &d.layers[d.active_layer]
@@ -391,17 +436,22 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 		if a % 360 != 0 do doc_rotate_any(d, f32(a))
 	case "layer.Pick":
 		i := d.active_layer
-		switch macro_int(args, 0) {
-		case 0:
+		switch LAYER_PICKS[clamp(macro_int(args, 0), 0, len(LAYER_PICKS) - 1)] {
+		case "name":
+			want := strings.trim_space(args[1].text)
+			if want == "" do return false, "give the name of the layer to pick"
+			i = layer_by_name(d, want)
+			if i < 0 do return false, fmt.tprintf("there is no layer called %s", want)
+		case "above":
 			i += 1
-		case 1:
+		case "below":
 			i -= 1
-		case 2:
+		case "top":
 			i = len(d.layers) - 1
-		case 3:
+		case "bottom":
 			i = 0
-		case:
-			i = macro_int(args, 1) - 1
+		case "number":
+			i = macro_int(args, 2) - 1
 		}
 		if i < 0 || i >= len(d.layers) do return false, "there is no such layer"
 		d.active_layer = i
@@ -436,11 +486,15 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 			if !file_save(d, false) do return false, "it could not be saved"
 		}
 	case "file.Export":
-		f := Export_Format(macro_int(args, 0))
-		if int(f) >= EXPORT_STILL_FORMATS && len(d.frames) < 2 do return false, "this format needs more than one frame"
-		path, pok, pmsg := macro_export_path(d, args[3].text, EXPORT_EXT[f])
+		layer_only := macro_int(args, 0) == 1
+		f := Export_Format(macro_int(args, 1))
+		if int(f) >= EXPORT_STILL_FORMATS {
+			if layer_only do return false, "a layer exports as one picture: pick png, jpg, bmp, tga, qoi or tiff"
+			if len(d.frames) < 2 do return false, "this format needs more than one frame"
+		}
+		path, pok, pmsg := macro_export_path(d, args[4].text, EXPORT_EXT[f])
 		if !pok do return false, pmsg
-		return export_to_path(d, path, f, macro_int(args, 1), macro_int(args, 2))
+		return export_to_path(d, path, f, macro_int(args, 2), macro_int(args, 3), layer_only ? d.active_layer : -1)
 	case:
 		return false, "unknown node"
 	}

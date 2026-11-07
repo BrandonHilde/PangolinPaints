@@ -1008,7 +1008,7 @@ selftest :: proc() -> int {
 		check(ok && v.num == 500, "numbers are kept in range")
 		v, ok = macro_value_parse(&grow.settings[0], "lots")
 		check(!ok && v.num == 5, "text that is not a number gives the default")
-		v, ok = macro_value_parse(&macro_def_find("file.Export").settings[0], "JPG")
+		v, ok = macro_value_parse(&macro_def_find("file.Export").settings[1], "JPG")
 		check(ok && Export_Format(int(v.num)) == .JPG, "choices are stored by name")
 		v, ok = macro_value_parse(&macro_def_find("edit.Fill").settings[0], "#ff000080")
 		check(ok && v.col == Color{255, 0, 0, 128}, "colors with alpha")
@@ -1201,6 +1201,48 @@ selftest :: proc() -> int {
 		sok, smsg, _ := macro_run(sv)
 		check(!sok && strings.contains(smsg, "never been saved"), "Save on a painting with no file and no file set says so")
 		macro_free(sv)
+
+		// branches: each starts from the document where the wire splits; branch 1 keeps its changes
+		bm := macro_new("Branches")
+		b1 := macro_add_node(bm, "cmd.Layer_New", 200, 0)
+		b2 := macro_add_node(bm, "cmd.Layer_Del", 200, 100)
+		bs := macro_start(bm)
+		macro_link(bm, bs, b1.id)
+		macro_link(bm, bs, b2.id)
+		check(len(macro_nexts(bm, bs)) == 2 && macro_nexts(bm, bs)[0] == b1.id, "a node can send the Document wire to several, the top one first")
+		layers0 := len(d.layers)
+		doc_sel_clear(d) // the recording above selected everything
+		_, bmsg, bat := macro_run(bm)
+		check(bat == b2.id && strings.contains(bmsg, "only layer"), "each branch starts from the document as it was where the wire split")
+		check(len(d.layers) == layers0, "a failed branch puts everything back")
+		b2.kind = "cmd.Select_All"
+		bok, bmsg2, _ := macro_run(bm)
+		check(bok && len(d.layers) == layers0 + 1 && d.sel == nil, fmt.tprintf("branch 1 keeps its changes and the others are put back (%s)", bmsg2))
+		check(macro_link_loops(bm, b1.id, b1.id) && !macro_link_loops(bm, b1.id, b2.id), "a wire back into its own branch is a loop")
+		macro_free(bm)
+
+		// picking layers by name, and settings that only show for one choice
+		name_set(&d.layers[0].name, "Background")
+		name_set(&d.layers[len(d.layers) - 1].name, "Hills")
+		d.active_layer = 0
+		check(layer_by_name(d, "hills") == len(d.layers) - 1 && layer_by_name(d, "back") == 0 && layer_by_name(d, "nope") < 0, "layers by name, any capitals, or part of it")
+		pk := macro_new("Pick")
+		p1 := macro_add_node(pk, "layer.Pick", 200, 0)
+		macro_set_arg(pk, p1, "name", "Hills")
+		macro_link(pk, macro_start(pk), p1.id)
+		pok2, pmsg2, _ := macro_run(pk)
+		check(pok2 && d.active_layer == len(d.layers) - 1, fmt.tprintf("Pick Layer by name (%s)", pmsg2))
+		pdef := macro_def_find("layer.Pick")
+		pvals := macro_node_own_values(p1, pdef)
+		check(macro_setting_shown(pdef, &pdef.settings[1], pvals) && !macro_setting_shown(pdef, &pdef.settings[2], pvals), "Pick Layer shows Name, not Number, while it picks by name")
+		macro_free(pk)
+
+		// exporting one layer: its own pixels, not the picture
+		lp, lw, lh := export_layer_pixels(d, len(d.layers) - 1, 100)
+		fp, _, _ := export_frame_pixels(d, d.active_frame, 100)
+		check(lw == d.w && lh == d.h && lp[0].a == 0 && fp[0].a == 255, "a layer exports alone, without the layers under it")
+		delete(lp)
+		delete(fp)
 
 		// the node search: names, then choices picked in advance
 		hits := macro_search("soft light")

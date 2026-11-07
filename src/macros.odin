@@ -58,6 +58,20 @@ macro_renamed :: proc(old, new: string) {
 	tool_groups_rename_macro(old, new)
 }
 
+// Values for a Text setting to pick from: "layers" lists the open painting's layer names, top first, each once.
+macro_suggest :: proc(what: string) -> []string {
+	out := make([dynamic]string, context.temp_allocator)
+	d := doc
+	if what != "layers" || d == nil do return out[:]
+	#reverse for &l in d.layers {
+		name := strings.clone(name_str(&l.name), context.temp_allocator)
+		seen := false
+		for o in out do if strings.equal_fold(o, name) do seen = true
+		if !seen && name != "" do append(&out, name)
+	}
+	return out[:]
+}
+
 // A copy of the painting where the Document wire splits: each branch starts from it.
 Macro_Snap :: struct {
 	s:            State,
@@ -317,8 +331,9 @@ macro_catalogue_build :: proc() {
 	node("image.Rotate", "Rotate by Angle", "Image", cmd_help(.Rotate_Any), num("angle", "Angle", -359, 359, 90, " deg", "How far to turn the painting, clockwise. Negative angles turn it counter-clockwise."))
 
 	// layers
-	pick_name := text_setting("name", "Name", "Layer 1", "The layer's name, as the layer list shows it. Capitals don't matter; if no layer has exactly this name, the first whose name contains it is picked.")
+	pick_name := text_setting("name", "Name", "Layer 1", "The layer's name: pick it from the open painting's layers with the arrow, or type it. Capitals don't matter; if no layer has exactly this name, the first whose name contains it is picked.")
 	pick_name.only = "which=name"
+	pick_name.suggest = "layers"
 	pick_number := num("number", "Number", 1, 10000, 1, "", "The layer's number: 1 is the bottom layer.")
 	pick_number.only = "which=number"
 	node("layer.Pick", "Pick Layer", "Layer", "Make another layer the active one, so the steps after this work on it: by its name, next to the active one, the top or bottom one, or by its number.",

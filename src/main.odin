@@ -115,7 +115,13 @@ main :: proc() {
 	Script_Click :: struct {
 		frame: int,
 		pos:   Vec2,
+		btn:   int, // 0 left, 1 right
 	}
+	Script_Type :: struct {
+		frame: int,
+		text:  string, // typed; ENTER and ESC press those keys
+	}
+	types := make([dynamic]Script_Type)
 	clicks := make([dynamic]Script_Click)
 	hover: Script_Click // moves the pointer without clicking, for checking tooltips with --shot
 	Script_Drag :: struct {
@@ -164,16 +170,24 @@ main :: proc() {
 			dlg_arg, _ = strconv.parse_int(args[i + 1])
 			i += 1
 		case a == "--clicks" && i + 1 < len(args):
-			// "frame:x,y;frame:x,y": left clicks in window pixels, for checking the interface with --shot
+			// "frame:x,y;frame:x,y,r": clicks in window pixels (left, or right with r), for checking the interface with --shot
 			for part in strings.split(args[i + 1], ";", context.temp_allocator) {
 				fp := strings.split(part, ":", context.temp_allocator)
 				if len(fp) != 2 do continue
 				xy := strings.split(fp[1], ",", context.temp_allocator)
-				if len(xy) != 2 do continue
+				if len(xy) < 2 do continue
 				f, _ := strconv.parse_int(fp[0])
 				x, _ := strconv.parse_f32(xy[0])
 				y, _ := strconv.parse_f32(xy[1])
-				append(&clicks, Script_Click{f, {x, y}})
+				append(&clicks, Script_Click{f, {x, y}, len(xy) > 2 && xy[2] == "r" ? 1 : 0})
+			}
+			i += 1
+		case a == "--type" && i + 1 < len(args):
+			// "frame:text;frame:ENTER": typing, for checking text fields with --shot
+			for part in strings.split(args[i + 1], ";", context.temp_allocator) {
+				fs, _, txt := strings.partition(part, ":")
+				f, ok := strconv.parse_int(fs)
+				if ok do append(&types, Script_Type{f, txt})
 			}
 			i += 1
 		case a == "--drag" && i + 1 < len(args):
@@ -281,10 +295,21 @@ main :: proc() {
 				gfx.mouse = c.pos
 			case c.frame:
 				gfx.mouse = c.pos
-				gfx.m_pressed[0], gfx.m_down[0] = true, true
+				gfx.m_pressed[c.btn], gfx.m_down[c.btn] = true, true
 			case c.frame + 1:
 				gfx.mouse = c.pos
-				gfx.m_released[0], gfx.m_down[0] = true, false
+				gfx.m_released[c.btn], gfx.m_down[c.btn] = true, false
+			}
+		}
+		for t in types {
+			if frame_no != t.frame do continue
+			switch t.text {
+			case "ENTER":
+				gfx.key_pressed[key_scancode(.ENTER)] = true
+			case "ESC":
+				gfx.key_pressed[key_scancode(.ESCAPE)] = true
+			case:
+				for r in t.text do append(&gfx.chars, r)
 			}
 		}
 		for d in drags {

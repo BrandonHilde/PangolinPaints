@@ -71,6 +71,23 @@ selftest :: proc() -> int {
 		check(ui_scale_parse(9000) == UI_SCALE_MAX, "stored scale clamped")
 	}
 
+	// --- typing a slider's value (right-click) ---------------------------------------
+	{
+		v, ok := slider_type_parse("70", 1, 1, 1000)
+		check(ok && v == 70, "a typed slider value")
+		v, ok = slider_type_parse(" 70px ", 1, 1, 1000)
+		check(ok && v == 70, "a typed value may keep its suffix")
+		v, ok = slider_type_parse("50 %", 1, 0, 100)
+		check(ok && v == 50, "a typed percentage")
+		v, ok = slider_type_parse("1.25", 100, 1, 300)
+		check(ok && v == 125, "a slider shown in hundredths takes 1.25")
+		v, ok = slider_type_parse("5000", 1, 1, 1000)
+		check(ok && v == 1000, "a typed value is kept in range")
+		_, ok = slider_type_parse("big", 1, 1, 1000)
+		check(!ok, "text that is no number changes nothing")
+		check(slider_value_text(125, 100) == "1.25" && slider_value_text(70, 1) == "70", "a slider's value as it is typed")
+	}
+
 	// --- commands and shortcuts ------------------------------------------------------
 	{
 		has :: proc(c: Cmd, key: KeyboardKey, ctrl, shift: bool) -> bool {

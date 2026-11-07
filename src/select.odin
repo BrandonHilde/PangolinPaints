@@ -259,6 +259,36 @@ doc_sel_set :: proc(d: ^Doc, v: []u8) {
 	d.sel_dirty = true
 }
 
+Sel_Op :: enum {
+	Feather,
+	Grow,
+	Shrink,
+}
+
+SEL_OP_NODES := [Sel_Op]string {
+	.Feather = "sel.Feather",
+	.Grow    = "sel.Grow",
+	.Shrink  = "sel.Shrink",
+}
+
+// Feathers, grows or shrinks the selection by `px` canvas pixels, as one undo step. False if there is no selection.
+doc_sel_modify :: proc(d: ^Doc, op: Sel_Op, px: int) -> bool {
+	if d.sel == nil do return false
+	v := make([]u8, d.w * d.h)
+	copy(v, d.sel.v)
+	switch op {
+	case .Feather:
+		mask_blur(v, d.w, d.h, f32(px))
+	case .Grow:
+		mask_grow(v, d.w, d.h, px)
+	case .Shrink:
+		mask_grow(v, d.w, d.h, -px)
+	}
+	history_push(d)
+	doc_sel_set(d, v)
+	return true
+}
+
 doc_sel_clear :: proc(d: ^Doc) {
 	mask_release(d.sel)
 	d.sel = nil

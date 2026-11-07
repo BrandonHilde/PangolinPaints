@@ -24,6 +24,7 @@ Dialog_Kind :: enum {
 	Font,
 	Workspaces,
 	Group_Rename,
+	Macros,
 	Grid,
 	UI_Scale,
 	Frame_Props,
@@ -57,6 +58,9 @@ dialog_open :: proc(k: Dialog_Kind) {
 	}
 	switch k {
 	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename, .UI_Scale, .Tags:
+	case .Macros:
+		macros_refresh()
+		dialog.b = -1 // fill in the name field
 	case .Frame_Props:
 		dialog.a = doc.frames[doc.active_frame].duration
 	case .Workspaces:
@@ -194,6 +198,8 @@ dialogs_run :: proc() {
 		dlg_workspaces()
 	case .Group_Rename:
 		dlg_group_rename()
+	case .Macros:
+		dlg_macros()
 	}
 }
 
@@ -323,6 +329,7 @@ dlg_image_size :: proc() {
 	if ok {
 		if dialog.a != doc.w || dialog.b != doc.h {
 			doc_image_size(doc, dialog.a, dialog.b, rs)
+			macro_record("image.Size", "width", fmt.tprint(dialog.a), "height", fmt.tprint(dialog.b), "resample", RESAMPLE_KEYS[rs])
 		}
 		dialog_close()
 	}
@@ -337,10 +344,9 @@ dlg_canvas_size :: proc() {
 	y += 22
 	ANCHOR_TIP :: "Where the painting sits in the new canvas. Space is added, or cut away, on the other sides."
 	tip_text(c.x, y + 3, "Anchor", C_TEXT, {"Anchor", ANCHOR_TIP})
-	ANCHORS := [?]string{"Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right"}
 	for i in 0 ..< 9 {
 		r := Rect{c.x + 110 + i32(i % 3) * 18, y + i32(i / 3) * 18, 16, 16}
-		if icon_button(r, dialog.c == i ? .Check : .Minus, {ANCHORS[i], ANCHOR_TIP}, dialog.c == i) {
+		if icon_button(r, dialog.c == i ? .Check : .Minus, {ANCHOR_NAMES[i], ANCHOR_TIP}, dialog.c == i) {
 			dialog.c = i
 		}
 	}
@@ -349,11 +355,9 @@ dlg_canvas_size :: proc() {
 		dialog_close()
 	}
 	if ok {
-		col, row := dialog.c % 3, dialog.c / 3
-		ox := (dialog.a - doc.w) * col / 2
-		oy := (dialog.b - doc.h) * row / 2
 		if dialog.a != doc.w || dialog.b != doc.h {
-			doc_canvas_size(doc, dialog.a, dialog.b, ox, oy)
+			doc_canvas_size_anchored(doc, dialog.a, dialog.b, dialog.c)
+			macro_record("image.Canvas_Size", "width", fmt.tprint(dialog.a), "height", fmt.tprint(dialog.b), "anchor", ANCHOR_KEYS[dialog.c])
 		}
 		dialog_close()
 	}
@@ -372,6 +376,7 @@ dlg_rotate :: proc() {
 	if ok {
 		if dialog.a % 360 != 0 {
 			doc_rotate_any(doc, f32(dialog.a))
+			macro_record("image.Rotate", "angle", fmt.tprint(dialog.a))
 		}
 		dialog_close()
 	}
@@ -406,6 +411,7 @@ dlg_layer_props :: proc() {
 	if ok {
 		history_push(doc)
 		l := &doc.layers[doc.active_layer]
+		layer_props_record(l)
 		l.name = dialog.name
 		l.opacity = u8(dialog.a * 255 / 100)
 		l.blend = Blend(dialog.b)
@@ -599,19 +605,10 @@ dlg_sel_modify :: proc() {
 		dialog_close()
 	}
 	if ok {
-		d := doc
-		v := make([]u8, d.w * d.h)
-		copy(v, d.sel.v)
-		#partial switch dialog.kind {
-		case .Feather:
-			mask_blur(v, d.w, d.h, f32(dialog.a))
-		case .Grow:
-			mask_grow(v, d.w, d.h, dialog.a)
-		case .Shrink:
-			mask_grow(v, d.w, d.h, -dialog.a)
+		op: Sel_Op = dialog.kind == .Feather ? .Feather : dialog.kind == .Grow ? .Grow : .Shrink
+		if doc_sel_modify(doc, op, dialog.a) {
+			macro_record(SEL_OP_NODES[op], "px", fmt.tprint(dialog.a))
 		}
-		history_push(d)
-		doc_sel_set(d, v)
 		dialog_close()
 	}
 }
@@ -656,6 +653,26 @@ dlg_message :: proc() {
 	if ok {
 		dialog_close()
 	}
+}
+
+ANCHOR_NAMES := [9]string{"Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right"}
+ANCHOR_KEYS := [9]string{"top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"}
+
+// Changes the canvas size, keeping the painting at anchor `a` (0..8: top left, top, top right, ... bottom right).
+doc_canvas_size_anchored :: proc(d: ^Doc, w, h, a: int) {
+	col, row := a % 3, a / 3
+	doc_canvas_size(d, w, h, (w - d.w) * col / 2, (h - d.h) * row / 2)
+}
+
+// Records what the Layer Properties window changes on `l`, one node per setting.
+layer_props_record :: proc(l: ^Layer) {
+	if !macro_recording() do return
+	if name_str(&dialog.name) != name_str(&l.name) do macro_record("layer.Rename", "name", name_str(&dialog.name))
+	if dialog.a != int(l.opacity) * 100 / 255 do macro_record("layer.Opacity", "opacity", fmt.tprint(dialog.a))
+	if Blend(dialog.b) != l.blend do macro_record("layer.Blend", "blend", BLEND_NAMES[Blend(dialog.b)])
+	if dialog.flag != l.visible do macro_record("layer.Visible", "visible", dialog.flag ? "1" : "0")
+	if dialog.flag2 != l.locked do macro_record("layer.Lock", "locked", dialog.flag2 ? "1" : "0")
+	if (dialog.c != 0) != l.lock_alpha do macro_record("cmd.Layer_Lock_Alpha")
 }
 
 // A command's name as the menus and tooltips say it, for the shortcuts window.
@@ -706,6 +723,10 @@ shortcut_name :: proc(c: Cmd) -> string {
 	case .Brush_Smaller:      return "Smaller Brush"
 	case .Brush_Bigger:       return "Bigger Brush"
 	case .Help_Keys:          return "Keyboard Shortcuts"
+	case .Macro_Editor:       return "Node Editor"
+	case .Macro_Record:       return "Record Macro"
+	case .Macros:             return "Manage Macros"
+	case .Macro_Import:       return "Import Macro"
 	}
 	return fmt.tprintf("%v", c)
 }

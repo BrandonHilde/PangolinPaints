@@ -110,6 +110,11 @@ Cmd :: enum {
 	Ws_Manage,
 	Ws_Import,
 	Ws_Export,
+	// macros
+	Macro_Editor,
+	Macro_Record,
+	Macros,
+	Macro_Import,
 	// misc
 	Swap_Colors,
 	Default_Colors,
@@ -157,7 +162,12 @@ Cmd :: enum {
 	// saved and built-in workspaces, in the order of `ws_entries`
 	Ws_First,
 	Ws_Last = Ws_First + WS_MAX - 1,
+	// the macros in the Macros menu, in the order of `macro_lib`
+	Macro_First,
+	Macro_Last = Macro_First + MACRO_MENU_MAX - 1,
 }
+
+MACRO_MENU_MAX :: 40
 
 Shortcut :: struct {
 	cmd:              Cmd,
@@ -338,6 +348,7 @@ cmd_repeats :: proc(c: Cmd) -> bool {
 }
 
 shortcuts_update :: proc() {
+	if macro_editor_on() do return // the node editor has the keyboard
 	if ui.focus_id != 0 || dialog.kind != .None || popup.open || text_edit.active || text_end_time == ui.time {
 		return
 	}
@@ -422,6 +433,11 @@ select_tool :: proc(t: Tool) {
 
 run_cmd :: proc(cmd: Cmd) {
 	d := doc
+	if id, ok := macro_cmd_id(cmd); ok {
+		macro_record(id)
+	} else if cmd >= .Opacity_10 && cmd <= .Opacity_100 {
+		macro_record("brush.Opacity", "opacity", fmt.tprint((int(cmd) - int(Cmd.Opacity_10) + 1) * 10))
+	}
 	if cmd >= .Tool_Brush && cmd <= .Tool_Seamless {
 		select_tool_in_group(Tool(int(cmd) - int(Cmd.Tool_Brush)))
 		return
@@ -429,7 +445,7 @@ run_cmd :: proc(cmd: Cmd) {
 	// commands below act on the document; finish pending interactions first
 	#partial switch cmd {
 	case .Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap, .Grid_Settings, .Toggle_Mirror, .Toggle_Perspective, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless, .Cycle_Canvas_Bg, .UI_Scale, .Toggle_Timeline, .Toggle_Files, .Toggle_Onion, .Play, .Frame_Prev, .Frame_Next, .Frame_First, .Frame_Last, .Swap_Colors, .Default_Colors, .Brush_Smaller, .Brush_Bigger, .Help_Keys, .About, .Brush_Settings, .None:
-	case .Opacity_10 ..= .Opacity_100:
+	case .Opacity_10 ..= .Opacity_100, .Macro_Record, .Macros, .Macro_Import, .Macro_Editor:
 	case:
 		tools_commit_pending()
 	}
@@ -445,6 +461,10 @@ run_cmd :: proc(cmd: Cmd) {
 		workspace_apply_index(int(cmd) - int(Cmd.Ws_First))
 		return
 	}
+	if cmd >= .Macro_First && cmd <= .Macro_Last {
+		if i := int(cmd) - int(Cmd.Macro_First); i < len(macro_lib) do macro_run_named(macro_lib[i].name)
+		return
+	}
 	if cmd >= .Opacity_10 && cmd <= .Opacity_100 {
 		t := paint_tool(cur_tool) ? cur_tool : Tool.Brush
 		brushes[t].opacity = (int(cmd) - int(Cmd.Opacity_10) + 1) * 10
@@ -452,7 +472,7 @@ run_cmd :: proc(cmd: Cmd) {
 		return
 	}
 	switch cmd {
-	case .None, .Tool_Brush ..= .Tool_Seamless, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100:
+	case .None, .Tool_Brush ..= .Tool_Seamless, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100, .Macro_First ..= .Macro_Last:
 	case .New:
 		dialog_open(.New_Doc)
 	case .Open:
@@ -479,6 +499,18 @@ run_cmd :: proc(cmd: Cmd) {
 		workspace_import()
 	case .Ws_Export:
 		workspace_export()
+	case .Macro_Editor:
+		if macro_editor_on() {
+			macro_editor_close()
+		} else {
+			macro_editor_open()
+		}
+	case .Macro_Record:
+		macro_record_toggle()
+	case .Macros:
+		dialog_open(.Macros)
+	case .Macro_Import:
+		macro_import()
 
 	case .Undo:
 		if !history_undo(d) {

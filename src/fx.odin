@@ -260,6 +260,7 @@ fx_open :: proc(fx: Fx) {
 		fx_apply_now()
 		live_finish()
 		set_status(def.name)
+		fx_record(&fxs)
 		return
 	}
 	dialog_open(.Fx)
@@ -340,6 +341,7 @@ dlg_fx :: proc() {
 		live_finish()
 		dialog_close()
 		set_status(def.name)
+		fx_record(&fxs)
 	}
 }
 

@@ -206,6 +206,14 @@ cmd_help :: proc(c: Cmd) -> string {
 		return "Load a workspace from a .ppws file, switch to it and keep a copy in your list."
 	case .Ws_Export:
 		return "Save the current tool groups, swatches and brush settings to a .ppws file you can share."
+	case .Macro_Editor:
+		return "Open the node editor: build a macro from nodes wired together, starting from Start, and give their settings values or wire values into them."
+	case .Macro_Record:
+		return "Start recording a macro: each command you use from now on becomes a step. Choose it again to stop and save the macro."
+	case .Macros:
+		return "Run, rename, delete, import and export macros: saved chains of commands you can put in a tool group and run with its hotkey."
+	case .Macro_Import:
+		return "Copy a macro from a .pmacro file into your list of macros."
 	case .Swap_Colors:
 		return "Swap the foreground and background colors."
 	case .Default_Colors:
@@ -220,6 +228,8 @@ cmd_help :: proc(c: Cmd) -> string {
 		return TOOL_HELP[Tool(int(c) - int(Cmd.Tool_Brush))]
 	case .Fx_First ..= .Fx_Last:
 		return FX_DEFS[Fx(int(c) - int(Cmd.Fx_First))].help
+	case .Macro_First ..= .Macro_Last:
+		return "Run this macro on the painting. One Undo takes it all back."
 	case .Ws_First ..= .Ws_Last:
 		i := int(c) - int(Cmd.Ws_First)
 		if i < len(WS_BUILTIN_HELP) do return WS_BUILTIN_HELP[i]
@@ -391,6 +401,7 @@ menu_title_tip :: proc(title: string) -> Tip {
 	case "Select":     desc = "Select all or nothing, invert the selection, and feather, grow or shrink it."
 	case "View":       desc = "Zoom, guides, the grid, mirror, perspective, canvas mode, tiled mode, the UI scale, the timeline and the file browser."
 	case "Workspaces": desc = "Switch between sets of tool groups, swatches and brush settings, and save your own."
+	case "Macros":     desc = "Run your macros, record a new one, and manage them."
 	case "Help":       desc = "Keyboard shortcuts and information about the program."
 	}
 	return {"", desc}

@@ -7,7 +7,8 @@ import "core:strings"
 // User-editable tool groups shown in the left panel. A group's hotkey selects its first tool
 // (or the one last used from it); pressing it again cycles through the group's tools.
 // A group holding colours instead of tools is a colour group: its hotkey cycles the
-// foreground colour and leaves the tool alone.
+// foreground colour and leaves the tool alone. A group holding macros is a macro group: its hotkey runs the
+// selected macro, then selects the next one, so pressing it twice in a group of two runs both.
 
 MAX_TOOL_GROUPS :: 12
 
@@ -16,6 +17,8 @@ Tool_Group :: struct {
 	tools:  [dynamic]Tool,
 	colors: [dynamic]Color,
 	blends: [dynamic]Blend, // blend-mode group: cycles the Brush tool's blend mode
+	macros: [dynamic]Name, // macro group: the macros' names
+	next_macro: int, // the macro the hotkey runs next
 	last:   Tool, // last tool picked from this group
 	name:   Name, // empty: "Group" ("Pen" for the pen eraser group)
 	pen_eraser: bool, // the pen's eraser end uses this group's last tool (at most one group)
@@ -108,12 +111,36 @@ group_clean_name :: proc(s: string) -> string {
 tool_groups_clear :: proc() {
 	active_group = -1
 	color_link_clear()
-	for &g in tool_groups {
-		delete(g.tools)
-		delete(g.colors)
-		delete(g.blends)
-	}
+	for &g in tool_groups do tool_group_free(&g)
 	clear(&tool_groups)
+}
+
+tool_group_free :: proc(g: ^Tool_Group) {
+	delete(g.tools)
+	delete(g.colors)
+	delete(g.blends)
+	delete(g.macros)
+}
+
+// Runs the group's selected macro; if it worked, the next one is selected for the next press.
+group_run_macro :: proc(g: ^Tool_Group) {
+	if len(g.macros) == 0 do return
+	g.next_macro = clamp(g.next_macro, 0, len(g.macros) - 1)
+	if macro_run_named(name_str(&g.macros[g.next_macro])) {
+		g.next_macro = (g.next_macro + 1) % len(g.macros)
+	}
+}
+
+group_has_macro :: proc(g: ^Tool_Group, name: string) -> bool {
+	for &n in g.macros do if strings.equal_fold(name_str(&n), name) do return true
+	return false
+}
+
+// A macro was renamed: groups holding it follow.
+tool_groups_rename_macro :: proc(old, new: string) {
+	for &g in tool_groups {
+		for &n in g.macros do if strings.equal_fold(name_str(&n), old) do name_set(&n, new)
+	}
 }
 
 tool_groups: [dynamic]Tool_Group
@@ -139,6 +166,10 @@ tool_groups_default :: proc() {
 
 tool_group_activate :: proc(gi: int) {
 	g := &tool_groups[gi]
+	if len(g.macros) > 0 {
+		group_run_macro(g)
+		return
+	}
 	if len(g.colors) > 0 {
 		next := 0
 		if color_link_g == gi {
@@ -294,7 +325,8 @@ tool_group_has ::proc(g: ^Tool_Group, t: Tool) -> bool {
 	return false
 }
 
-// Preferences: "groups=<key>:<tool>,<tool>:<hex>,<hex>;<key>:..." (tool = index into Tool).
+// Preferences: "groups=<key>:<tool>,<tool>:<hex>,<hex>:<blend>,...:<pen>:<name>:<own brushes>:<macro>,<macro>:<next macro>;<key>:..."
+// (tool = index into Tool). Fields added later go at the end, so older files still load.
 tool_groups_serialize :: proc() -> string {
 	sb := strings.builder_make(context.temp_allocator)
 	for &g, i in tool_groups {
@@ -321,6 +353,9 @@ tool_groups_serialize :: proc() -> string {
 				first = false
 			}
 		}
+		fmt.sbprintf(&sb, ":")
+		for &m, j in g.macros do fmt.sbprintf(&sb, "%s%s", j > 0 ? "," : "", name_str(&m))
+		fmt.sbprintf(&sb, ":%d", g.next_macro)
 	}
 	return strings.to_string(sb)
 }
@@ -389,6 +424,17 @@ tool_groups_parse :: proc(s: string) {
 			}
 			g.has_own = true
 		}
+		if len(fields) > 7 && len(g.tools) == 0 && len(g.colors) == 0 && len(g.blends) == 0 {
+			for ms in strings.split(fields[7], ",", context.temp_allocator) {
+				name := macro_clean_name(ms)
+				if name == "" || group_has_macro(&g, name) do continue
+				n: Name
+				name_set(&n, name)
+				append(&g.macros, n)
+			}
+			if len(fields) > 8 do g.next_macro, _ = strconv.parse_int(fields[8])
+			g.next_macro = clamp(g.next_macro, 0, max(len(g.macros) - 1, 0))
+		}
 		append(&tool_groups, g)
 	}
 }
@@ -433,7 +479,7 @@ panel_groups_bar :: proc(r: Rect) {
 	for &g, gi in tool_groups {
 		shown: Tool
 		active := false
-		kind := 0 // 1 tool, 2 colour, 3 blend
+		kind := 0 // 1 tool, 2 colour, 3 blend, 4 macro
 		shown_color: Color
 		shown_blend: Blend
 		switch {
@@ -459,18 +505,21 @@ panel_groups_bar :: proc(r: Rect) {
 			kind = 3
 			shown_blend = blend_in(g.blends[:], brush_blend) ? brush_blend : g.blends[0]
 			active = shown_blend == brush_blend
+		case len(g.macros) > 0:
+			kind = 4
 		}
+		next_macro := kind == 4 ? name_str(&g.macros[clamp(g.next_macro, 0, len(g.macros) - 1)]) : ""
 		if kind == 0 do continue
 
 		title := group_title(&g)
 		key := g.key == .KEY_NULL ? "" : key_name(g.key)
 		// label: the hotkey as a keycap, or the group's name when it has none
 		label_w := key == "" ? text_w(title) : keycap_w(key)
-		target_w: i32 = kind == 3 ? text_w(BLEND_NAMES[shown_blend]) + 4 : 18
+		target_w: i32 = kind == 3 ? text_w(BLEND_NAMES[shown_blend]) + 4 : (kind == 4 ? text_w(next_macro) + 4 : 18)
 		cw := 8 + label_w + 6 + text_w(ARROW) + 6 + target_w + 8
 		if x + cw > limit do break
 		cell := Rect{x, r.y + 3, cw, r.h - 6}
-		tip := Tip{key == "" ? title : fmt.tprintf("%s (%s)", title, key), "A tool group. Click, or press its key, to pick its last tool, and again to step through what it holds."}
+		tip := Tip{key == "" ? title : fmt.tprintf("%s (%s)", title, key), kind == 4 ? "A macro group. Click, or press its key, to run the macro shown; the next press runs the group's next macro." : "A tool group. Click, or press its key, to pick its last tool, and again to step through what it holds."}
 		clicked, held, hover := button_behavior(make_id(cell, "grpcell"), cell, tip)
 		if active {
 			draw_rrect(f32(cell.x), f32(cell.y), f32(cell.w), f32(cell.h), RADIUS, C_ACCENT_TINT)
@@ -498,6 +547,8 @@ panel_groups_bar :: proc(r: Rect) {
 			draw_rrect_outline(f32(sw.x), f32(sw.y), f32(sw.w), f32(sw.h), 2, active ? WHITE : C_RING_HI)
 		case 3:
 			text(lx + 2, ty, BLEND_NAMES[shown_blend], fgc)
+		case 4:
+			text(lx + 2, ty, next_macro, macro_find(next_macro) != nil ? fgc : C_TEXT_OFF)
 		}
 		if clicked do tool_group_activate(gi)
 		x += cw + 6

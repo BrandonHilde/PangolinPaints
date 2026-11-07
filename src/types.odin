@@ -183,6 +183,7 @@ State :: struct {
 Doc :: struct {
 	using s:      State,
 	undo, redo:   [dynamic]State,
+	history_hold: int, // above 0 while a macro runs: its edits share the one snapshot taken before it
 	active_layer: int,
 	edit_mask:    bool, // brushes paint on the active layer's mask
 	path:         string, // empty if never saved

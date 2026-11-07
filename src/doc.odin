@@ -223,6 +223,10 @@ doc_clamp :: proc(d: ^Doc) {
 
 history_push :: proc(d: ^Doc) {
 	stop_playback() // every edit comes through here
+	if d.history_hold > 0 {
+		d.modified = true
+		return
+	}
 	append(&d.undo, state_clone(&d.s))
 	for len(d.undo) > MAX_UNDO {
 		state_destroy(&d.undo[0])
@@ -237,7 +241,7 @@ history_push :: proc(d: ^Doc) {
 
 // Drop the most recent undo entry (used when an action turned out to change nothing).
 history_discard :: proc(d: ^Doc) {
-	if len(d.undo) > 0 {
+	if d.history_hold == 0 && len(d.undo) > 0 {
 		s := pop(&d.undo)
 		state_destroy(&s)
 	}
@@ -245,7 +249,7 @@ history_discard :: proc(d: ^Doc) {
 
 // Restore the most recent snapshot without keeping a redo entry (cancelled previews).
 history_revert :: proc(d: ^Doc) {
-	if len(d.undo) == 0 {
+	if d.history_hold > 0 || len(d.undo) == 0 {
 		return
 	}
 	state_destroy(&d.s)
@@ -919,6 +923,13 @@ RESAMPLE_NAMES := [Resample]string {
 	.Bicubic  = "Bicubic (smooth)",
 	.Bilinear = "Bilinear",
 	.Nearest  = "Nearest neighbour",
+}
+
+// Short names for macro files.
+RESAMPLE_KEYS := [Resample]string {
+	.Bicubic  = "bicubic",
+	.Bilinear = "bilinear",
+	.Nearest  = "nearest",
 }
 
 doc_image_size :: proc(d: ^Doc, nw, nh: int, filter: Resample) {

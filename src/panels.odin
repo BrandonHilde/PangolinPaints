@@ -27,6 +27,7 @@ panels_init :: proc() {
 	oui_slot_register("navigator", proc(r: Rect, _: int) {panel_navigator(r)})
 	oui_slot_register("cursor_info", proc(r: Rect, _: int) {panel_cursor_info(r)})
 	oui_slot_register("groups_bar", proc(r: Rect, _: int) {panel_groups_bar(r)})
+	oui_slot_register("macro_editor", proc(r: Rect, _: int) {macro_editor_ui(r)})
 	oui_slot_register("viewport", proc(r: Rect, _: int) {panel_viewport(r)})
 	oui_slot_register("timeline_grid", proc(r: Rect, _: int) {panel_timeline_grid(r)})
 	oui_slot_register("files_grid", proc(r: Rect, _: int) {panel_files_grid(r)})
@@ -36,6 +37,11 @@ main_ui :: proc() {
 	oui.element(uictx, "window", "screen", {id = "window"})
 	defer oui.end(uictx)
 	panel_menubar()
+	if macro_editor_on() {
+		// the node editor takes the place of everything below the menus
+		oui_slot("viewport", "macro_editor")
+		return
+	}
 	panel_options()
 	if canvas_mode {
 		oui_slot("viewport", "viewport")
@@ -71,7 +77,7 @@ panel_viewport :: proc(viewport: Rect) {
 // Menu bar
 // ---------------------------------------------------------------------------
 
-MENU_TITLES := [?]string{"File", "Edit", "Image", "Adjust", "Filter", "Layer", "Frame", "Select", "View", "Workspaces", "Help"}
+MENU_TITLES := [?]string{"File", "Edit", "Image", "Adjust", "Filter", "Layer", "Frame", "Select", "View", "Workspaces", "Macros", "Help"}
 
 fx_item :: proc(fx: Fx) {
 	name := FX_DEFS[fx].name
@@ -248,6 +254,16 @@ menu_build :: proc(idx: int) {
 		item("Import Workspace...", cmd = .Ws_Import)
 		item("Export Workspace...", cmd = .Ws_Export)
 	case 10:
+		for m, i in macro_lib {
+			if i >= MACRO_MENU_MAX do break
+			item(m.name, cmd = Cmd(int(Cmd.Macro_First) + i))
+		}
+		if len(macro_lib) > 0 do popup_sep()
+		item("Node Editor", cmd = .Macro_Editor, checked = macro_editor_on())
+		item(macro_recording() ? "Stop Recording" : "Record Macro", cmd = .Macro_Record, checked = macro_recording())
+		item("Manage Macros...", cmd = .Macros)
+		item("Import Macro...", cmd = .Macro_Import)
+	case 11:
 		item("Keyboard Shortcuts", cmd = .Help_Keys)
 		item("About", cmd = .About)
 	}
@@ -287,6 +303,9 @@ panel_menubar :: proc() {
 		}
 	}
 	oui.element_leaf(uictx, "spacer", "spacer")
+	if macro_recording() && obutton("Stop Recording", 0, {"Recording a macro", "The commands you use are being recorded as a macro. Click to stop and save it."}, true, true, id = "rec-stop") {
+		run_cmd(.Macro_Record)
+	}
 	if c, _ := oui_icon_button("canvas-mode", .Canvas_Mode, cmd_tip("Canvas Mode", .Toggle_Canvas_Mode), {lit = canvas_mode, enabled = true}); c {
 		run_cmd(.Toggle_Canvas_Mode)
 	}
@@ -372,14 +391,14 @@ panel_toolbar :: proc() {
 		// header: the name on the left, the hotkey as a keycap on the right
 		// (click the keycap for options; right-click the header for rename / remove)
 		hdr := oui.element(uictx, "head", "group-head")
-		oui_tip(hdr, {group_title(&g), "A tool group: tools, switches, colors or blend modes kept together. Right-click to rename or remove it."})
+		oui_tip(hdr, {group_title(&g), "A tool group: tools, switches, colors, blend modes or macros kept together. Right-click to rename or remove it."})
 		oui.label(uictx, "title", group_title(&g), {class = "group-title"})
 		waiting := group_key_wait == gi
 		label := waiting ? "..." : (g.key == .KEY_NULL ? "-" : key_name(g.key))
 		kc := oui.button_begin(uictx, "key", {class = label == "-" ? "keycap none" : "keycap", checked = waiting})
 		oui.label(uictx, "t", label)
 		oui.end(uictx)
-		oui_tip(kc, {"Group hotkey", "Press this key to pick the group's last tool, and again to step through what it holds. Click to change the key, rename or remove the group, or use it for the pen's eraser end."})
+		oui_tip(kc, {"Group hotkey", len(g.macros) > 0 ? "Press this key to run the group's selected macro; the next press runs the macro after it. Click to change the key, rename or remove the group." : "Press this key to pick the group's last tool, and again to step through what it holds. Click to change the key, rename or remove the group, or use it for the pen's eraser end."})
 		oui.end(uictx)
 		bid := make_id({}, fmt.tprintf("grpbadge%d", gi))
 		if kc.clicked {
@@ -425,8 +444,9 @@ panel_toolbar :: proc() {
 		is_colors := len(g.colors) > 0
 		is_blends := len(g.blends) > 0
 		is_tools := len(g.tools) > 0
-		n := is_colors ? len(g.colors) : (is_blends ? len(g.blends) : len(g.tools))
-		oui.element(uictx, "items", "group-items", {class = is_blends ? "blends" : ""})
+		is_macros := len(g.macros) > 0
+		n := is_colors ? len(g.colors) : (is_blends ? len(g.blends) : (is_macros ? len(g.macros) : len(g.tools)))
+		oui.element(uictx, "items", "group-items", {class = is_blends || is_macros ? "blends" : ""})
 		for tool, ti in g.tools {
 			// the pen-eraser group keeps its own selection, separate from the pen tip's tool
 			lit := g.pen_eraser ? g.last == tool : t == tool && cur_group == gi
@@ -465,16 +485,30 @@ panel_toolbar :: proc() {
 				rem_g, rem_t = gi, bi
 			}
 		}
-		can_add := is_colors ? n < 48 : (is_blends ? n < len(Blend) : n < len(Tool))
+		// macros are listed one per row too: the one the hotkey runs next is highlighted
+		for &mn, mi in g.macros {
+			name := name_str(&mn)
+			found := macro_find(name) != nil
+			tip := found ? fmt.tprintf("Click to make this the macro the group's hotkey runs next. Right-click to remove it from the group.") : "There is no macro with this name any more. Right-click to remove it from the group."
+			if obutton(name, 0, {name, tip}, found, mi == g.next_macro, key = fmt.tprintf("m%d", mi), class = "blend-row") {
+				g.next_macro = mi
+			}
+			if bn := oui.find_node(uictx.build_parent, fmt.tprintf("m%d", mi)); bn != nil && bn.hovered && ui.pressed[1] && !popup.open {
+				rem_g, rem_t = gi, mi
+			}
+		}
+		macros_left := 0
+		for m in macro_lib do if !group_has_macro(&g, m.name) do macros_left += 1
+		can_add := is_colors ? n < 48 : (is_blends ? n < len(Blend) : (is_macros ? macros_left > 0 : n < len(Tool)))
 		if can_add {
-			tip := Tip{"Add to group", "Add a tool, a switch, colors or brush blend modes to this group. A group holds one of those kinds. Right-click an item to remove it."}
+			tip := Tip{"Add to group", "Add a tool, a switch, colors, brush blend modes or macros to this group. A group holds one of those kinds. Right-click an item to remove it."}
 			pid := make_id({}, fmt.tprintf("grpadd%d", gi))
 			add_clicked, add_node := oui_icon_button("add", .Plus, tip, {class = "tool quiet", enabled = true, icon_lg = true})
 			if add_clicked {
 				popup_begin(pid, oui_rect(add_node))
 				popup_grid(5)
 				any_section := false
-				if !is_colors && !is_blends {
+				if !is_colors && !is_blends && !is_macros {
 					for tool in Tool {
 						if !tool_group_has(&g, tool) {
 							popup_item_icon(TOOL_NAMES[tool], int(tool), TOOL_ICONS[tool], TOOL_HELP[tool])
@@ -482,7 +516,7 @@ panel_toolbar :: proc() {
 					}
 					any_section = true
 				}
-				if !is_tools && !is_blends {
+				if !is_tools && !is_blends && !is_macros {
 					if any_section do popup_sep()
 					popup_item_swatch("Foreground color", 100, fg)
 					popup_item("All current swatches", 101, tip = "Add every color in the Swatches panel to this group.")
@@ -491,11 +525,20 @@ panel_toolbar :: proc() {
 					}
 					any_section = true
 				}
-				if !is_tools && !is_colors {
+				if !is_tools && !is_colors && !is_macros {
 					if any_section do popup_sep()
 					for b in Blend {
 						if !blend_in(g.blends[:], b) {
 							popup_item_half(BLEND_NAMES[b], 300 + int(b))
+						}
+					}
+					any_section = true
+				}
+				if !is_tools && !is_colors && !is_blends && macros_left > 0 {
+					if any_section do popup_sep()
+					for m, mi in macro_lib {
+						if !group_has_macro(&g, m.name) {
+							popup_item_half(m.name, 1000 + mi)
 						}
 					}
 				}
@@ -509,6 +552,12 @@ panel_toolbar :: proc() {
 					append(&g.colors, fg)
 				case v == 101:
 					append(&g.colors, ..swatches[:])
+				case v >= 1000:
+					if v - 1000 < len(macro_lib) {
+						mn: Name
+						name_set(&mn, macro_lib[v - 1000].name)
+						append(&g.macros, mn)
+					}
 				case v >= 300:
 					append(&g.blends, Blend(v - 300))
 				case:
@@ -528,21 +577,22 @@ panel_toolbar :: proc() {
 				ordered_remove(&rg.colors, rem_t)
 			} else if len(rg.blends) > 0 {
 				ordered_remove(&rg.blends, rem_t)
+			} else if len(rg.macros) > 0 {
+				ordered_remove(&rg.macros, rem_t)
+				if rg.next_macro >= len(rg.macros) do rg.next_macro = 0
 			} else {
 				ordered_remove(&rg.tools, rem_t)
 			}
 		} else {
 			group_save_brushes()
 			active_group = -1 // indices shift
-			delete(tool_groups[rem_g].tools)
-			delete(tool_groups[rem_g].colors)
-			delete(tool_groups[rem_g].blends)
+			tool_group_free(&tool_groups[rem_g])
 			ordered_remove(&tool_groups, rem_g)
 			group_key_wait = -1
 		}
 	}
 	if len(tool_groups) < MAX_TOOL_GROUPS {
-		if obutton("+ New Group", 0, {"", "Add an empty tool group, then use its + button to fill it with tools, colors or blend modes."}, id = "new-group") {
+		if obutton("+ New Group", 0, {"", "Add an empty tool group, then use its + button to fill it with tools, colors, blend modes or macros."}, id = "new-group") {
 			append(&tool_groups, Tool_Group{})
 		}
 	}

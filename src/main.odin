@@ -235,6 +235,7 @@ main :: proc() {
 	set_fg(fg)
 	tool_groups_default()
 	prefs_load()
+	macros_refresh()
 	render_init()
 	brand_init()
 	oui_init()

@@ -542,6 +542,18 @@ EXPORT_EXT := [Export_Format]string {
 	.GIF = "gif",
 }
 
+// Short names for macro files.
+EXPORT_KEYS := [Export_Format]string {
+	.PNG          = "png",
+	.JPG          = "jpg",
+	.BMP          = "bmp",
+	.TGA          = "tga",
+	.QOI          = "qoi",
+	.TIFF         = "tiff",
+	.PNG_Sequence = "png-sequence",
+	.GIF          = "gif",
+}
+
 export_format: Export_Format
 export_quality := 90
 
@@ -681,31 +693,32 @@ export_run :: proc(f: Export_Format, quality, scale_pct: int) {
 		return
 	}
 	defer delete(p)
+	if eok, msg := export_to_path(d, p, f, quality, scale_pct); eok {
+		set_status(msg)
+		macro_record("file.Export", "format", EXPORT_KEYS[f], "quality", fmt.tprint(quality), "scale", fmt.tprint(scale_pct), "path", export_path_template(d, p))
+	} else {
+		show_message("Export", msg)
+	}
+}
+
+// Writes the export to `path` without asking. `msg` says what was written, or why it failed.
+export_to_path :: proc(d: ^Doc, path: string, f: Export_Format, quality, scale_pct: int) -> (ok: bool, msg: string) {
+	fail := fmt.tprintf("Failed to write %s", path_basename(path))
 	#partial switch f {
 	case .GIF:
 		data := export_gif_bytes(d, scale_pct)
-		if data == nil || !write_file(p, data) {
-			show_message("Export", fmt.tprintf("Failed to write %s", path_basename(p)))
-			return
-		}
-		set_statusf("Exported %s (%d KB)", path_basename(p), len(data) / 1024)
-		return
+		if data == nil || !write_file(path, data) do return false, fail
+		return true, fmt.tprintf("Exported %s (%d KB)", path_basename(path), len(data) / 1024)
 	case .PNG_Sequence:
-		if n := export_png_sequence(d, p, scale_pct); n > 0 {
-			set_statusf("Exported %d frames as %s_001.png ...", n, path_stem(p))
-		} else {
-			show_message("Export", fmt.tprintf("Failed to write %s", path_basename(p)))
-		}
-		return
+		n := export_png_sequence(d, path, scale_pct)
+		if n == 0 do return false, fail
+		return true, fmt.tprintf("Exported %d frames as %s_001.png ...", n, path_stem(path))
 	}
 	pix, w, h := export_frame_pixels(d, d.active_frame, scale_pct)
 	defer delete(pix)
 	data := export_encode(pix, w, h, f, quality)
-	if data == nil || !write_file(p, data) {
-		show_message("Export", fmt.tprintf("Failed to write %s", path_basename(p)))
-		return
-	}
-	set_statusf("Exported %s (%d KB)", path_basename(p), len(data) / 1024)
+	if data == nil || !write_file(path, data) do return false, fail
+	return true, fmt.tprintf("Exported %s (%d KB)", path_basename(path), len(data) / 1024)
 }
 
 // One PNG per frame of the playback range: `path` without its extension, then _001.png and so on.

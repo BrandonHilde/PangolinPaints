@@ -973,6 +973,228 @@ selftest :: proc() -> int {
 		delete(pm)
 	}
 
+	// --- macros ---------------------------------------------------------------------
+	{
+		// every command is a node, is stood in for by a node with settings, or is left out on purpose
+		for c in Cmd.None ..= Cmd.Tool_Seamless {
+			if c == .None do continue
+			_, covered := macro_cmd_id(c)
+			for x in MACRO_CMD_NODES {
+				if x.cmd != c do continue
+				covered = true
+				check(macro_def_find(x.id) != nil, fmt.tprintf("%s is a node", x.id))
+			}
+			for x in MACRO_CMD_EXCLUDED do if x == c do covered = true
+			if c >= .Opacity_10 && c <= .Opacity_100 do covered = macro_def_find("brush.Opacity") != nil // one node with the opacity as its setting
+			check(covered, fmt.tprintf("%v is a macro node, or left out on purpose", c))
+		}
+		ids := make(map[string]bool, context.temp_allocator)
+		for &def in macro_catalogue() {
+			check(!(def.id in ids), fmt.tprintf("one node is called %s", def.id))
+			ids[def.id] = true
+			check(def.name != "" && def.help != "" && def.category != "", fmt.tprintf("%s has a name, a category and tooltip text", def.id))
+			for &st, i in def.settings {
+				check(st.key != "" && st.name != "" && st.help != "", fmt.tprintf("%s: %s has a key, a name and tooltip text", def.id, st.name))
+				for o in def.settings[i + 1:] do check(o.key != st.key, fmt.tprintf("%s: one setting is called %s", def.id, st.key))
+				back, ok := macro_value_parse(&st, macro_value_text(&st, st.def))
+				check(ok && back.num == st.def.num && back.col == st.def.col, fmt.tprintf("%s: the default of %s reads back", def.id, st.key))
+			}
+		}
+		check(len(macro_def_find("fx.Gaussian_Blur").settings) == 1 && len(macro_def_find("fx.Levels").settings) == 6, "effect nodes take the settings of their windows")
+
+		// setting values
+		grow := macro_def_find("sel.Grow")
+		v, ok := macro_value_parse(&grow.settings[0], "9999")
+		check(ok && v.num == 500, "numbers are kept in range")
+		v, ok = macro_value_parse(&grow.settings[0], "lots")
+		check(!ok && v.num == 5, "text that is not a number gives the default")
+		v, ok = macro_value_parse(&macro_def_find("file.Export").settings[0], "JPG")
+		check(ok && Export_Format(int(v.num)) == .JPG, "choices are stored by name")
+		v, ok = macro_value_parse(&macro_def_find("edit.Fill").settings[0], "#ff000080")
+		check(ok && v.col == Color{255, 0, 0, 128}, "colors with alpha")
+
+		// the file format
+		m := macro_new("Round trip")
+		a := macro_add_node(m, "sel.Grow", 200, 0)
+		macro_set_arg(m, a, "px", "4")
+		b := macro_add_node(m, "file.Export", 400, -50.5)
+		macro_set_arg(m, b, "path", `{dir}/my "best" = pic.{ext}`)
+		macro_link(m, macro_start(m), a.id)
+		macro_link(m, a.id, b.id)
+		t1 := strings.clone(macro_to_text(m), context.temp_allocator)
+		m2, ok2 := macro_from_text(t1)
+		check(ok2 && macro_to_text(m2) == t1, "a macro file reads back as it was written")
+		pv, _ := macro_arg(macro_node(m2, b.id), "path")
+		check(pv == `{dir}/my "best" = pic.{ext}`, "values with spaces, quotes and = survive the file")
+		macro_free(m)
+		macro_free(m2)
+		_, bad_ok := macro_from_text("not a macro")
+		check(!bad_ok, "other files are not read as macros")
+
+		// running: one undo step
+		d := fresh(40, 30, white)
+		undo0 := len(d.undo)
+		m = macro_new("Fill box")
+		n1 := macro_add_node(m, "sel.Rect", 200, 0)
+		for kv in ([?][2]string{{"x", "10"}, {"y", "5"}, {"w", "10"}, {"h", "10"}, {"units", "pixels"}}) do macro_set_arg(m, n1, kv[0], kv[1])
+		n2 := macro_add_node(m, "edit.Fill", 400, 0)
+		macro_set_arg(m, n2, "color", "#dc1e1e")
+		n3 := macro_add_node(m, "cmd.Deselect", 600, 0)
+		macro_link(m, macro_start(m), n1.id)
+		macro_link(m, n1.id, n2.id)
+		macro_link(m, n2.id, n3.id)
+		rok, rmsg, _ := macro_run(m)
+		check(rok, fmt.tprintf("a macro runs (%s)", rmsg))
+		check(px(d, 0, 12, 7) == red && px(d, 0, 2, 2) == white && d.sel == nil, "the macro selected a box, filled it and deselected")
+		check(len(d.undo) == undo0 + 1 && d.history_hold == 0, "a macro is one undo step")
+		history_undo(d)
+		check(px(d, 0, 12, 7) == white, "one undo takes the whole macro back")
+		history_redo(d)
+		check(px(d, 0, 12, 7) == red, "redo brings it back")
+
+		// a failing step puts everything back and says where it stopped
+		undo1 := len(d.undo)
+		bad := macro_new("Fails")
+		f1 := macro_add_node(bad, "edit.Fill", 200, 0)
+		macro_set_arg(bad, f1, "color", "#1e3cdc")
+		f2 := macro_add_node(bad, "sel.Grow", 400, 0)
+		macro_link(bad, macro_start(bad), f1.id)
+		macro_link(bad, f1.id, f2.id)
+		fok, fmsg, fat := macro_run(bad)
+		check(!fok && fat == f2.id && strings.contains(fmsg, "no selection"), "a failing step stops the macro and names the step")
+		check(px(d, 0, 2, 2) == white && len(d.undo) == undo1 && d.history_hold == 0, "a failed macro leaves the painting as it was")
+
+		// macros that can't run don't touch the painting
+		unk := macro_new("Unknown")
+		u := macro_add_node(unk, "cmd.Nonsense", 200, 0)
+		macro_link(unk, macro_start(unk), u.id)
+		uok, umsg, _ := macro_run(unk)
+		check(!uok && strings.contains(umsg, "cmd.Nonsense") && len(d.undo) == undo1, "a node this version doesn't know stops the macro before it starts")
+		loop := macro_new("Loop")
+		l1 := macro_add_node(loop, "cmd.Select_All", 200, 0)
+		l2 := macro_add_node(loop, "cmd.Deselect", 400, 0)
+		macro_link(loop, macro_start(loop), l1.id)
+		macro_link(loop, l1.id, l2.id)
+		macro_link(loop, l2.id, l1.id)
+		lchain, lok, _ := macro_chain(loop)
+		check(lok && len(lchain) == 0 && macro_prev(loop, l1.id) == l2.id, "a node takes one Document wire in: wiring into it replaces the old one, so the wire can't loop")
+
+		// value wires: value nodes feed settings, and are worked out once per run
+		vm := macro_new("Values")
+		vn := macro_add_node(vm, "value.Number", 0, 100)
+		macro_set_arg(vm, vn, "value", "3")
+		vmath := macro_add_node(vm, "value.Math", 0, 200)
+		macro_set_arg(vm, vmath, "op", "multiply")
+		macro_set_arg(vm, vmath, "b", "4")
+		macro_wire(vm, vn.id, vmath.id, "a")
+		grow2 := macro_add_node(vm, "sel.Grow", 200, 0)
+		macro_wire(vm, vmath.id, grow2.id, "px")
+		rnd := macro_add_node(vm, "value.Random", 0, 300)
+		macro_set_arg(vm, rnd, "min", "5")
+		macro_set_arg(vm, rnd, "max", "7")
+		run := macro_run_state(vm)
+		gv, gok, _ := macro_node_values(&run, macro_node(vm, grow2.id), macro_def_find("sel.Grow"))
+		check(gok && gv[0].num == 12, "a setting takes the value wired into it (3 x 4)")
+		r1, _, _ := macro_eval(&run, rnd.id)
+		r2, _, _ := macro_eval(&run, rnd.id)
+		check(r1.num == r2.num && r1.num >= 5 && r1.num <= 7 && r1.num == math.floor(r1.num), "a value node gives one result per run, in its range")
+		macro_wire(vm, vmath.id, vn.id, "value")
+		macro_wire(vm, vn.id, vmath.id, "a")
+		run2 := macro_run_state(vm)
+		_, cok, cmsg := macro_eval(&run2, vmath.id)
+		check(!cok && strings.contains(cmsg, "loop"), "values wired round in a loop are refused")
+		macro_unwire(vm, vn.id, "value")
+		wt := strings.clone(macro_to_text(vm), context.temp_allocator)
+		vm2, _ := macro_from_text(wt)
+		check(len(vm2.wires) == 2 && macro_wire_from(vm2, grow2.id, "px") == vmath.id, "value wires are saved in the file")
+		check(macro_can_feed(.Number, .Choice) && macro_can_feed(.Number, .Bool) && !macro_can_feed(.Color, .Number) && !macro_can_feed(.Text, .Number), "which values can feed which settings")
+		iv := macro_new("Info")
+		info := macro_add_node(iv, "value.Info", 0, 100)
+		macro_set_arg(iv, info, "what", "height")
+		run3 := macro_run_state(iv)
+		ih, _, _ := macro_eval(&run3, info.id)
+		check(ih.num == f64(doc.h), "Document Info reads the open painting")
+		vchain, _, vcmsg := macro_chain(vm)
+		check(len(vchain) == 0 && vcmsg == "", "value nodes are not steps")
+		macro_link(vm, macro_start(vm), vn.id)
+		_, vbad, vbmsg := macro_chain(vm)
+		check(!vbad && strings.contains(vbmsg, "Document wire"), "a value node on the Document wire is refused")
+		for x in ([?]^Macro{vm, vm2, iv}) do macro_free(x)
+
+		// effects take their settings from the node
+		inv := macro_new("Invert")
+		i1 := macro_add_node(inv, "fx.Invert", 200, 0)
+		macro_link(inv, macro_start(inv), i1.id)
+		before := px(d, 0, 2, 2)
+		iok, _, _ := macro_run(inv)
+		after := px(d, 0, 2, 2)
+		check(iok && after.r == 255 - before.r && after.b == 255 - before.b, "an effect node applies its effect")
+
+		// recording keeps the commands used, not view changes or a running macro's own steps
+		macro_record_start()
+		run_cmd(.Select_All)
+		run_cmd(.Toggle_Onion)
+		run_cmd(.Toggle_Onion)
+		macro_run(inv)
+		rec := macro_record_stop()
+		rchain, rcok, _ := macro_chain(rec)
+		check(rec != nil && rcok && len(rchain) == 1 && rchain[0].kind == "cmd.Select_All", "recording keeps only the commands that are steps")
+		macro_free(rec)
+		macro_record_start()
+		check(macro_record_stop() == nil, "a recording with no steps makes no macro")
+
+		// macro groups: the hotkey runs the selected macro, then selects the next
+		fg0 := fg
+		ma := macro_new("Mark A")
+		x := macro_add_node(ma, "color.Foreground", 200, 0)
+		macro_set_arg(ma, x, "color", "#010203")
+		macro_link(ma, macro_start(ma), x.id)
+		mb := macro_new("Mark B")
+		y := macro_add_node(mb, "color.Foreground", 200, 0)
+		macro_set_arg(mb, y, "color", "#040506")
+		macro_link(mb, macro_start(mb), y.id)
+		append(&macro_lib, ma, mb)
+		tool_groups_default()
+		grp: Tool_Group
+		for nm in ([2]string{"Mark A", "Mark B"}) {
+			n: Name
+			name_set(&n, nm)
+			append(&grp.macros, n)
+		}
+		append(&tool_groups, grp)
+		gi := len(tool_groups) - 1
+		tool_group_activate(gi)
+		check(fg == Color{1, 2, 3, 255} && tool_groups[gi].next_macro == 1, "a macro group's hotkey runs the selected macro and selects the next")
+		tool_group_activate(gi)
+		check(fg == Color{4, 5, 6, 255} && tool_groups[gi].next_macro == 0, "pressing it again runs the next macro, then starts over")
+		tool_groups[gi].next_macro = 1
+		saved := strings.clone(tool_groups_serialize(), context.temp_allocator)
+		tool_groups_parse(saved)
+		lg := &tool_groups[len(tool_groups) - 1]
+		check(len(lg.macros) == 2 && name_str(&lg.macros[1]) == "Mark B" && lg.next_macro == 1, "macro groups are saved with the preferences")
+		name_set(&lg.macros[1], "Missing")
+		tool_group_activate(len(tool_groups) - 1)
+		check(lg.next_macro == 1, "a macro that can't run stays selected")
+		tool_groups_parse("49:0,1:::0:Paint:")
+		check(len(tool_groups) == 1 && len(tool_groups[0].tools) == 2 && len(tool_groups[0].macros) == 0, "group preferences from before macros still load")
+		tool_groups_default()
+		set_fg(fg0)
+		macros_clear()
+		for mm in ([?]^Macro{m, bad, unk, loop, inv}) do macro_free(mm)
+
+		// export paths
+		d.path = strings.clone("C:/art/pic.ppnt")
+		ep, epok, _ := macro_export_path(d, "{dir}/{name}_{frame}.{ext}", "png")
+		check(epok && ep == "C:/art/pic_001.png", "export path templates")
+		ep, epok, _ = macro_export_path(d, "out/{name}", "jpg")
+		check(epok && ep == "C:/art/out/pic.jpg", "a relative export path goes next to the painting and gets its extension")
+		check(export_path_template(d, "C:/art/pic.png") == "{dir}/{name}.png" && export_path_template(d, "D:/x/thing.png") == "D:/x/thing.png", "a recorded export works on other paintings")
+		delete(d.path)
+		d.path = ""
+		_, epok, _ = macro_export_path(d, "{dir}/x.png", "png")
+		check(!epok, "an unsaved painting has no {dir}")
+	}
+
 	check(icons_ok(), "the app icon is there at every size")
 
 	if fails == 0 {

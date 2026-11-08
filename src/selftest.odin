@@ -163,6 +163,7 @@ selftest :: proc() -> int {
 		doc_touch_all(d)
 		mk :: proc(name, kind: string, args: ..string) -> ^Macro {
 			m := macro_new(name)
+			macro_set_arg(m, macro_node(m, macro_start(m)), "trigger", "On Paint") // a layer effect
 			n := macro_add_node(m, kind, 200, 0)
 			for i := 0; i + 1 < len(args); i += 2 do macro_set_arg(m, n, args[i], args[i + 1])
 			macro_link(m, macro_start(m), n.id)
@@ -221,6 +222,7 @@ selftest :: proc() -> int {
 		for x in 0 ..< 4 do tiles_set(&d.layers[1].pix, x, 0, paint, {})
 		doc_touch_all(d)
 		m := macro_new("Fx invert")
+		macro_set_arg(m, macro_node(m, macro_start(m)), "trigger", "On Paint")
 		n := macro_add_node(m, "fx.Invert", 200, 0)
 		macro_link(m, macro_start(m), n.id)
 		append(&macro_lib, m)
@@ -256,6 +258,110 @@ selftest :: proc() -> int {
 		// dropped below every row: out of the group, to the bottom
 		check(doc_move_to(d, 1, 0, .Bottom) && d.layers[0].parent == 0 && !d.layers[0].is_group && name_str(&d.layers[0].name) == "Layer 1", "a layer dropped below the list leaves its group, to the bottom")
 		check(!doc_move_to(d, 0, 0, .Bottom), "the bottom layer is at the bottom already")
+		macros_clear()
+	}
+
+	// --- macro triggers: where a macro is offered, and how often a layer effect runs --------
+	{
+		d := fresh(4, 1, white)
+		doc_add_layer(d)
+		paint := Color{200, 100, 50, 255}
+		inv_paint := Color{55, 155, 205, 255}
+		inv_red := Color{255 - red.r, 255 - red.g, 255 - red.b, 255}
+		for x in 0 ..< 4 do tiles_set(&d.layers[1].pix, x, 0, paint, {})
+		doc_touch_all(d)
+		mk :: proc(name, trigger: string, seconds := "") -> ^Macro {
+			m := macro_new(name)
+			s := macro_node(m, macro_start(m))
+			if trigger != "" do macro_set_arg(m, s, "trigger", trigger)
+			if seconds != "" do macro_set_arg(m, s, "seconds", seconds)
+			n := macro_add_node(m, "fx.Invert", 200, 0)
+			macro_link(m, macro_start(m), n.id)
+			return m
+		}
+		hot := mk("Hot", "")
+		check(!macro_is_layer_effect(hot) && macro_trigger_text(hot) == "On Hotkey", "a macro saved without a trigger runs On Hotkey")
+		pause := mk("Pause", "After a Pause", "3")
+		t, secs := macro_trigger(pause)
+		check(t == .Pause && secs == 3 && macro_trigger_text(pause) == "After a 3 s pause", "a Start node's trigger and its seconds")
+		back, bok := macro_from_text(macro_to_text(pause))
+		t2, s2 := macro_trigger(back)
+		check(bok && t2 == .Pause && s2 == 3, "the trigger is saved with the macro")
+		if bok do macro_free(back)
+		append(&macro_lib, hot, pause, mk("Demand", "On Demand"), mk("Timer", "Every N Seconds", "5"), mk("Paint", "On Paint"))
+
+		// where each is offered
+		has_name :: proc(list: []string, s: string) -> bool {
+			for x in list do if x == s do return true
+			return false
+		}
+		names := layer_mode_names(&d.layers[1])
+		check(!has_name(names, "Macro: Hot") && has_name(names, "Macro: Pause") && has_name(names, "Macro: Demand") && len(fx_macros()) == 4, "the blend list offers only the macros with a layer trigger")
+		check(!macro_run_named("Pause"), "a layer effect doesn't run from a hotkey or the Macros menu")
+		check(layer_fx_add(d, "Hot"), "an On Hotkey macro on a layer (from before it had a trigger)")
+		fx_update(d)
+		fc := d.fx_cache[Fx_Key{d.layers[1].uid, d.active_frame}]
+		check(!fc.ok && strings.contains(name_str(&fc.err), "On Hotkey"), "doesn't run there, and says why")
+		layer_fx_remove(d, 0)
+		fx_update(d)
+
+		key := Fx_Key{d.layers[1].uid, d.active_frame}
+		repaint :: proc(d: ^Doc, c: Color) {
+			tiles_set(&d.layers[1].pix, 0, 0, c, {})
+			doc_touch(d, doc_box(d))
+		}
+		shown :: proc(d: ^Doc) -> Color {
+			return doc_flat(d, context.temp_allocator)[0]
+		}
+		// On Demand: runs when added, then only on Refresh
+		layer_fx_add(d, "Demand")
+		fx_update(d)
+		check(shown(d) == inv_paint, "an On Demand effect runs when it's added")
+		repaint(d, red)
+		fx_update(d)
+		check(shown(d) == inv_paint, "and not when the layer changes")
+		fx_refresh(d, d.layers[1].uid)
+		fx_update(d)
+		check(shown(d) == inv_red, "Refresh runs it")
+		d.layers[1].fx[0].on = false
+		doc_touch_all(d)
+		fx_update(d)
+		check(shown(d) == red, "switching it off shows at once, without a Refresh")
+		layer_fx_remove(d, 0)
+
+		// After a Pause: waits until the layer has been left alone that long
+		repaint(d, paint)
+		layer_fx_add(d, "Pause")
+		fx_update(d)
+		check(shown(d) == inv_paint, "an After a Pause effect runs when it's added")
+		repaint(d, red)
+		fx_update(d)
+		check(shown(d) == inv_paint, "it waits after a change")
+		(&d.fx_cache[key]).changed_at -= 3.5
+		fx_update(d)
+		check(shown(d) == inv_red, "and runs once the layer has been left alone long enough")
+		repaint(d, paint)
+		fx_update(d, true)
+		check(shown(d) == inv_paint, "an export doesn't wait for it")
+		layer_fx_remove(d, 0)
+
+		// Every N Seconds: at most that often
+		layer_fx_add(d, "Timer")
+		fx_update(d)
+		repaint(d, red)
+		fx_update(d)
+		check(shown(d) == inv_paint, "an Every N Seconds effect doesn't run again too soon")
+		(&d.fx_cache[key]).ran_at -= 5.5
+		fx_update(d)
+		check(shown(d) == inv_red, "it runs once its seconds have passed")
+
+		// several effects follow the most careful trigger among them
+		layer_fx_add(d, "Paint")
+		lt, ls := layer_fx_trigger(&d.layers[1])
+		check(lt == .Timer && ls == 5, "On Paint with Every 5 s runs every 5 s")
+		layer_fx_add(d, "Demand")
+		lt, _ = layer_fx_trigger(&d.layers[1])
+		check(lt == .Demand, "and with On Demand, On Demand")
 		macros_clear()
 	}
 

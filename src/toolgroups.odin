@@ -548,7 +548,8 @@ panel_groups_bar :: proc(r: Rect) {
 		case 3:
 			text(lx + 2, ty, BLEND_NAMES[shown_blend], fgc)
 		case 4:
-			text(lx + 2, ty, next_macro, macro_find(next_macro) != nil ? fgc : C_TEXT_OFF)
+			nm := macro_find(next_macro) // greyed when it's gone, or is a layer effect now (its key won't run it)
+			text(lx + 2, ty, next_macro, nm != nil && !macro_is_layer_effect(nm) ? fgc : C_TEXT_OFF)
 		}
 		if clicked do tool_group_activate(gi)
 		x += cw + 6

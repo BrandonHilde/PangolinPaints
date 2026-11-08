@@ -765,7 +765,8 @@ dlg_macros :: proc() {
 		text(c.x, y + 3, "No macros yet. Record one: Macros > Record Macro.", C_TEXT_DIM)
 	} else {
 		@(static) names: [MACRO_MAX]string
-		for m, i in macro_lib do names[i] = m.name
+		// layer effects say so, with their trigger (this frame's text: the list is rebuilt every frame)
+		for m, i in macro_lib do names[i] = macro_is_layer_effect(m) ? fmt.tprintf("%s  (layer effect, %s)", m.name, macro_trigger_text(m)) : m.name
 		dialog.a = clamp(dialog.a, 0, n - 1)
 		PICK_TIP :: "The macro the buttons below act on."
 		tip_text(c.x, y + 3, "Macro", C_TEXT, {"Macro", PICK_TIP})
@@ -774,7 +775,9 @@ dlg_macros :: proc() {
 			dialog.flag = false
 		}
 		m := macro_lib[dialog.a]
-		if button(Rect{c.x + c.w - 60, y - 1, 60, 16}, "Run", {"", "Run this macro on the painting. One Undo takes it all back."}) {
+		// a layer effect runs on its layers, as its trigger says, not from here
+		run_tip := macro_is_layer_effect(m) ? fmt.tprintf("This macro is a layer effect (%s): it runs on the layers it's added to, in Layer > Layer Effects. To run it from here, set its Start node's Trigger to On Hotkey.", macro_trigger_text(m)) : "Run this macro on the painting. One Undo takes it all back."
+		if button(Rect{c.x + c.w - 60, y - 1, 60, 16}, "Run", {"", run_tip}, !macro_is_layer_effect(m)) {
 			dialog_close()
 			macro_run_named(m.name)
 			return

@@ -17,6 +17,13 @@ import "core:sync"
 // (fx_update); while painting, the layer shows as it is. Other frames' are worked out when they are drawn or exported
 // (frame_layers), and again only when what they read changed. Effects only run on the main thread. Steps that would
 // reach outside the copy (saving, exporting, tools, colors, brushes, the clipboard, the canvas size) are refused.
+//
+// How often they run is up to each macro's Trigger (its Start node, macro_trigger), so a heavy macro needn't run after
+// every stroke: On Paint after every change, After a Pause once the layer has been left alone for its Seconds, Every N
+// Seconds at most that often, On Demand only when added and on Refresh. A layer's effects run together, so the layer
+// follows the most careful trigger among them (layer_fx_trigger). Switching an effect, adding, removing or reordering
+// them, or changing the layer's blend mode or opacity runs them straight away whatever the trigger: only new pixels
+// and edits to the macros wait for it. On Hotkey macros are run by the user, not on layers: the lists here leave them out.
 
 MAX_LAYER_FX :: 4
 
@@ -38,7 +45,11 @@ Fx_Cache :: struct {
 	stale:   bool, // something changed: check what the effects read, and run them again if it changed
 	has_sig: bool,
 	sig:     u64, // what the result was made from
+	set_sig: u64, // the effects and layer settings it was made with (fx_settings_sig): a change there runs them at once
 	err:     Name, // why the effects didn't run, if they didn't
+	changed_at: f64, // gfx_time of the last change (After a Pause waits from here)
+	ran_at:  f64, // gfx_time of the last run (Every N Seconds waits from here)
+	refresh: bool, // run them again now, whatever the trigger and even if nothing changed (Refresh)
 }
 
 fx_sandbox: bool // the effects of a layer are running, on a copy of it in a document of its own
@@ -55,7 +66,89 @@ fx_on_main :: proc() -> bool {
 // Marks layer `uid`'s effects (or every layer's, with uid 0) to be checked again.
 fx_mark_stale :: proc(d: ^Doc, uid := 0) {
 	if fx_sandbox do return
-	for k, &c in d.fx_cache do if uid == 0 || k.uid == uid do c.stale = true
+	now := gfx_time()
+	for k, &c in d.fx_cache {
+		if uid == 0 || k.uid == uid {
+			c.stale = true
+			c.changed_at = now
+		}
+	}
+}
+
+// Runs layer `uid`'s effects again on every frame, now, whatever their trigger: the Refresh button.
+fx_refresh :: proc(d: ^Doc, uid: int) {
+	for k, &c in d.fx_cache {
+		if k.uid == uid {
+			c.stale = true
+			c.refresh = true
+		}
+	}
+}
+
+// When layer `l`'s effects run: the most careful trigger among those switched on (On Demand, then After a Pause, then
+// Every N Seconds, then On Paint), with the longest Seconds of those that have it. On Hotkey macros are skipped: they
+// can't run on a layer, and layer_fx_run says so.
+layer_fx_trigger :: proc(l: ^Layer) -> (t: Macro_Trigger, secs: f64) {
+	rank :: proc(t: Macro_Trigger) -> int {
+		switch t {
+		case .Hotkey, .Paint:
+			return 0
+		case .Timer:
+			return 1
+		case .Pause:
+			return 2
+		case .Demand:
+			return 3
+		}
+		return 0
+	}
+	t = .Paint
+	for &f in l.fx[:l.fx_n] {
+		if !f.on do continue
+		ft, fs := macro_trigger(macro_find(name_str(&f.name)))
+		if ft == .Hotkey do continue
+		if rank(ft) > rank(t) {
+			t, secs = ft, fs
+		} else if ft == t {
+			secs = max(secs, fs)
+		}
+	}
+	return
+}
+
+// The layer's effects (which, switched on or not, in what order) and the settings of its own they read.
+fx_settings_sig :: proc(l: ^Layer) -> u64 {
+	h: u64 = 14695981039346656037
+	mix :: proc(h: ^u64, v: u64) {
+		h^ = (h^ ~ v) * 1099511628211
+	}
+	mix(&h, u64(l.blend))
+	mix(&h, u64(l.opacity))
+	mix(&h, l.pass_through ? 7 : 3)
+	for &f in l.fx[:l.fx_n] {
+		for b in f.name.b[:f.name.n] do mix(&h, u64(b))
+		mix(&h, f.on ? 2 : 1)
+	}
+	return h
+}
+
+// May layer `l`'s effects run now, `c` being what they gave last (`has`: whether they gave anything)? A layer with no
+// result yet, asked to Refresh, or whose effects or settings changed runs at once; otherwise its trigger decides.
+// `force` (an export, which should show the latest) doesn't wait for a timer, but On Demand still waits for Refresh.
+fx_due :: proc(l: ^Layer, c: Fx_Cache, has, force: bool) -> bool {
+	if !has || !c.has_sig || c.refresh || c.set_sig != fx_settings_sig(l) do return true
+	t, secs := layer_fx_trigger(l)
+	switch t {
+	case .Hotkey, .Paint:
+		return true
+	case .Pause:
+		return force || gfx_time() - c.changed_at >= secs
+	case .Timer:
+		return force || gfx_time() - c.ran_at >= secs
+	case .Demand:
+		return false
+	}
+	return true
 }
 
 fx_cache_free :: proc(d: ^Doc) {
@@ -78,7 +171,10 @@ fx_apply :: proc(d: ^Doc, layers: []Layer, frame: int, compute: bool) -> []Layer
 	for &l, i in layers {
 		if l.fx_n == 0 || !layer_fx_on(&l) do continue
 		if compute && fx_on_main() && !fx_sandbox && !macro_running {
-			if li := layer_find_uid(d.layers[:], l.uid); li >= 0 do fx_compute(d, li, frame)
+			if li := layer_find_uid(d.layers[:], l.uid); li >= 0 {
+				prev, has := d.fx_cache[Fx_Key{l.uid, frame}]
+				if fx_due(&d.layers[li], prev, has, false) do fx_compute(d, li, frame)
+			}
 		}
 		c, has := d.fx_cache[Fx_Key{l.uid, frame}]
 		if !has || !c.ok do continue
@@ -139,8 +235,11 @@ fx_compute :: proc(d: ^Doc, li, f: int) -> bool {
 	sig := fx_signature(l, input)
 	c := &d.fx_cache[key]
 	c.stale = false
-	if c.has_sig && c.sig == sig do return false
+	if c.has_sig && c.sig == sig && !c.refresh do return false
 	c.has_sig, c.sig = true, sig
+	c.set_sig = fx_settings_sig(l)
+	c.refresh = false
+	c.ran_at = gfx_time()
 	if !layer_fx_on(l) {
 		c.ok = false
 		return true
@@ -183,6 +282,10 @@ layer_fx_run :: proc(d: ^Doc, src: ^Layer, input: []Color) -> (pix: []Color, ble
 		m := macro_find(name_str(&f.name))
 		if m == nil {
 			msg = fmt.tprintf("there is no macro called %s", name_str(&f.name))
+			break
+		}
+		if !macro_is_layer_effect(m) {
+			msg = fmt.tprintf("%s runs On Hotkey, not on a layer: set its Start node's Trigger to a layer trigger", m.name)
 			break
 		}
 		if rok, rmsg, _ := macro_run(m); !rok {
@@ -244,7 +347,8 @@ fx_update :: proc(d: ^Doc, force := false) {
 	for &l, li in d.layers {
 		if l.fx_n == 0 do continue
 		c, has := d.fx_cache[Fx_Key{l.uid, f}]
-		if has && !c.stale do continue
+		if has && !c.stale && !c.refresh do continue
+		if !fx_due(&l, c, has, force) do continue // stays stale: checked again next frame
 		if fx_compute(d, li, f) do fx_redraw(d)
 	}
 }
@@ -261,21 +365,28 @@ fx_redraw :: proc(d: ^Doc) {
 // A layer's mode: a blend mode, or a macro
 // ---------------------------------------------------------------------------
 
-LAYER_MODE_TIP :: "How the layer mixes with the layers below it, such as Multiply to darken or Screen to lighten. A macro (after the blend modes) runs on the layer as a live effect whenever it changes: its result is what shows, blended as the macro sets. The wheel steps through them."
+LAYER_MODE_TIP :: "How the layer mixes with the layers below it, such as Multiply to darken or Screen to lighten. A macro (after the blend modes) runs on the layer as a live effect, as often as its Trigger says: its result is what shows, blended as the macro sets. The wheel steps through them."
+
+// The macros that can be layer effects, by name (temp memory): those with a layer trigger.
+fx_macros :: proc() -> []^Macro {
+	out := make([dynamic]^Macro, context.temp_allocator)
+	for m in macro_lib do if macro_is_layer_effect(m) do append(&out, m)
+	return out[:]
+}
 
 // The choices of a layer's mode list (temp memory): Pass Through for a group, the blend modes, then the macros.
 layer_mode_names :: proc(l: ^Layer) -> []string {
 	out := make([dynamic]string, context.temp_allocator)
 	if l.is_group do append(&out, "Pass Through")
 	append(&out, ..blend_names_slice())
-	for m in macro_lib do append(&out, fmt.tprintf("Macro: %s", m.name))
+	for m in fx_macros() do append(&out, fmt.tprintf("Macro: %s", m.name))
 	return out[:]
 }
 
 layer_mode_current :: proc(l: ^Layer) -> int {
 	nb := len(Blend) + (l.is_group ? 1 : 0)
 	if l.fx_n > 0 && l.fx[0].on {
-		for m, i in macro_lib do if strings.equal_fold(m.name, name_str(&l.fx[0].name)) do return nb + i
+		for m, i in fx_macros() do if strings.equal_fold(m.name, name_str(&l.fx[0].name)) do return nb + i
 	}
 	if l.is_group && l.pass_through do return 0
 	return int(l.blend) + (l.is_group ? 1 : 0)
@@ -295,9 +406,9 @@ layer_mode_set :: proc(l: ^Layer, i: int) {
 		l.pass_through = false
 		l.fx_n = 0
 		l.fx = {}
-	case i - nb < len(macro_lib):
+	case i - nb < len(fx_macros()):
 		l.fx = {}
-		name_set(&l.fx[0].name, macro_lib[i - nb].name)
+		name_set(&l.fx[0].name, fx_macros()[i - nb].name)
 		l.fx[0].on = true
 		l.fx_n = 1
 	}
@@ -399,7 +510,7 @@ dlg_layer_fx :: proc() {
 	y := c.y
 	{
 		if l.fx_n == 0 {
-			for line, i in tooltip_wrap("No effects yet. Add a macro below: it runs on this layer whenever the layer changes, and the canvas shows the result.", c.w, text_w) {
+			for line, i in tooltip_wrap("No effects yet. Add a macro below: it runs on this layer as often as its Trigger says, and the canvas shows the result.", c.w, text_w) {
 				text(c.x, y + 3 + i32(i) * 13, line, C_TEXT_DIM)
 			}
 		}
@@ -413,9 +524,16 @@ dlg_layer_fx :: proc() {
 				doc_touch_all(d)
 			}
 			name := name_str(&f.name)
-			missing := macro_find(name) == nil
-			text_clipped(Rect{c.x + 22, ry + 3, c.w - 22 - 4 * 24, 12}, missing ? fmt.tprintf("%s (there is no macro called this)", name) : name, missing ? C_DANGER : (f.on ? C_TEXT : C_TEXT_DIM))
+			m := macro_find(name)
+			missing := m == nil
 			bx := c.x + c.w - 4 * 24
+			text_clipped(Rect{c.x + 22, ry + 3, bx - 4 - c.x - 22, 12}, missing ? fmt.tprintf("%s (there is no macro called this)", name) : name, missing ? C_DANGER : (f.on ? C_TEXT : C_TEXT_DIM))
+			if !missing {
+				// its trigger, after the name; an On Hotkey macro can't run here
+				tx := c.x + 22 + text_w(name) + 8
+				layer_ok := macro_is_layer_effect(m)
+				text_clipped(Rect{tx, ry + 3, bx - 4 - tx, 12}, layer_ok ? macro_trigger_text(m) : "On Hotkey: can't run on a layer", layer_ok ? C_TEXT_OFF : C_DANGER)
+			}
 			if button(Rect{bx, ry, 22, 16}, "...", {"Edit", "Open this macro in the node editor. Every layer using it follows what you change."}, !missing) {
 				dialog_close()
 				macro_editor_open(name)
@@ -437,25 +555,33 @@ dlg_layer_fx :: proc() {
 			}
 		}
 		y += MAX_LAYER_FX * 22 + 4
-		if len(macro_lib) == 0 {
-			text(c.x, y + 3, "Make a macro first, in Macros > Node Editor.", C_TEXT_DIM)
+		fxm := fx_macros()
+		if len(fxm) == 0 {
+			text_clipped(Rect{c.x, y + 3, c.w, 12}, "No macro is a layer effect yet: give one a layer Trigger on its Start node.", C_TEXT_DIM)
 		} else if l.fx_n < MAX_LAYER_FX {
 			@(static) names: [MACRO_MAX + 1]string
 			names[0] = "Add an effect..."
-			n := min(len(macro_lib), MACRO_MAX)
-			for m, i in macro_lib[:n] do names[i + 1] = m.name
-			if nv, ch := combo(Rect{c.x, y, 220, 14}, names[:n + 1], 0, {"Add an effect", "Pick a macro to run on this layer whenever it changes. Make one in Macros > Node Editor."}); ch && nv > 0 {
-				layer_fx_add(d, macro_lib[nv - 1].name)
+			n := min(len(fxm), MACRO_MAX)
+			for m, i in fxm[:n] do names[i + 1] = m.name
+			if nv, ch := combo(Rect{c.x, y, 220, 14}, names[:n + 1], 0, {"Add an effect", "Pick a macro to run on this layer. These are the macros whose Start node has a layer Trigger (On Paint, After a Pause, Every N Seconds or On Demand); make one in Macros > Node Editor."}); ch && nv > 0 {
+				layer_fx_add(d, fxm[nv - 1].name)
 			}
 		}
 		y += 22
 		if fc, has := d.fx_cache[Fx_Key{l.uid, d.active_frame}]; has && fc.err.n > 0 {
 			text_clipped(Rect{c.x, y + 3, c.w, 12}, fmt.tprintf("Not shown: %s", name_str(&fc.err)), C_DANGER)
+		} else if layer_fx_on(l) {
+			t, secs := layer_fx_trigger(l)
+			// effects run as one stack: with several, the most careful trigger among them
+			text_clipped(Rect{c.x, y + 3, c.w, 12}, fmt.tprintf(l.fx_n > 1 ? "Updates (all together): %s" : "Updates: %s", macro_trigger_words(t, secs)), C_TEXT_DIM)
 		}
 		if button(Rect{c.x, c.y + c.h - 18, 110, 18}, "Apply Effects", {"", cmd_help(.Layer_Fx_Apply)}, l.fx_n > 0) {
 			dialog_close()
 			run_cmd(.Layer_Fx_Apply)
 			return
+		}
+		if button(Rect{c.x + 116, c.y + c.h - 18, 80, 18}, "Refresh", {"Refresh", "Run this layer's effects again now, whatever their trigger. Effects On Demand only update when you click this; After a Pause and Every N Seconds catch up without waiting."}, layer_fx_on(l)) {
+			fx_refresh(d, l.uid)
 		}
 	}
 	ok, _ := dialog_buttons(c, "Close this window (Enter).", "Close", "")

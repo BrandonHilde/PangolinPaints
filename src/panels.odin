@@ -269,11 +269,15 @@ menu_build :: proc(idx: int) {
 		item("Import Workspace...", cmd = .Ws_Import)
 		item("Export Workspace...", cmd = .Ws_Export)
 	case 10:
+		// the macros you run: layer effects run on their layers instead (Layer > Layer Effects)
+		listed := false
 		for m, i in macro_lib {
 			if i >= MACRO_MENU_MAX do break
+			if macro_is_layer_effect(m) do continue
 			item(m.name, cmd = Cmd(int(Cmd.Macro_First) + i))
+			listed = true
 		}
-		if len(macro_lib) > 0 do popup_sep()
+		if listed do popup_sep()
 		item("Node Editor", cmd = .Macro_Editor, checked = macro_editor_on())
 		item(macro_recording() ? "Stop Recording" : "Record Macro", cmd = .Macro_Record, checked = macro_recording())
 		item("Manage Macros...", cmd = .Macros)
@@ -506,9 +510,18 @@ panel_toolbar :: proc() {
 		// macros are listed one per row too: the one the hotkey runs next is highlighted
 		for &mn, mi in g.macros {
 			name := name_str(&mn)
-			found := macro_find(name) != nil
-			tip := found ? fmt.tprintf("Click to make this the macro the group's hotkey runs next. Right-click to remove it from the group.") : "There is no macro with this name any more. Right-click to remove it from the group."
-			if obutton(name, 0, {name, tip}, found, mi == g.next_macro, key = fmt.tprintf("m%d", mi), class = "blend-row") {
+			m := macro_find(name)
+			runs := m != nil && !macro_is_layer_effect(m)
+			tip: string
+			switch {
+			case runs:
+				tip = "Click to make this the macro the group's hotkey runs next. Right-click to remove it from the group."
+			case m != nil:
+				tip = fmt.tprintf("This macro is a layer effect now (%s), so the hotkey won't run it. Set its Start node's Trigger to On Hotkey, or right-click to remove it from the group.", macro_trigger_text(m))
+			case:
+				tip = "There is no macro with this name any more. Right-click to remove it from the group."
+			}
+			if obutton(name, 0, {name, tip}, runs, mi == g.next_macro, key = fmt.tprintf("m%d", mi), class = "blend-row") {
 				g.next_macro = mi
 			}
 			if bn := oui.find_node(uictx.build_parent, fmt.tprintf("m%d", mi)); bn != nil && bn.hovered && ui.pressed[1] && !popup.open {
@@ -516,7 +529,8 @@ panel_toolbar :: proc() {
 			}
 		}
 		macros_left := 0
-		for m in macro_lib do if !group_has_macro(&g, m.name) do macros_left += 1
+		// only On Hotkey macros go in groups: the others are layer effects
+		for m in macro_lib do if !macro_is_layer_effect(m) && !group_has_macro(&g, m.name) do macros_left += 1
 		can_add := is_colors ? n < 48 : (is_blends ? n < len(Blend) : (is_macros ? macros_left > 0 : n < len(Tool)))
 		if can_add {
 			tip := Tip{"Add to group", "Add a tool, a switch, colors, brush blend modes or macros to this group. A group holds one of those kinds. Right-click an item to remove it."}
@@ -555,7 +569,7 @@ panel_toolbar :: proc() {
 				if !is_tools && !is_colors && !is_blends && macros_left > 0 {
 					if any_section do popup_sep()
 					for m, mi in macro_lib {
-						if !group_has_macro(&g, m.name) {
+						if !macro_is_layer_effect(m) && !group_has_macro(&g, m.name) {
 							popup_item_half(m.name, 1000 + mi)
 						}
 					}

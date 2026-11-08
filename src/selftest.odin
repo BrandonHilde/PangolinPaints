@@ -288,6 +288,10 @@ selftest :: proc() -> int {
 		t2, s2 := macro_trigger(back)
 		check(bok && t2 == .Pause && s2 == 3, "the trigger is saved with the macro")
 		if bok do macro_free(back)
+		zero := mk("Zero", "Every N Seconds", "0")
+		_, zs := macro_trigger(zero)
+		check(zs == MACRO_TRIGGER_MIN_SECONDS, "Seconds is never 0: a file saying 0 waits the shortest time, 0.2 s")
+		macro_free(zero)
 		append(&macro_lib, hot, pause, mk("Demand", "On Demand"), mk("Timer", "Every N Seconds", "5"), mk("Paint", "On Paint"))
 
 		// where each is offered

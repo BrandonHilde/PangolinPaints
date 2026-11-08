@@ -9,6 +9,8 @@ PangolinPaints
 # per-user settings and scratch
 *.cfg
 .xdp-*
+workspaces/
+macros/
 shots/
 *.dll
 src/shared_*.odin

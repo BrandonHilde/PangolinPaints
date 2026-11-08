@@ -183,9 +183,13 @@ menu_build :: proc(idx: int) {
 		item("Layer via Copy", cmd = .Layer_Via_Copy)
 		item("Layer via Cut", cmd = .Layer_Via_Cut)
 		popup_sep()
+		item("New Group", cmd = .Layer_Group_New)
+		item("Group Layer", cmd = .Layer_Group)
+		item("Ungroup", cmd = .Layer_Ungroup, enabled = l.is_group)
+		popup_sep()
 		item("Move Up", cmd = .Layer_Up)
 		item("Move Down", cmd = .Layer_Down)
-		item("Merge Down", cmd = .Layer_Merge)
+		item(l.is_group ? "Merge Group" : "Merge Down", cmd = .Layer_Merge, enabled = l.is_group || layer_merge_target(d) >= 0)
 		popup_sep()
 		item("Convert Text to Path", cmd = .Layer_Text_To_Path, enabled = l.text.on)
 		item("Rasterize Layer", cmd = .Layer_Rasterize, enabled = l.text.on || l.shape != nil)
@@ -193,8 +197,8 @@ menu_build :: proc(idx: int) {
 		item("Lock Transparency", cmd = .Layer_Lock_Alpha, checked = l.lock_alpha)
 		item("Properties...", cmd = .Layer_Props)
 		popup_sep()
-		item("Add Mask (Reveal All)", cmd = .Mask_Add, enabled = !l.has_mask)
-		item("Add Mask from Selection", cmd = .Mask_From_Sel, enabled = !l.has_mask && d.sel != nil)
+		item("Add Mask (Reveal All)", cmd = .Mask_Add, enabled = !l.has_mask && !l.is_group)
+		item("Add Mask from Selection", cmd = .Mask_From_Sel, enabled = !l.has_mask && !l.is_group && d.sel != nil)
 		item("Edit Mask", cmd = .Mask_Edit, checked = d.edit_mask, enabled = l.has_mask)
 		item("Enable Mask", cmd = .Mask_Enable, checked = l.mask_on, enabled = l.has_mask)
 		item("Apply Mask", cmd = .Mask_Apply, enabled = l.has_mask)
@@ -888,7 +892,16 @@ panel_right :: proc() {
 	l := &d.layers[d.active_layer]
 	thumbs_refresh(d)
 	oui.element(uictx, "layer-props", "row", {id = "layer-props"})
-	if nv, ch := ocombo("blend", 92, blend_names_slice(), int(l.blend), {"Blend mode", BLEND_TIP}); ch {
+	if l.is_group {
+		// a group's list starts with Pass Through
+		cur := l.pass_through ? 0 : int(l.blend) + 1
+		if nv, ch := ocombo("blend", 92, group_blend_names(), cur, {"Blend mode", GROUP_BLEND_TIP}); ch {
+			history_push(d)
+			l.pass_through = nv == 0
+			if nv > 0 do l.blend = Blend(nv - 1)
+			doc_touch_all(d)
+		}
+	} else if nv, ch := ocombo("blend", 92, blend_names_slice(), int(l.blend), {"Blend mode", BLEND_TIP}); ch {
 		history_push(d)
 		l.blend = Blend(nv)
 		doc_touch_all(d)
@@ -924,12 +937,13 @@ panel_right :: proc() {
 	}
 	if lb("dup", .Copy, cmd_tip("Duplicate layer", .Layer_Dup)) do run_cmd(.Layer_Dup)
 	if lb("del", .Trash, cmd_tip("Delete layer", .Layer_Del), len(d.layers) > 1) do run_cmd(.Layer_Del)
-	if lb("up", .Up, cmd_tip("Move layer up", .Layer_Up), d.active_layer < len(d.layers) - 1) do run_cmd(.Layer_Up)
-	if lb("down", .Down, cmd_tip("Move layer down", .Layer_Down), d.active_layer > 0) do run_cmd(.Layer_Down)
-	if lb("merge", .Merge, cmd_tip("Merge down", .Layer_Merge), d.active_layer > 0) do run_cmd(.Layer_Merge)
+	if lb("group", .Folder, cmd_tip("New group", .Layer_Group_New)) do run_cmd(.Layer_Group_New)
+	if lb("up", .Up, cmd_tip("Move layer up", .Layer_Up), len(d.layers) > 1) do run_cmd(.Layer_Up)
+	if lb("down", .Down, cmd_tip("Move layer down", .Layer_Down), len(d.layers) > 1) do run_cmd(.Layer_Down)
+	if lb("merge", .Merge, l.is_group ? cmd_tip("Merge group", .Layer_Merge) : cmd_tip("Merge down", .Layer_Merge), l.is_group || layer_merge_target(d) >= 0) do run_cmd(.Layer_Merge)
 	if l.has_mask {
 		if lb("mask", .Mask, cmd_tip("Delete mask", .Mask_Delete), lit = true) do run_cmd(.Mask_Delete)
-	} else {
+	} else if !l.is_group {
 		if lb("mask", .Mask, d.sel != nil ? cmd_tip("Add mask from selection", .Mask_From_Sel) : cmd_tip("Add layer mask", .Mask_Add)) {
 			run_cmd(d.sel != nil ? .Mask_From_Sel : .Mask_Add)
 		}
@@ -1113,9 +1127,10 @@ layer_drag_on: bool
 // right-click for the layer menu.
 panel_layer_list :: proc(list: Rect) {
 	d := doc
-	// list, top layer first
+	// list, top layer first; what is in a closed group is left out
 	ctl_well(list)
-	n := i32(len(d.layers))
+	rows := layer_rows(d)
+	n := i32(len(rows))
 	content := n * LAYER_ROW_H
 	inner := rect_inset(list, 1)
 	if ui_hover(list) && ui.wheel != 0 {
@@ -1123,9 +1138,8 @@ panel_layer_list :: proc(list: Rect) {
 	}
 	layers_scroll = clamp(layers_scroll, 0, max(content - inner.h, 0))
 	clip_begin(inner)
-	for i in 0 ..< n {
-		li := int(n - 1 - i)
-		ry := inner.y + i * LAYER_ROW_H - layers_scroll
+	for li, i in rows {
+		ry := inner.y + i32(i) * LAYER_ROW_H - layers_scroll
 		if ry + LAYER_ROW_H < inner.y || ry > inner.y + inner.h do continue
 		ly := &d.layers[li]
 		row := Rect{inner.x, ry, inner.w, LAYER_ROW_H}
@@ -1137,36 +1151,59 @@ panel_layer_list :: proc(list: Rect) {
 			fill_rect(row, Color{255, 255, 255, 12})
 		}
 		hline(row.x, ry + LAYER_ROW_H - 1, row.w, C_RING)
+		indent := i32(layer_depth(d.layers[:], li)) * LAYER_INDENT
+		hidden_by_group := ly.visible && layer_hidden(d.layers[:], li)
 		eye := Rect{row.x + 5, ry + (LAYER_ROW_H - 12) / 2, 12, 12}
 		// the row's own tip comes first: what lies inside it asks later and wins
 		in_list := ui_hover(list)
-		if in_list do tip_area(row, "layer-row", {name_str(&ly.name), "Click to make this the active layer. Drag to change its place in the stack, double-click for its properties, right-click for more."})
-		if in_list do tip_area(rect_inset(eye, -3), "layer-eye", {"Visible", "Click to show or hide this layer."})
-		icon(.Eye, eye.x, eye.y, ly.visible ? C_TEXT : C_TEXT_OFF)
-		th := Rect{row.x + 22, ry + (LAYER_ROW_H - THUMB_H) / 2, THUMB_W, THUMB_H}
-		draw_checker(th, 3)
-		if li * 2 < len(thumbs) {
-			draw_tex_at(thumbs[li * 2].tex, th.x, th.y)
+		if in_list {
+			if ly.is_group {
+				tip_area(row, "layer-row", {name_str(&ly.name), "A layer group. Click to make it the active layer, double-click for its properties, right-click for more. Drag layers onto it to put them in it; drag it to move it with everything in it."})
+			} else {
+				tip_area(row, "layer-row", {name_str(&ly.name), "Click to make this the active layer. Drag to change its place in the stack (onto a group to put it in the group), double-click for its properties, right-click for more."})
+			}
+			tip_area(rect_inset(eye, -3), "layer-eye", {"Visible", hidden_by_group ? "Click to show or hide this layer. It is hidden now by a group it is in." : "Click to show or hide this layer."})
 		}
-		outline_rect(rect_inset(th, -1), active && !d.edit_mask ? C_ACCENT : C_RING_HI)
-		if in_list do tip_area(th, "layer-thumb", {name_str(&ly.name), "Click to paint on this layer's pixels. An outline shows it is what tools change. Drag to change its place in the stack."})
+		icon(.Eye, eye.x, eye.y, ly.visible && !hidden_by_group ? C_TEXT : C_TEXT_OFF)
+		th := Rect{row.x + 22 + indent, ry + (LAYER_ROW_H - THUMB_H) / 2, THUMB_W, THUMB_H}
+		arrow := Rect{th.x, ry + (LAYER_ROW_H - 12) / 2, 12, 12}
+		mr: Rect
 		tx := th.x + THUMB_W + 6
-		mr := Rect{tx, th.y, THUMB_W, THUMB_H}
-		if ly.has_mask {
-			if li * 2 + 1 < len(thumbs) {
-				draw_tex_at(thumbs[li * 2 + 1].tex, mr.x, mr.y)
+		if ly.is_group {
+			// an arrow to open or close it, and a folder
+			icon(ly.collapsed ? .Right : .Down, arrow.x, arrow.y, C_TEXT_DIM)
+			icon(.Folder, th.x + 16, ry + (LAYER_ROW_H - ICON_SIZE) / 2, active ? C_ACCENT : C_TEXT)
+			if in_list do tip_area(rect_inset(arrow, -2), "layer-fold", {ly.collapsed ? "Open group" : "Close group", "Show or hide the layers in this group in the list. It doesn't change the picture."})
+		} else {
+			draw_checker(th, 3)
+			if li * 2 < len(thumbs) {
+				draw_tex_at(thumbs[li * 2].tex, th.x, th.y)
 			}
-			if !ly.mask_on {
-				draw_line_i(mr.x, mr.y, mr.x + mr.w, mr.y + mr.h, C_DANGER)
+			outline_rect(rect_inset(th, -1), active && !d.edit_mask ? C_ACCENT : C_RING_HI)
+			if in_list do tip_area(th, "layer-thumb", {name_str(&ly.name), "Click to paint on this layer's pixels. An outline shows it is what tools change. Drag to change its place in the stack."})
+			mr = Rect{tx, th.y, THUMB_W, THUMB_H}
+			if ly.has_mask {
+				if li * 2 + 1 < len(thumbs) {
+					draw_tex_at(thumbs[li * 2 + 1].tex, mr.x, mr.y)
+				}
+				if !ly.mask_on {
+					draw_line_i(mr.x, mr.y, mr.x + mr.w, mr.y + mr.h, C_DANGER)
+				}
+				outline_rect(rect_inset(mr, -1), active && d.edit_mask ? C_ACCENT : C_RING_HI)
+				if in_list do tip_area(mr, "layer-mask", {"Layer mask", "Click to paint on the mask: black hides, white reveals. Shift-click turns the mask's effect on or off, which a red line shows."})
+				tx += THUMB_W + 6
 			}
-			outline_rect(rect_inset(mr, -1), active && d.edit_mask ? C_ACCENT : C_RING_HI)
-			if in_list do tip_area(mr, "layer-mask", {"Layer mask", "Click to paint on the mask: black hides, white reveals. Shift-click turns the mask's effect on or off, which a red line shows."})
-			tx += THUMB_W + 6
 		}
 		name_r := Rect{tx, ry + 5, row.x + row.w - tx - 4, 10}
-		text_clipped(name_r, name_str(&ly.name), ly.visible ? C_TEXT : C_TEXT_DIM)
+		text_clipped(name_r, name_str(&ly.name), ly.visible && !hidden_by_group ? C_TEXT : C_TEXT_DIM)
 		info := ""
-		if ly.blend != .Normal do info = BLEND_NAMES[ly.blend]
+		if ly.is_group {
+			k := 0
+			for &x in d.layers do if x.parent == ly.uid do k += 1
+			info = fmt.tprintf("%s, %d layer%s", ly.pass_through ? "Pass Through" : BLEND_NAMES[ly.blend], k, k == 1 ? "" : "s")
+		} else if ly.blend != .Normal {
+			info = BLEND_NAMES[ly.blend]
+		}
 		if ly.opacity < 255 do info = fmt.tprintf("%s %d%%", info, int(ly.opacity) * 100 / 255)
 		text_clipped(Rect{tx, ry + 17, name_r.w - 28, 10}, info, C_TEXT_DIM)
 		ix := row.x + row.w - 16
@@ -1195,12 +1232,18 @@ panel_layer_list :: proc(list: Rect) {
 			d.active_layer = li
 			d.edit_mask = false
 			popup_begin(make_id(list, "layermenu"), Rect{ui.mx, ui.my, 1, 1}, 150)
-			popup_item("Convert Text to Path", cmd = .Layer_Text_To_Path, enabled = ly.text.on)
-			popup_item("Rasterize Layer", cmd = .Layer_Rasterize, enabled = ly.text.on || ly.shape != nil)
+			if !ly.is_group {
+				popup_item("Convert Text to Path", cmd = .Layer_Text_To_Path, enabled = ly.text.on)
+				popup_item("Rasterize Layer", cmd = .Layer_Rasterize, enabled = ly.text.on || ly.shape != nil)
+				popup_sep()
+			}
+			popup_item(ly.is_group ? "Duplicate Group" : "Duplicate Layer", cmd = .Layer_Dup)
+			popup_item(ly.is_group ? "Delete Group" : "Delete Layer", cmd = .Layer_Del, enabled = li - layer_span_start(d.layers[:], li) + 1 < len(d.layers))
+			popup_item(ly.is_group ? "Merge Group" : "Merge Down", cmd = .Layer_Merge, enabled = ly.is_group || layer_merge_target(d) >= 0)
 			popup_sep()
-			popup_item("Duplicate Layer", cmd = .Layer_Dup)
-			popup_item("Delete Layer", cmd = .Layer_Del, enabled = len(d.layers) > 1)
-			popup_item("Merge Down", cmd = .Layer_Merge, enabled = li > 0)
+			popup_item("New Group", cmd = .Layer_Group_New)
+			popup_item("Group Layer", cmd = .Layer_Group)
+			if ly.is_group do popup_item("Ungroup", cmd = .Layer_Ungroup)
 			popup_sep()
 			popup_item("Properties...", cmd = .Layer_Props)
 		}
@@ -1210,7 +1253,9 @@ panel_layer_list :: proc(list: Rect) {
 				history_push(d)
 				ly.visible = !ly.visible
 				doc_touch_all(d)
-			case ly.has_mask && in_rect(mr, ui.mx, ui.my):
+			case ly.is_group && in_rect(rect_inset(arrow, -2), ui.mx, ui.my):
+				ly.collapsed = !ly.collapsed
+			case !ly.is_group && ly.has_mask && in_rect(mr, ui.mx, ui.my):
 				d.active_layer = li
 				d.edit_mask = true
 				if ui.shift {
@@ -1229,29 +1274,38 @@ panel_layer_list :: proc(list: Rect) {
 			}
 		}
 	}
-	// drag a row up or down to reorder; the line shows where it will land
-	if layer_drag >= 0 && layer_drag < int(n) {
+	// drag a row to move it: above or below another row, or into a group (the outline shows where it lands)
+	if layer_drag >= 0 && layer_drag < len(d.layers) {
 		if !layer_drag_on && ui.down[0] && abs(ui.my - layer_drag_y0) > 4 {
 			layer_drag_on = true
 		}
-		if layer_drag_on {
+		if layer_drag_on && n > 0 {
 			ri := clamp((ui.my - inner.y + layers_scroll) / LAYER_ROW_H, 0, n - 1)
-			target := int(n - 1 - ri)
-			if target != layer_drag {
-				ly := inner.y + (target > layer_drag ? ri : ri + 1) * LAYER_ROW_H - layers_scroll
-				fill_rect(Rect{inner.x, ly - 1, inner.w, 2}, C_ACCENT)
+			target := rows[ri]
+			within := ui.my - (inner.y + ri * LAYER_ROW_H - layers_scroll) // pointer's height in the row
+			drop: Layer_Drop
+			switch {
+			case d.layers[target].is_group && within > LAYER_ROW_H / 4:
+				drop = .Into
+			case within < LAYER_ROW_H / 2:
+				drop = .Above
+			case:
+				drop = .Below
+			}
+			ok := target != layer_drag && !(d.layers[layer_drag].is_group && layer_in_group(d.layers[:], target, layer_drag))
+			if ok {
+				ry := inner.y + ri * LAYER_ROW_H - layers_scroll
+				ind := i32(layer_depth(d.layers[:], target)) * LAYER_INDENT
+				switch drop {
+				case .Into:
+					outline_rect(rect_inset(Rect{inner.x, ry, inner.w, LAYER_ROW_H}, 1), C_ACCENT)
+				case .Above:
+					fill_rect(Rect{inner.x + 22 + ind, ry - 1, inner.w - 22 - ind, 2}, C_ACCENT)
+				case .Below:
+					fill_rect(Rect{inner.x + 22 + ind, ry + LAYER_ROW_H - 1, inner.w - 22 - ind, 2}, C_ACCENT)
+				}
 				if ui.released[0] {
-					history_push(d)
-					for layer_drag < target {
-						d.layers[layer_drag], d.layers[layer_drag + 1] = d.layers[layer_drag + 1], d.layers[layer_drag]
-						layer_drag += 1
-					}
-					for layer_drag > target {
-						d.layers[layer_drag], d.layers[layer_drag - 1] = d.layers[layer_drag - 1], d.layers[layer_drag]
-						layer_drag -= 1
-					}
-					d.active_layer = target
-					doc_touch_all(d)
+					doc_move_to(d, layer_drag, target, drop)
 				}
 			}
 		}
@@ -1262,6 +1316,27 @@ panel_layer_list :: proc(list: Rect) {
 		layer_drag, layer_drag_on = -1, false
 	}
 	clip_end()
+}
+
+LAYER_INDENT :: 12 // per group a layer is in
+
+// The rows of the layer list, top layer first: every layer but those inside a closed group (temp memory).
+layer_rows :: proc(d: ^Doc) -> []int {
+	out := make([dynamic]int, 0, len(d.layers), context.temp_allocator)
+	#reverse for &l, i in d.layers {
+		shown := true
+		at := i
+		for _ in 0 ..< len(d.layers) {
+			at = layer_parent_index(d.layers[:], at)
+			if at < 0 do break
+			if d.layers[at].collapsed {
+				shown = false
+				break
+			}
+		}
+		if shown do append(&out, i)
+	}
+	return out[:]
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,8 @@ import "core:unicode/utf8"
 // ---------------------------------------------------------------------------
 // Photoshop documents (.psd / .psb) as layered documents: pixel layers with name, opacity, blend
 // mode, visibility and layer masks, in 8 or 16 bits per channel, RGB, greyscale or CMYK.
-// Groups are flattened into the layer list (a hidden group hides its layers, group opacity carries
+// Groups become layer groups, with their visibility, opacity, blend mode (or pass through) and open or closed state
+// (formerly: groups were flattened into the layer list (a hidden group hides its layers, group opacity carries
 // over). Files with no readable layers fall back to the merged image Photoshop stores at the end.
 // ---------------------------------------------------------------------------
 
@@ -126,6 +127,7 @@ Psd_Layer :: struct {
 	hidden:                   bool,
 	name:                     string,
 	divider:                  int, // lsct: 1/2 group start (listed after its contents), 3 group end marker
+	pass:                     bool, // blend key "pass": a pass-through group
 	doc_i:                    int, // index of the document layer made from it, or -1
 	// layer mask
 	m_top, m_left, m_bottom, m_right: int,
@@ -350,6 +352,7 @@ psd_read_layers :: proc(r: ^Psd_Reader, nd: ^Doc, w, h, depth, mode: int) {
 		for b in PSD_BLENDS {
 			if b.key == key do L.blend = b.blend
 		}
+		L.pass = key == "pass"
 		L.opacity = p8(r)
 		p8(r) // clipping (clipping masks are not supported: the layer is kept unclipped)
 		flags := p8(r)
@@ -497,35 +500,37 @@ psd_blit :: proc(g: ^Tiles, w, h, x0, y0, lw, lh: int, buf: []Color) {
 	tiles_compact_box(g, b, {})
 }
 
-// Hidden groups hide their layers and group opacity multiplies in. Records run bottom to top, so a
-// group's settings are on the record after its contents; walk top-down to apply them.
+// Makes the PSD's groups. Records run bottom to top, and a group's own record comes after its contents (with an end
+// marker before them), so walking top-down meets each group before what is in it.
 @(private = "file")
 psd_apply_groups :: proc(recs: []Psd_Layer, nd: ^Doc) {
-	Group :: struct {
-		hidden:  bool,
-		opacity: int,
+	keys := make([dynamic]f64, len(nd.layers), context.temp_allocator)
+	next := 1
+	for &l in nd.layers {
+		l.uid = next
+		next += 1
 	}
-	stack := make([dynamic]Group, context.temp_allocator)
-	hidden := false
-	op := 255
+	for &L, ri in recs do if L.divider == 0 && L.doc_i >= 0 do keys[L.doc_i] = f64(ri)
+	stack := make([dynamic]int, context.temp_allocator)
 	for i := len(recs) - 1; i >= 0; i -= 1 {
 		L := &recs[i]
+		cur := len(stack) > 0 ? stack[len(stack) - 1] : 0
 		switch L.divider {
 		case 1, 2:
-			append(&stack, Group{hidden, op})
-			hidden = hidden || L.hidden
-			op = op * L.opacity / 255
+			g := layer_make(L.name, nd.w, nd.h)
+			g.is_group, g.pass_through = true, L.pass
+			g.blend, g.opacity, g.visible = L.blend, u8(L.opacity), !L.hidden
+			g.collapsed = L.divider == 2
+			g.uid, g.parent = next, cur
+			next += 1
+			append(&nd.layers, g)
+			append(&keys, f64(i))
+			append(&stack, g.uid)
 		case 3:
-			if len(stack) > 0 {
-				g := pop(&stack)
-				hidden, op = g.hidden, g.opacity
-			}
+			if len(stack) > 0 do pop(&stack)
 		case:
-			if k := L.doc_i; k >= 0 {
-				l := &nd.layers[k]
-				if hidden do l.visible = false
-				l.opacity = u8(int(l.opacity) * op / 255)
-			}
+			if k := L.doc_i; k >= 0 do nd.layers[k].parent = cur
 		}
 	}
+	doc_layers_normalize(nd, keys[:])
 }

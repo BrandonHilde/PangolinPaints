@@ -15,13 +15,19 @@ import "core:strings"
 // Version 5 adds, after layer_count:
 //   u32 frame_count  u32 active_frame  per frame: u32 duration  u32 flat
 //   u32 tag_count  per tag: str name  u32 from  u32 to  u8 dir  color
+// Version 6 adds layer groups: after a layer's span_id, u32 uid  u32 parent uid  u8 group flags (1 group, 2 pass
+// through, 4 closed in the list). Older files load with every layer at the top level.
 // a u32 span_id after a layer's blend mode, and a layer's tiles [and mask] are written once per frame, or once for a text or vector layer, which spans
 // them all. Method 2 is a tile written before (u32 size = its number, counting in file order), so tiles
 // that frames share stay shared, on disk and after loading.
 // ---------------------------------------------------------------------------
 
 PPNT_MAGIC :: "PPNT"
-PPNT_VERSION :: 5 // 2: text layers, 3: text character colours, 4: vector layers, 5: frames
+PPNT_VERSION :: 6 // 2: text layers, 3: text character colours, 4: vector layers, 5: frames, 6: layer groups
+
+GF_GROUP :: 1
+GF_PASS_THROUGH :: 2
+GF_COLLAPSED :: 4
 
 LF_VISIBLE :: 1
 LF_LOCKED :: 2
@@ -147,6 +153,13 @@ project_encode :: proc(d: ^Doc) -> []u8 {
 		w8(&w, l.opacity)
 		w8(&w, u8(l.blend))
 		w32(&w, u32(l.span_id))
+		w32(&w, u32(l.uid))
+		w32(&w, u32(l.parent))
+		gf: u8
+		if l.is_group do gf |= GF_GROUP
+		if l.pass_through do gf |= GF_PASS_THROUGH
+		if l.collapsed do gf |= GF_COLLAPSED
+		w8(&w, gf)
 		for f in 0 ..< (layer_spans(&l) ? 1 : len(d.frames)) {
 			pix, mask := &l.pix, &l.mask
 			if !layer_spans(&l) do pix, mask = frame_tiles(d, &l, f)
@@ -227,6 +240,12 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 		l.opacity = r8(&r)
 		l.blend = Blend(min(r8(&r), u8(len(Blend) - 1)))
 		if ver >= 5 do l.span_id = int(r32(&r))
+		if ver >= 6 {
+			l.uid = int(r32(&r))
+			l.parent = int(r32(&r))
+			gf := r8(&r)
+			l.is_group, l.pass_through, l.collapsed = gf & GF_GROUP != 0, gf & GF_PASS_THROUGH != 0, gf & GF_COLLAPSED != 0
+		}
 		if flags & LF_HAS_MASK != 0 {
 			l.has_mask = true
 			l.mask_on = flags & LF_MASK_ON != 0
@@ -266,6 +285,7 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 		return nil, false
 	}
 	nd.active_layer = clamp(active, 0, len(nd.layers) - 1)
+	doc_layers_normalize(nd) // uids for layers from older files, and a sound tree
 	doc_clamp(nd)
 	nd.modified = false
 	return nd, true

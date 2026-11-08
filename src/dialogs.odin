@@ -86,6 +86,7 @@ dialog_open :: proc(k: Dialog_Kind) {
 		dialog.name = l.name
 		dialog.a = int(l.opacity) * 100 / 255
 		dialog.b = int(l.blend)
+		if l.is_group do dialog.b = l.pass_through ? 0 : int(l.blend) + 1 // a group's list starts with Pass Through
 		dialog.flag = l.visible
 		dialog.flag2 = l.locked
 		dialog.c = l.lock_alpha ? 1 : 0
@@ -394,14 +395,15 @@ dlg_layer_props :: proc() {
 	slider(Rect{c.x + 80, y, 170, 14}, &dialog.a, 0, 100, "", {"Layer opacity", OPACITY_TIP}, "%")
 	y += 20
 	tip_text(c.x, y + 3, "Blend mode", C_TEXT, {"Blend mode", BLEND_TIP})
-	if nv, ch := combo(Rect{c.x + 80, y, 120, 14}, blend_names_slice(), dialog.b, {"Blend mode", BLEND_TIP}); ch {
+	is_group := doc.layers[doc.active_layer].is_group
+	if nv, ch := combo(Rect{c.x + 80, y, 120, 14}, is_group ? group_blend_names() : blend_names_slice(), dialog.b, {"Blend mode", is_group ? GROUP_BLEND_TIP : BLEND_TIP}); ch {
 		dialog.b = nv
 	}
 	y += 22
 	checkbox(c.x, y, "Visible", &dialog.flag, {"Visible", "Show the layer. A hidden layer can't be painted on and isn't exported."})
 	checkbox(c.x + 70, y, "Locked", &dialog.flag2, {"Locked", "Protect the layer from painting and other changes."})
 	la := dialog.c != 0
-	if checkbox(c.x + 140, y, "Lock transparency", &la, {"Lock transparency", cmd_help(.Layer_Lock_Alpha)}) {
+	if !is_group && checkbox(c.x + 140, y, "Lock transparency", &la, {"Lock transparency", cmd_help(.Layer_Lock_Alpha)}) {
 		dialog.c = la ? 1 : 0
 	}
 	ok, cancel := dialog_buttons(c, "Use these layer settings (Enter).")
@@ -414,7 +416,12 @@ dlg_layer_props :: proc() {
 		layer_props_record(l)
 		l.name = dialog.name
 		l.opacity = u8(dialog.a * 255 / 100)
-		l.blend = Blend(dialog.b)
+		if l.is_group {
+			l.pass_through = dialog.b == 0
+			if dialog.b > 0 do l.blend = Blend(dialog.b - 1)
+		} else {
+			l.blend = Blend(dialog.b)
+		}
 		l.visible = dialog.flag
 		l.locked = dialog.flag2
 		l.lock_alpha = dialog.c != 0
@@ -424,6 +431,16 @@ dlg_layer_props :: proc() {
 }
 
 BLEND_TIP :: "How the layer mixes with the layers below it, such as Multiply to darken or Screen to lighten. The wheel steps through the modes."
+
+GROUP_BLEND_TIP :: "Pass Through: the group's layers blend straight into what is below it, each by its own mode. Any other mode combines the group's layers first, then blends the result in by that mode."
+
+// Pass Through, then the blend modes: a group's blend list.
+group_blend_names :: proc() -> []string {
+	@(static) names: [len(Blend) + 1]string
+	names[0] = "Pass Through"
+	for n, i in BLEND_NAMES do names[int(i) + 1] = n
+	return names[:]
+}
 
 blend_names_slice :: proc() -> []string {
 	@(static) names: [len(Blend)]string
@@ -669,7 +686,7 @@ layer_props_record :: proc(l: ^Layer) {
 	if !macro_recording() do return
 	if name_str(&dialog.name) != name_str(&l.name) do macro_record("layer.Rename", "name", name_str(&dialog.name))
 	if dialog.a != int(l.opacity) * 100 / 255 do macro_record("layer.Opacity", "opacity", fmt.tprint(dialog.a))
-	if Blend(dialog.b) != l.blend do macro_record("layer.Blend", "blend", BLEND_NAMES[Blend(dialog.b)])
+	if !l.is_group && Blend(dialog.b) != l.blend do macro_record("layer.Blend", "blend", BLEND_NAMES[Blend(dialog.b)])
 	if dialog.flag != l.visible do macro_record("layer.Visible", "visible", dialog.flag ? "1" : "0")
 	if dialog.flag2 != l.locked do macro_record("layer.Lock", "locked", dialog.flag2 ? "1" : "0")
 	if (dialog.c != 0) != l.lock_alpha do macro_record("cmd.Layer_Lock_Alpha")
@@ -723,6 +740,9 @@ shortcut_name :: proc(c: Cmd) -> string {
 	case .Default_Colors:     return "Default Colors"
 	case .Brush_Smaller:      return "Smaller Brush"
 	case .Brush_Bigger:       return "Bigger Brush"
+	case .Layer_Group_New:    return "New Group"
+	case .Layer_Group:        return "Group Layer"
+	case .Layer_Ungroup:      return "Ungroup"
 	case .Help_Keys:          return "Keyboard Shortcuts"
 	case .Macro_Editor:       return "Node Editor"
 	case .Macro_Record:       return "Record Macro"

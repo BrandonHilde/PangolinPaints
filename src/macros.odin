@@ -133,6 +133,9 @@ MACRO_CMDS := [?]Macro_Cmd {
 	{.Layer_Up, "Layer", "Move Layer Up"},
 	{.Layer_Down, "Layer", "Move Layer Down"},
 	{.Layer_Merge, "Layer", "Merge Down"},
+	{.Layer_Group_New, "Layer", "New Group"},
+	{.Layer_Group, "Layer", "Group Layer"},
+	{.Layer_Ungroup, "Layer", "Ungroup"},
 	{.Layer_Text_To_Path, "Layer", "Text to Path"},
 	{.Layer_Rasterize, "Layer", "Rasterize Layer"},
 	{.Layer_Via_Copy, "Layer", "Layer via Copy"},
@@ -386,6 +389,7 @@ layer_by_name :: proc(d: ^Doc, name: string) -> int {
 @(private = "file")
 layer_problem :: proc(d: ^Doc) -> string {
 	l := &d.layers[d.active_layer]
+	if l.is_group do return "the active layer is a group: pick a layer in it"
 	if l.locked do return "the layer is locked"
 	if !l.visible do return "the layer is hidden"
 	return ""
@@ -479,6 +483,7 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 			l.opacity = u8(clamp(macro_int(args, 0), 0, 100) * 255 / 100)
 		case "layer.Blend":
 			l.blend = Blend(macro_int(args, 0))
+			l.pass_through = false // a group with a blend mode combines its layers first
 		case "layer.Visible":
 			l.visible = macro_bool(args, 0)
 		case "layer.Lock":
@@ -525,16 +530,21 @@ macro_exec_cmd :: proc(d: ^Doc, c: Cmd) -> (ok: bool, msg: string) {
 	case .Crop_Sel:
 		if d.sel == nil do return false, "there is no selection"
 	case .Layer_Del:
-		if len(d.layers) < 2 do return false, "it is the only layer"
+		s := layer_span_start(d.layers[:], d.active_layer)
+		if d.active_layer - s + 1 >= len(d.layers) do return false, "it is the only layer"
 	case .Layer_Merge:
-		if d.active_layer == 0 do return false, "there is no layer below to merge into"
+		if !l.is_group && layer_merge_target(d) < 0 do return false, "there is no layer below in its group to merge into"
+	case .Layer_Ungroup:
+		if !l.is_group do return false, "the active layer is not a group"
 	case .Layer_Text_To_Path:
 		if !l.text.on do return false, "the layer is not a text layer"
 	case .Frame_Del:
 		if len(d.frames) < 2 do return false, "it is the only frame"
 	case .Mask_Add:
+		if l.is_group do return false, "a group has no mask"
 		if l.has_mask do return false, "the layer already has a mask"
 	case .Mask_From_Sel:
+		if l.is_group do return false, "a group has no mask"
 		if d.sel == nil do return false, "there is no selection"
 		if l.has_mask do return false, "the layer already has a mask"
 	case .Mask_Delete, .Mask_Apply, .Mask_Edit, .Mask_Enable:

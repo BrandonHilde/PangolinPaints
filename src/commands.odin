@@ -52,6 +52,9 @@ Cmd :: enum {
 	Layer_Text_To_Path,
 	Layer_Rasterize,
 	Layer_Props,
+	Layer_Group_New,
+	Layer_Group,
+	Layer_Ungroup,
 	Layer_Via_Copy,
 	Layer_Via_Cut,
 	Layer_Lock_Alpha,
@@ -209,6 +212,8 @@ SHORTCUTS := [?]Shortcut {
 	{.Fx_First + Cmd(Fx.Desaturate), .U, true, true, false},
 	{.Fx_First + Cmd(Fx.Invert), .I, true, false, false},
 	{.Layer_New, .N, true, true, false},
+	{.Layer_Group, .G, true, false, false},
+	{.Layer_Ungroup, .G, true, true, false},
 	{.Layer_Via_Copy, .J, true, false, false},
 	{.Layer_Via_Cut, .J, true, true, false},
 	{.Layer_Merge, .E, true, false, false},
@@ -481,6 +486,10 @@ run_cmd :: proc(cmd: Cmd) {
 		set_statusf("Opacity %d%%", brushes[t].opacity)
 		return
 	}
+	if (cmd == .Mask_Add || cmd == .Mask_From_Sel) && d.layers[d.active_layer].is_group {
+		set_status("A group has no mask: add it to a layer in the group")
+		return
+	}
 	switch cmd {
 	case .None, .Tool_Brush ..= .Tool_Seamless, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100, .Macro_First ..= .Macro_Last, .Recent_First ..= .Recent_Last:
 	case .New:
@@ -599,7 +608,7 @@ run_cmd :: proc(cmd: Cmd) {
 		doc_move_layer(d, -1)
 	case .Layer_Merge:
 		if !doc_merge_down(d) {
-			set_status("No layer below to merge into")
+			set_status("No layer below in this group to merge into (a layer can't merge into a group)")
 		}
 	case .Layer_Text_To_Path:
 		doc_text_to_path(d)
@@ -607,6 +616,14 @@ run_cmd :: proc(cmd: Cmd) {
 		doc_rasterize_layer(d)
 	case .Layer_Props:
 		dialog_open(.Layer_Props)
+	case .Layer_Group_New:
+		doc_group_new(d)
+	case .Layer_Group:
+		doc_group_wrap(d)
+	case .Layer_Ungroup:
+		if !doc_ungroup(d) {
+			set_status("Pick a group to take apart")
+		}
 	case .Layer_Via_Copy:
 		edit_layer_via(false)
 	case .Layer_Via_Cut:

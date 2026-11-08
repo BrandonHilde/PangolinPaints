@@ -207,8 +207,7 @@ text_click :: proc(p: Vec2) {
 	text_color_all(&l.text, fg)
 	l.blend = brush_blend // the new text layer composites with the current brush blend mode
 	text_defaults.color = fg
-	inject_at(&d.layers, d.active_layer + 1, l)
-	d.active_layer += 1
+	layer_insert_above(d, l, d.active_layer)
 	d.edit_mask = false
 	doc_touch_all(d)
 	text_edit = Text_Edit {

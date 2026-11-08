@@ -148,8 +148,7 @@ edit_layer_via :: proc(cut: bool) {
 		// the snapshot above already covers the new layer too
 		l := layer_make(cut ? "Cut layer" : "Layer copy", d.w, d.h)
 		tiles_from_buf(&l.pix, d.w, d.h, buf, {})
-		inject_at(&d.layers, d.active_layer + 1, l)
-		d.active_layer += 1
+		layer_insert_above(d, l, d.active_layer)
 		d.edit_mask = false
 		doc_touch_all(d)
 	} else {

@@ -169,7 +169,8 @@ panel_timeline_grid :: proc(body: Rect) {
 		lock := Rect{row.x + 20, ry + 2, 12, 12}
 		icon(.Eye, eye.x, eye.y, l.visible ? C_TEXT : C_TEXT_OFF)
 		icon(.Lock, lock.x, lock.y, l.locked ? C_ACCENT : C_TEXT_OFF)
-		text_clipped(Rect{row.x + 38, ry, row.w - 40, TL_ROW_H}, name_str(&l.name), l.visible ? C_TEXT : C_TEXT_DIM)
+		ind := i32(layer_depth(d.layers[:], li)) * LAYER_INDENT
+		text_clipped(Rect{row.x + 38 + ind, ry, row.w - 40 - ind, TL_ROW_H}, l.is_group ? fmt.tprintf("%s (group)", name_str(&l.name)) : name_str(&l.name), l.visible ? C_TEXT : C_TEXT_DIM)
 		if ui_hover(names) {
 			tip_area(row, "tl-row", {name_str(&l.name), "Click to work on this layer, double-click for its properties, right-click for its menu. Drag to move it."})
 			tip_area(eye, "tl-eye", {"Visible", "Click to show or hide this layer on all frames."})
@@ -216,17 +217,8 @@ panel_timeline_grid :: proc(body: Rect) {
 				ly := names.y + (target > tl_drag ? ri : ri + 1) * TL_ROW_H - tl_scroll_y
 				fill_rect(Rect{names.x, ly - 1, names.w - 1, 2}, C_ACCENT)
 				if ui.released[0] {
-					history_push(d)
-					for tl_drag < target {
-						d.layers[tl_drag], d.layers[tl_drag + 1] = d.layers[tl_drag + 1], d.layers[tl_drag]
-						tl_drag += 1
-					}
-					for tl_drag > target {
-						d.layers[tl_drag], d.layers[tl_drag - 1] = d.layers[tl_drag - 1], d.layers[tl_drag]
-						tl_drag -= 1
-					}
-					d.active_layer = target
-					doc_touch_all(d)
+					// next to the row it is dropped on, in that row's group (into a group: the layer list does that)
+					doc_move_to(d, tl_drag, target, target > tl_drag ? .Above : .Below)
 				}
 			}
 		}

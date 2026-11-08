@@ -150,6 +150,12 @@ Layer :: struct {
 	shape:      ^Shape, // non-nil: a vector layer (shared, see vector.odin)
 	cels:       [dynamic]^Cel, // the other frames' tiles (see frames.odin); pix and mask are the current frame's
 	span_id:    int, // text and vector layers: compared with Frame.flat
+	// layer groups (groups.odin)
+	uid:          int, // unique in its document (0: not given one yet)
+	parent:       int, // uid of the group it is in, or 0 at the top level
+	is_group:     bool, // a group: no pixels of its own; its layers are those whose parent it is, just below it
+	pass_through: bool, // a group whose layers blend straight into what is below (else they are combined first)
+	collapsed:    bool, // a group shown closed in the layer list
 }
 
 // A layer's tiles in a frame other than the current one. Never changed in place, and shared by undo snapshots.

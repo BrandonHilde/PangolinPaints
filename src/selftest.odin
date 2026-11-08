@@ -71,6 +71,89 @@ selftest :: proc() -> int {
 		check(ui_scale_parse(9000) == UI_SCALE_MAX, "stored scale clamped")
 	}
 
+	// --- layer groups -------------------------------------------------------------------
+	{
+		d := fresh(4, 1, white)
+		doc_add_layer(d)
+		tiles_set(&d.layers[1].pix, 0, 0, red, {})
+		tiles_set(&d.layers[1].pix, 1, 0, red, {})
+		doc_add_layer(d)
+		for x in 0 ..< 4 do tiles_set(&d.layers[2].pix, x, 0, white, {})
+		d.layers[2].blend = .Difference
+		name_set(&d.layers[1].name, "Red")
+		name_set(&d.layers[2].name, "Diff")
+		named :: proc(d: ^Doc, i: int) -> string {return name_str(&d.layers[i].name)}
+
+		// Group Layer, then a layer dragged into the group, then moved down within it
+		doc_group_wrap(d)
+		check(d.active_layer == 3 && d.layers[3].is_group && d.layers[2].parent == d.layers[3].uid && d.layers[1].parent == 0, "Group Layer puts the active layer in a new group")
+		check(doc_move_to(d, 1, 3, .Into), "a layer moves into a group")
+		check(named(d, 1) == "Diff" && named(d, 2) == "Red" && d.layers[2].parent == d.layers[3].uid, "a layer moved into a group goes to its top")
+		d.active_layer = 2
+		check(doc_move_layer(d, -1) && named(d, 1) == "Red" && named(d, 2) == "Diff", "Move Down moves a layer down within its group")
+		check(layer_depth(d.layers[:], 1) == 1 && layer_span_start(d.layers[:], 3) == 1 && layer_in_group(d.layers[:], 2, 3), "what is in a group sits just below it")
+		check(!doc_move_to(d, 3, 2, .Above), "a group can't go inside itself")
+
+		// compositing
+		fl := doc_flat(d, context.temp_allocator)
+		check(fl[0] == Color{35, 225, 225, 255} && fl[2] == Color{0, 0, 0, 255}, "a pass-through group's layers blend straight into what is below")
+		d.layers[3].pass_through = false
+		doc_touch_all(d)
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[2] != Color{0, 0, 0, 255}, "a group that isn't pass-through combines its layers first")
+		d.layers[3].pass_through = true
+		d.layers[3].visible = false
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[0] == white && fl[2] == white, "hiding a group hides what is in it")
+		check(layer_hidden(d.layers[:], 1) && d.layers[1].visible, "a layer in a hidden group shows as hidden")
+		d.layers[3].visible = true
+		d.layers[3].opacity = 0
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[2] == white, "a group's opacity applies to what is in it")
+		d.layers[3].opacity = 255
+		gf := layer_flat(d, &d.layers[3])
+		check(gf[0].a == 255 && gf[3].a > 0, "exporting a group gives what it shows")
+
+		// a group is not painted on, and nothing merges into one
+		d.active_layer = 3
+		check(!can_edit(), "a group can't be painted on")
+		d.active_layer = 1
+		check(layer_merge_target(d) < 0, "the bottom layer of a group has nothing in its group to merge into")
+
+		// moving out of a group at its top
+		d.active_layer = 2
+		check(doc_move_layer(d, 1) && named(d, 3) == "Diff" && d.layers[3].parent == 0 && d.layers[2].is_group, "Move Up at the top of a group moves the layer out, above it")
+		check(doc_move_layer(d, -1) && named(d, 1) == "Diff" && d.layers[1].parent == 0, "Move Down past a group goes below all of it")
+
+		// saved and loaded
+		check(doc_move_to(d, 1, 3, .Into), "back into the group")
+		d.layers[3].collapsed = true
+		data := project_encode(d)
+		d2, ok2 := project_decode(data)
+		check(ok2 && len(d2.layers) == 4 && d2.layers[3].is_group && d2.layers[3].collapsed && d2.layers[3].pass_through && d2.layers[1].parent == d2.layers[3].uid && d2.layers[2].parent == d2.layers[3].uid, "groups are saved in the project file")
+		if ok2 do doc_destroy(d2)
+		d.layers[3].collapsed = false
+
+		// copy, delete, take apart, merge
+		d.active_layer = 3
+		doc_dup_layer(d)
+		check(len(d.layers) == 7 && d.active_layer == 6 && d.layers[6].is_group && d.layers[4].parent == d.layers[6].uid && d.layers[6].uid != d.layers[3].uid, "Duplicate copies a group with what is in it")
+		check(doc_delete_layer(d) && len(d.layers) == 4, "Delete removes a group with what is in it")
+		d.active_layer = 3
+		check(doc_ungroup(d) && len(d.layers) == 3 && d.layers[1].parent == 0 && d.layers[2].parent == 0, "Ungroup leaves the layers where they were")
+		d.active_layer = 2
+		doc_group_wrap(d)
+		d.active_layer = 1
+		check(doc_move_to(d, 1, 3, .Into), "into the new group")
+		before := doc_flat(d, context.temp_allocator)
+		d.active_layer = 3
+		d.layers[3].pass_through = false
+		before = doc_flat(d, context.temp_allocator)
+		check(doc_merge_down(d) && len(d.layers) == 2 && !d.layers[1].is_group, "Merge Group turns a group into one layer")
+		after := doc_flat(d, context.temp_allocator)
+		check(after[0] == before[0] && after[2] == before[2], "a merged group looks as it did")
+	}
+
 	// --- recent files (File menu) ----------------------------------------------------
 	{
 		recent_clear()

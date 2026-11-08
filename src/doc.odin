@@ -290,6 +290,10 @@ doc_target :: proc(d: ^Doc) -> (g: ^Tiles, empty: Color, is_mask: bool) {
 
 can_edit :: proc() -> bool {
 	l := &doc.layers[doc.active_layer]
+	if l.is_group {
+		set_status("This is a group: pick a layer in it to change pixels")
+		return false
+	}
 	if l.locked {
 		set_status("Layer is locked")
 		return false
@@ -480,57 +484,128 @@ mix_px :: proc(a, b: Color, t: f32) -> Color {
 
 // Composite all visible layers inside box `b` into `out` (full w*h buffer).
 // `flat`: the frame's Frame.flat, which can hide text and vector layers. A layer with no tiles (an empty cel) is skipped.
-composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat := 0) {
+// Which layers are in which group, for compositing a list with groups: `kids[g]` are group g's layers and `top` the
+// rest, each bottom first.
+Comp_Tree :: struct {
+	top:  [dynamic]int,
+	kids: [][dynamic]int,
+}
+
+comp_tree :: proc(layers: []Layer, allocator := context.temp_allocator) -> Comp_Tree {
+	t := Comp_Tree {
+		top  = make([dynamic]int, allocator),
+		kids = make([][dynamic]int, len(layers), allocator),
+	}
+	at := make(map[int]int, len(layers), allocator)
+	for &l, i in layers do if l.uid != 0 do at[l.uid] = i
+	for &l, i in layers {
+		p, ok := at[l.parent]
+		if l.parent != 0 && ok && layers[p].is_group && p != i {
+			if t.kids[p] == nil do t.kids[p] = make([dynamic]int, allocator)
+			append(&t.kids[p], i)
+		} else {
+			append(&t.top, i)
+		}
+	}
+	return t
+}
+
+composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat := 0, tree: ^Comp_Tree = nil) {
 	w := d.w
 	for y in b.y0 ..< b.y1 {
 		for x in b.x0 ..< b.x1 {
 			out[y * w + x] = {}
 		}
 	}
+	t := tree
+	local: Comp_Tree
+	if t == nil && layers_have_groups(layers) {
+		local = comp_tree(layers)
+		t = &local
+	}
 	for ty in b.y0 / TILE ..= (b.y1 - 1) / TILE {
 		for tx in b.x0 / TILE ..= (b.x1 - 1) / TILE {
 			x0, x1 := max(b.x0, tx * TILE), min(b.x1, (tx + 1) * TILE)
 			y0, y1 := max(b.y0, ty * TILE), min(b.y1, (ty + 1) * TILE)
-			for &l in layers {
-				if !l.visible || l.opacity == 0 || len(l.pix.t) == 0 || flat_hides(flat, &l) {
-					continue
-				}
-				ti := ty * l.pix.tw + tx
-				t := l.pix.t[ti]
-				if t == nil {
-					continue
-				}
-				mt: ^Tile = nil
-				use_mask := l.has_mask && l.mask_on && len(l.mask.t) > 0
-				if use_mask {
-					mt = l.mask.t[ti]
-				}
-				op := f32(l.opacity) / 255
-				fast := l.blend == .Normal && l.opacity == 255 && mt == nil
-				for y in y0 ..< y1 {
-					trow := (y - ty * TILE) * TILE - tx * TILE
-					orow := y * w
-					for x in x0 ..< x1 {
-						s := t.pix[trow + x]
-						if s.a == 0 {
-							continue
-						}
-						if fast {
-							if s.a == 255 {
-								out[orow + x] = s
-							} else {
-								out[orow + x] = over_px(out[orow + x], s, f32(s.a) / 255)
-							}
-							continue
-						}
-						o := op
-						if mt != nil {
-							o *= f32(mt.pix[trow + x].r) / 255
-						}
-						out[orow + x] = blend_px(out[orow + x], s, o, l.blend)
-					}
-				}
+			if t == nil {
+				for &l in layers do comp_layer_tile(&l, tx, ty, x0, y0, x1, y1, out, w, 0, 0, 1, flat)
+			} else {
+				comp_items(layers, t, t.top[:], tx, ty, x0, y0, x1, y1, out, w, 0, 0, 1, flat)
 			}
+		}
+	}
+}
+
+// Layers `items` (and the groups among them, with their contents) onto `dst`, within one tile. `dst` holds pixel
+// (x, y) at (y - oy) * dw + (x - ox); `op_mul` is the opacity of the pass-through groups they are in.
+@(private = "file")
+comp_items :: proc(layers: []Layer, t: ^Comp_Tree, items: []int, tx, ty, x0, y0, x1, y1: int, dst: []Color, dw, ox, oy: int, op_mul: f32, flat: int) {
+	for i in items {
+		l := &layers[i]
+		if !l.is_group {
+			comp_layer_tile(l, tx, ty, x0, y0, x1, y1, dst, dw, ox, oy, op_mul, flat)
+			continue
+		}
+		if !l.visible || l.opacity == 0 || len(t.kids[i]) == 0 do continue
+		gop := op_mul * f32(l.opacity) / 255
+		if l.pass_through {
+			comp_items(layers, t, t.kids[i][:], tx, ty, x0, y0, x1, y1, dst, dw, ox, oy, gop, flat)
+			continue
+		}
+		// combined on their own first, then blended by the group's mode and opacity
+		buf: [TILE * TILE]Color
+		bw := x1 - x0
+		comp_items(layers, t, t.kids[i][:], tx, ty, x0, y0, x1, y1, buf[:], bw, x0, y0, 1, flat)
+		for y in y0 ..< y1 {
+			for x in x0 ..< x1 {
+				s := buf[(y - y0) * bw + x - x0]
+				if s.a == 0 do continue
+				di := (y - oy) * dw + x - ox
+				dst[di] = blend_px(dst[di], s, gop, l.blend)
+			}
+		}
+	}
+}
+
+// One layer's pixels in tile (tx, ty), within x0..x1, y0..y1, onto `dst` (laid out as for comp_items).
+@(private = "file")
+comp_layer_tile :: proc(l: ^Layer, tx, ty, x0, y0, x1, y1: int, dst: []Color, dw, ox, oy: int, op_mul: f32, flat: int) {
+	if !l.visible || l.opacity == 0 || len(l.pix.t) == 0 || flat_hides(flat, l) {
+		return
+	}
+	ti := ty * l.pix.tw + tx
+	t := l.pix.t[ti]
+	if t == nil {
+		return
+	}
+	mt: ^Tile = nil
+	use_mask := l.has_mask && l.mask_on && len(l.mask.t) > 0
+	if use_mask {
+		mt = l.mask.t[ti]
+	}
+	op := f32(l.opacity) / 255 * op_mul
+	fast := l.blend == .Normal && l.opacity == 255 && op_mul >= 1 && mt == nil
+	for y in y0 ..< y1 {
+		trow := (y - ty * TILE) * TILE - tx * TILE
+		orow := (y - oy) * dw - ox
+		for x in x0 ..< x1 {
+			s := t.pix[trow + x]
+			if s.a == 0 {
+				continue
+			}
+			if fast {
+				if s.a == 255 {
+					dst[orow + x] = s
+				} else {
+					dst[orow + x] = over_px(dst[orow + x], s, f32(s.a) / 255)
+				}
+				continue
+			}
+			o := op
+			if mt != nil {
+				o *= f32(mt.pix[trow + x].r) / 255
+			}
+			dst[orow + x] = blend_px(dst[orow + x], s, o, l.blend)
 		}
 	}
 }
@@ -544,6 +619,7 @@ composite_box_fast :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat 
 		b:      Box,
 		out:    []Color,
 		flat:   int,
+		tree:   ^Comp_Tree,
 	}
 	MAX_BANDS :: 8
 	n := clamp(os.get_processor_core_count(), 1, MAX_BANDS)
@@ -551,21 +627,28 @@ composite_box_fast :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat 
 		composite_box(d, layers, b, out, flat)
 		return
 	}
+	// the groups are worked out here, once: the threads only read them
+	tree: ^Comp_Tree
+	local: Comp_Tree
+	if layers_have_groups(layers) {
+		local = comp_tree(layers)
+		tree = &local
+	}
 	bands: [MAX_BANDS]Band
 	threads: [MAX_BANDS]^thread.Thread
 	for i in 0 ..< n {
 		rows := b.y1 - b.y0
-		bands[i] = {d, layers, Box{b.x0, b.y0 + rows * i / n, b.x1, b.y0 + rows * (i + 1) / n}, out, flat}
+		bands[i] = {d, layers, Box{b.x0, b.y0 + rows * i / n, b.x1, b.y0 + rows * (i + 1) / n}, out, flat, tree}
 		if i == 0 do continue // this thread does the first band itself
 		t := thread.create(proc(t: ^thread.Thread) {
 			band := (^Band)(t.data)
-			composite_box(band.d, band.layers, band.b, band.out, band.flat)
+			composite_box(band.d, band.layers, band.b, band.out, band.flat, band.tree)
 		})
 		t.data = &bands[i]
 		thread.start(t)
 		threads[i] = t
 	}
-	composite_box(d, layers, bands[0].b, out, flat)
+	composite_box(d, layers, bands[0].b, out, flat, tree)
 	for t in threads[1:n] {
 		thread.join(t)
 		thread.destroy(t)
@@ -598,6 +681,16 @@ doc_flat :: proc(d: ^Doc, allocator := context.allocator) -> []Color {
 // Flattened pixels of one layer (mask applied) as a w*h buffer.
 layer_flat :: proc(d: ^Doc, l: ^Layer, allocator := context.temp_allocator) -> []Color {
 	out := make([]Color, d.w * d.h, allocator)
+	if l.is_group {
+		// a group: what it shows, its contents combined by its opacity and mode
+		for &x, k in d.layers {
+			if &x != l do continue
+			s := layer_span_start(d.layers[:], k)
+			composite_box(d, d.layers[s:k + 1], doc_box(d), out, frame_flat_id(d, d.active_frame))
+			break
+		}
+		return out
+	}
 	tiles_to_buf(&l.pix, d.w, d.h, out, {})
 	return out
 }
@@ -622,8 +715,7 @@ layer_masked :: proc(d: ^Doc, l: ^Layer, allocator := context.temp_allocator) ->
 doc_add_layer :: proc(d: ^Doc) {
 	history_push(d)
 	l := layer_make(fmt.tprintf("Layer %d", len(d.layers)), d.w, d.h)
-	inject_at(&d.layers, d.active_layer + 1, l)
-	d.active_layer += 1
+	layer_insert_above(d, l, d.active_layer)
 	d.edit_mask = false
 	doc_touch_all(d)
 }
@@ -633,51 +725,36 @@ doc_add_layer_from :: proc(d: ^Doc, name: string, pix: []Color) {
 	history_push(d)
 	l := layer_make(name, d.w, d.h)
 	tiles_from_buf(&l.pix, d.w, d.h, pix, {})
-	inject_at(&d.layers, d.active_layer + 1, l)
-	d.active_layer += 1
+	layer_insert_above(d, l, d.active_layer)
 	d.edit_mask = false
 	doc_touch_all(d)
 }
 
+// Deletes the active layer; a group goes with everything in it. False if no layer would be left.
 doc_delete_layer :: proc(d: ^Doc) -> bool {
-	if len(d.layers) <= 1 {
+	g := d.active_layer
+	s := layer_span_start(d.layers[:], g)
+	if g - s + 1 >= len(d.layers) {
 		return false
 	}
 	history_push(d)
-	layer_destroy(&d.layers[d.active_layer])
-	ordered_remove(&d.layers, d.active_layer)
-	d.active_layer = clamp(d.active_layer, 0, len(d.layers) - 1)
+	layers_remove_run(d, s, g)
 	d.edit_mask = false
 	doc_touch_all(d)
 	return true
 }
 
+// Copies the active layer (a group with everything in it) just above it.
 doc_dup_layer :: proc(d: ^Doc) {
 	history_push(d)
-	src := &d.layers[d.active_layer]
-	nl := layer_share(src)
-	name_set(&nl.name, fmt.tprintf("%s copy", name_str(&src.name)))
-	inject_at(&d.layers, d.active_layer + 1, nl)
-	d.active_layer += 1
+	doc_dup_run(d)
 	doc_touch_all(d)
-}
-
-doc_move_layer :: proc(d: ^Doc, dir: int) -> bool {
-	a := d.active_layer
-	b := a + dir
-	if b < 0 || b >= len(d.layers) {
-		return false
-	}
-	history_push(d)
-	d.layers[a], d.layers[b] = d.layers[b], d.layers[a]
-	d.active_layer = b
-	doc_touch_all(d)
-	return true
 }
 
 doc_merge_down :: proc(d: ^Doc) -> bool {
 	i := d.active_layer
-	if i <= 0 {
+	if d.layers[i].is_group do return doc_merge_group(d)
+	if layer_merge_target(d) != i - 1 {
 		return false
 	}
 	history_push(d)

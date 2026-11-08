@@ -86,8 +86,7 @@ dialog_open :: proc(k: Dialog_Kind) {
 		l := &doc.layers[doc.active_layer]
 		dialog.name = l.name
 		dialog.a = int(l.opacity) * 100 / 255
-		dialog.b = int(l.blend)
-		if l.is_group do dialog.b = l.pass_through ? 0 : int(l.blend) + 1 // a group's list starts with Pass Through
+		dialog.b = layer_mode_current(l) // blend modes (Pass Through first for a group), then macros
 		dialog.flag = l.visible
 		dialog.flag2 = l.locked
 		dialog.c = l.lock_alpha ? 1 : 0
@@ -399,7 +398,7 @@ dlg_layer_props :: proc() {
 	y += 20
 	tip_text(c.x, y + 3, "Blend mode", C_TEXT, {"Blend mode", BLEND_TIP})
 	is_group := doc.layers[doc.active_layer].is_group
-	if nv, ch := combo(Rect{c.x + 80, y, 120, 14}, is_group ? group_blend_names() : blend_names_slice(), dialog.b, {"Blend mode", is_group ? GROUP_BLEND_TIP : BLEND_TIP}); ch {
+	if nv, ch := combo(Rect{c.x + 80, y, 120, 14}, layer_mode_names(&doc.layers[doc.active_layer]), dialog.b, {"Blend mode", is_group ? fmt.tprintf("%s %s", GROUP_BLEND_TIP, LAYER_MODE_TIP) : LAYER_MODE_TIP}); ch {
 		dialog.b = nv
 	}
 	y += 22
@@ -419,12 +418,7 @@ dlg_layer_props :: proc() {
 		layer_props_record(l)
 		l.name = dialog.name
 		l.opacity = u8(dialog.a * 255 / 100)
-		if l.is_group {
-			l.pass_through = dialog.b == 0
-			if dialog.b > 0 do l.blend = Blend(dialog.b - 1)
-		} else {
-			l.blend = Blend(dialog.b)
-		}
+		if dialog.b != layer_mode_current(l) do layer_mode_set(l, dialog.b)
 		l.visible = dialog.flag
 		l.locked = dialog.flag2
 		l.lock_alpha = dialog.c != 0
@@ -689,7 +683,7 @@ layer_props_record :: proc(l: ^Layer) {
 	if !macro_recording() do return
 	if name_str(&dialog.name) != name_str(&l.name) do macro_record("layer.Rename", "name", name_str(&dialog.name))
 	if dialog.a != int(l.opacity) * 100 / 255 do macro_record("layer.Opacity", "opacity", fmt.tprint(dialog.a))
-	if !l.is_group && Blend(dialog.b) != l.blend do macro_record("layer.Blend", "blend", BLEND_NAMES[Blend(dialog.b)])
+	if !l.is_group && dialog.b < len(Blend) && Blend(dialog.b) != l.blend do macro_record("layer.Blend", "blend", BLEND_NAMES[Blend(dialog.b)])
 	if dialog.flag != l.visible do macro_record("layer.Visible", "visible", dialog.flag ? "1" : "0")
 	if dialog.flag2 != l.locked do macro_record("layer.Lock", "locked", dialog.flag2 ? "1" : "0")
 	if (dialog.c != 0) != l.lock_alpha do macro_record("cmd.Layer_Lock_Alpha")

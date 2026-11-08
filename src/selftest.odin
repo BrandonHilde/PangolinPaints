@@ -188,18 +188,18 @@ selftest :: proc() -> int {
 		check(fl[0] == Color{55, 155, 205, 255} && fl[2] == Color{35, 225, 225, 255}, "the effect follows changes to the layer")
 		check(layer_fx_add(d, "Fx soft"), "a second effect")
 		fx_update(d)
-		fc := d.fx_cache[uid]
+		fc := d.fx_cache[Fx_Key{uid, d.active_frame}]
 		check(fc.ok && fc.blend == .Soft_Light, "an effect can set the layer's blend mode")
 		check(d.layers[1].blend == .Normal, "the layer's own blend mode stays as it is")
 		check(layer_fx_add(d, "Fx export"), "a third")
 		fx_update(d)
-		fc = d.fx_cache[uid]
+		fc = d.fx_cache[Fx_Key{uid, d.active_frame}]
 		check(!fc.ok && strings.contains(name_str(&fc.err), "layer effect"), "steps that reach outside the layer are refused in an effect")
 		fl = doc_flat(d, context.temp_allocator)
 		check(fl[0] == paint, "effects that can't run leave the layer as it is")
 		layer_fx_remove(d, 2)
 		fx_update(d)
-		check(d.fx_cache[uid].ok, "the effects run again without it")
+		check(d.fx_cache[Fx_Key{uid, d.active_frame}].ok, "the effects run again without it")
 		data := project_encode(d)
 		d2, ok2 := project_decode(data)
 		check(ok2 && d2.layers[1].fx_n == 2 && name_str(&d2.layers[1].fx[0].name) == "Fx invert" && d2.layers[1].fx[0].on, "effects are saved with the painting")
@@ -209,6 +209,53 @@ selftest :: proc() -> int {
 		fx_update(d)
 		check(len(d.fx_cache) == 0, "a layer with no effects keeps nothing for them")
 		check(!fx_step_allowed("file.Export") && !fx_step_allowed("cmd.Tool_Brush") && fx_step_allowed("fx.Gaussian_Blur") && fx_step_allowed("layer.Blend"), "which steps an effect may use")
+		macros_clear()
+	}
+
+	// --- macros in the blend list; effects on every frame and on groups; out of a group --------
+	{
+		d := fresh(4, 1, white)
+		doc_add_layer(d)
+		paint := Color{200, 100, 50, 255}
+		inv_paint := Color{55, 155, 205, 255}
+		for x in 0 ..< 4 do tiles_set(&d.layers[1].pix, x, 0, paint, {})
+		doc_touch_all(d)
+		m := macro_new("Fx invert")
+		n := macro_add_node(m, "fx.Invert", 200, 0)
+		macro_link(m, macro_start(m), n.id)
+		append(&macro_lib, m)
+		names := layer_mode_names(&d.layers[1])
+		check(len(names) == len(Blend) + 1 && names[len(names) - 1] == "Macro: Fx invert", "the blend list offers the macros after the blend modes")
+		layer_mode_set(&d.layers[1], len(Blend))
+		check(d.layers[1].fx_n == 1 && name_str(&d.layers[1].fx[0].name) == "Fx invert" && layer_mode_current(&d.layers[1]) == len(Blend), "picking a macro in the blend list makes it the layer's effect")
+		check(layer_mode_text(&d.layers[1]) == "Fx invert", "the layer shows the macro as its mode")
+		doc_touch_all(d)
+		fx_update(d)
+		// a second frame, painted differently
+		doc_add_frame(d, true)
+		tiles_set(&d.layers[1].pix, 0, 0, red, {})
+		doc_touch_all(d)
+		set_frame(0)
+		out := make([]Color, 4, context.temp_allocator)
+		frame_composite(d, 1, out)
+		check(out[0] == Color{35, 225, 225, 255} && out[1] == inv_paint, "a frame that isn't shown gets its own effects too (exports, playback)")
+		frame_composite(d, 0, out)
+		check(out[0] == inv_paint, "and the shown frame")
+		layer_mode_set(&d.layers[1], int(Blend.Multiply))
+		check(d.layers[1].fx_n == 0 && d.layers[1].blend == .Multiply, "picking a blend mode takes the macro off")
+		d.layers[1].blend = .Normal
+		// a group's effect works on its layers combined
+		d.active_layer = 1
+		doc_group_wrap(d)
+		layer_mode_set(&d.layers[2], len(Blend) + 1)
+		check(d.layers[2].fx_n == 1 && layer_mode_current(&d.layers[2]) == len(Blend) + 1, "a group can have a macro as its mode")
+		doc_touch_all(d)
+		fx_update(d)
+		fl := doc_flat(d, context.temp_allocator)
+		check(fl[1] == inv_paint, "a group's effect works on its layers combined")
+		// dropped below every row: out of the group, to the bottom
+		check(doc_move_to(d, 1, 0, .Bottom) && d.layers[0].parent == 0 && !d.layers[0].is_group && name_str(&d.layers[0].name) == "Layer 1", "a layer dropped below the list leaves its group, to the bottom")
+		check(!doc_move_to(d, 0, 0, .Bottom), "the bottom layer is at the bottom already")
 		macros_clear()
 	}
 

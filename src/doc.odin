@@ -546,7 +546,8 @@ composite_box :: proc(d: ^Doc, layers_in: []Layer, b: Box, out: []Color, flat :=
 comp_items :: proc(layers: []Layer, t: ^Comp_Tree, items: []int, tx, ty, x0, y0, x1, y1: int, dst: []Color, dw, ox, oy: int, op_mul: f32, flat: int) {
 	for i in items {
 		l := &layers[i]
-		if !l.is_group {
+		if !l.is_group || l.fx_shown {
+			// (a group with effects shows their result, in place of its layers)
 			comp_layer_tile(l, tx, ty, x0, y0, x1, y1, dst, dw, ox, oy, op_mul, flat)
 			continue
 		}

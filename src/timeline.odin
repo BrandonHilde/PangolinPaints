@@ -210,16 +210,35 @@ panel_timeline_grid :: proc(body: Rect) {
 	// drag a row up or down to reorder; the line shows where it will land
 	if tl_drag >= 0 && tl_drag < int(nlayers) {
 		if !tl_drag_on && ui.down[0] && abs(ui.my - tl_drag_y0) > 4 do tl_drag_on = true
-		if tl_drag_on {
+		if tl_drag_on && ui.my - names.y + tl_scroll_y >= nlayers * TL_ROW_H {
+			// below every row: to the bottom, out of any group
+			fill_rect(Rect{names.x + 38, names.y + nlayers * TL_ROW_H - tl_scroll_y - 1, names.w - 39, 2}, C_ACCENT)
+			if ui.released[0] do doc_move_to(d, tl_drag, 0, .Bottom)
+		} else if tl_drag_on {
 			ri := clamp((ui.my - names.y + tl_scroll_y) / TL_ROW_H, 0, nlayers - 1)
 			target := int(nlayers - 1 - ri)
-			if target != tl_drag {
-				ly := names.y + (target > tl_drag ? ri : ri + 1) * TL_ROW_H - tl_scroll_y
-				fill_rect(Rect{names.x, ly - 1, names.w - 1, 2}, C_ACCENT)
-				if ui.released[0] {
-					// next to the row it is dropped on, in that row's group (into a group: the layer list does that)
-					doc_move_to(d, tl_drag, target, target > tl_drag ? .Above : .Below)
+			within := ui.my - (names.y + ri * TL_ROW_H - tl_scroll_y) // pointer's height in the row
+			drop: Layer_Drop
+			switch {
+			case d.layers[target].is_group && within > TL_ROW_H / 4:
+				drop = .Into
+			case within < TL_ROW_H / 2:
+				drop = .Above
+			case:
+				drop = .Below
+			}
+			if target != tl_drag && !(d.layers[tl_drag].is_group && layer_in_group(d.layers[:], target, tl_drag)) {
+				ry := names.y + ri * TL_ROW_H - tl_scroll_y
+				ind := i32(layer_depth(d.layers[:], target)) * LAYER_INDENT
+				switch drop {
+				case .Into:
+					outline_rect(rect_inset(Rect{names.x, ry, names.w - 1, TL_ROW_H}, 1), C_ACCENT)
+				case .Above:
+					fill_rect(Rect{names.x + 38 + ind, ry - 1, names.w - 39 - ind, 2}, C_ACCENT)
+				case .Below, .Bottom:
+					fill_rect(Rect{names.x + 38 + ind, ry + TL_ROW_H - 1, names.w - 39 - ind, 2}, C_ACCENT)
 				}
+				if ui.released[0] do doc_move_to(d, tl_drag, target, drop)
 			}
 		}
 		if !ui.down[0] do tl_drag, tl_drag_on = -1, false

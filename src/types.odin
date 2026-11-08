@@ -159,6 +159,7 @@ Layer :: struct {
 	// live layer effects (layerfx.odin)
 	fx:           [MAX_LAYER_FX]Layer_Fx,
 	fx_n:         int,
+	fx_shown:     bool, // (a copy for compositing) pix is its effects' result; for a group, in place of its layers
 }
 
 // A layer's tiles in a frame other than the current one. Never changed in place, and shared by undo snapshots.
@@ -215,7 +216,7 @@ Doc :: struct {
 	comp_lazy:    bool, // a frame was just picked: `comp` is out of date and the canvas draws from the frame cache
 	frame_t:      f64, // when it was picked
 	fc_used:      bool, // the frame cache holds something of this document
-	fx_cache:     map[int]Fx_Cache, // what each layer's effects gave, by layer uid (layerfx.odin)
+	fx_cache:     map[Fx_Key]Fx_Cache, // what each layer's effects gave, by layer and frame (layerfx.odin)
 }
 
 // Run of selection outline: `n` unit edges starting at (x, y).

@@ -110,6 +110,7 @@ frame_tiles :: proc(d: ^Doc, l: ^Layer, f: int) -> (pix, mask: ^Tiles) {
 frame_composite :: proc(d: ^Doc, f: int, out: []Color) {
 	flat := frame_flat_id(d, f)
 	if f == d.active_frame {
+		fx_update(d, true) // the current frame's effects, if any are out of date (an export right after a change)
 		composite_box_fast(d, d.layers[:], doc_box(d), out, flat)
 		return
 	}
@@ -120,7 +121,7 @@ frame_composite :: proc(d: ^Doc, f: int, out: []Color) {
 		tmp[i].pix = pix != nil ? pix^ : Tiles{}
 		tmp[i].mask = mask != nil ? mask^ : Tiles{}
 	}
-	composite_box_fast(d, tmp, doc_box(d), out, flat)
+	composite_box_fast(d, fx_apply(d, tmp, f, true), doc_box(d), out, flat) // with this frame's effects
 }
 
 // A text or vector layer is about to become ordinary pixels: every frame keeps showing what it

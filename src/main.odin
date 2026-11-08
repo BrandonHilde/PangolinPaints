@@ -105,6 +105,7 @@ demo_frames :: proc(n: int) {
 }
 
 main :: proc() {
+	fx_main_tid = current_thread_id() // only this thread runs layer effects
 	shot_path := ""
 	win_w, win_h := 0, 0
 	shot_frame := 8

@@ -8,8 +8,9 @@ import "core:strings"
 // ---------------------------------------------------------------------------
 // Krita documents (.kra): a zip holding maindoc.xml (the layer tree) and one tiled pixel file per
 // layer. Paint layers (8 or 16-bit integer RGBA / grey) come in with name, position, opacity,
-// blend mode and visibility, transparency masks become layer masks, and groups are flattened
-// (a hidden group hides its layers, group opacity carries over). Layers without pixel data in the
+// blend mode and visibility, transparency masks become layer masks, and groups become layer groups (with their
+// visibility, opacity, blend mode or pass through, and whether they are open). Formerly groups were flattened
+// (a hidden group hid its layers, group opacity carried over). Layers without pixel data in the
 // file (vector, file, fill, filter layers) are left out; when nothing can be read, Krita's merged
 // image is opened instead.
 // ---------------------------------------------------------------------------
@@ -243,6 +244,7 @@ Kra_Ctx :: struct {
 	d:       ^Doc,
 	skipped: int,
 	active:  int,
+	next_uid: int, // layer uids given out so far
 }
 
 @(private = "file")
@@ -271,17 +273,31 @@ children :: proc(x: ^xml.Document, id: xml.Element_ID, ident: string) -> [dynami
 
 // Krita lists layers top first; the document wants them bottom first, so walk in reverse.
 @(private = "file")
-kra_layers :: proc(k: ^Kra_Ctx, layers: xml.Element_ID, hidden: bool, opacity: int) {
+kra_layers :: proc(k: ^Kra_Ctx, layers: xml.Element_ID, parent: int) {
 	x := k.xdoc
 	list := children(x, layers, "layer")
 	w, h := k.d.w, k.d.h
 	for i := len(list) - 1; i >= 0; i -= 1 {
 		id := list[i]
-		vis := attr_int(x, id, "visible", 1) != 0 && !hidden
-		op := attr_int(x, id, "opacity", 255) * opacity / 255
+		vis := attr_int(x, id, "visible", 1) != 0
+		op := attr_int(x, id, "opacity", 255)
 		switch attr(x, id, "nodetype") {
 		case "grouplayer":
-			for sub in children(x, id, "layers") do kra_layers(k, sub, !vis, op)
+			// its layers first (below it), then the group itself
+			k.next_uid += 1
+			guid := k.next_uid
+			for sub in children(x, id, "layers") do kra_layers(k, sub, guid)
+			g := layer_make(attr(x, id, "name"), w, h)
+			g.is_group = true
+			g.uid, g.parent = guid, parent
+			g.visible, g.opacity = vis, u8(clamp(op, 0, 255))
+			g.locked = attr_int(x, id, "locked", 0) != 0
+			g.pass_through = attr_int(x, id, "passthrough", 0) != 0
+			g.collapsed = attr_int(x, id, "collapsed", 0) != 0
+			cop := attr(x, id, "compositeop")
+			for b in KRA_BLENDS do if b.op == cop do g.blend = b.blend
+			if attr(x, id, "selected") == "true" do k.active = len(k.d.layers)
+			append(&k.d.layers, g)
 			continue
 		case "paintlayer":
 		case:
@@ -302,6 +318,8 @@ kra_layers :: proc(k: ^Kra_Ctx, layers: xml.Element_ID, hidden: bool, opacity: i
 		}
 		l := layer_make(attr(x, id, "name"), w, h)
 		tiles_from_buf(&l.pix, w, h, pix, {})
+		k.next_uid += 1
+		l.uid, l.parent = k.next_uid, parent
 		l.visible = vis
 		l.opacity = u8(clamp(op, 0, 255))
 		l.locked = attr_int(x, id, "locked", 0) != 0
@@ -363,7 +381,7 @@ kra_load :: proc(data: []u8, title: string) -> (d: ^Doc, msg: string) {
 		d       = nd,
 		active  = -1,
 	}
-	for ls in children(x, img, "layers") do kra_layers(&k, ls, false, 255)
+	for ls in children(x, img, "layers") do kra_layers(&k, ls, 0)
 	if len(nd.layers) == 0 {
 		// nothing readable: Krita's flattened copy
 		if png, pok := zip_read(data, entries[:], "mergedimage.png"); pok {
@@ -387,6 +405,7 @@ kra_load :: proc(data: []u8, title: string) -> (d: ^Doc, msg: string) {
 		msg = fmt.tprintf("%d layer(s) left out: only paint layers and transparency masks are imported", k.skipped)
 	}
 	nd.active_layer = k.active >= 0 ? k.active : len(nd.layers) - 1
+	doc_layers_normalize(nd)
 	doc_clamp(nd)
 	nd.modified = false
 	return nd, msg

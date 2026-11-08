@@ -187,7 +187,7 @@ menu_build :: proc(idx: int) {
 		item("Group Layer", cmd = .Layer_Group)
 		item("Ungroup", cmd = .Layer_Ungroup, enabled = l.is_group)
 		popup_sep()
-		item("Layer Effects...", cmd = .Layer_Effects, enabled = !l.is_group)
+		item("Layer Effects...", cmd = .Layer_Effects)
 		item("Apply Effects", cmd = .Layer_Fx_Apply, enabled = l.fx_n > 0)
 		popup_sep()
 		item("Move Up", cmd = .Layer_Up)
@@ -895,18 +895,10 @@ panel_right :: proc() {
 	l := &d.layers[d.active_layer]
 	thumbs_refresh(d)
 	oui.element(uictx, "layer-props", "row", {id = "layer-props"})
-	if l.is_group {
-		// a group's list starts with Pass Through
-		cur := l.pass_through ? 0 : int(l.blend) + 1
-		if nv, ch := ocombo("blend", 92, group_blend_names(), cur, {"Blend mode", GROUP_BLEND_TIP}); ch {
-			history_push(d)
-			l.pass_through = nv == 0
-			if nv > 0 do l.blend = Blend(nv - 1)
-			doc_touch_all(d)
-		}
-	} else if nv, ch := ocombo("blend", 92, blend_names_slice(), int(l.blend), {"Blend mode", BLEND_TIP}); ch {
+	// the blend modes (Pass Through first for a group), then the macros: a macro runs on the layer as a live effect
+	if nv, ch := ocombo("blend", 92, layer_mode_names(l), layer_mode_current(l), {"Blend mode", l.is_group ? fmt.tprintf("%s %s", GROUP_BLEND_TIP, LAYER_MODE_TIP) : LAYER_MODE_TIP}); ch {
 		history_push(d)
-		l.blend = Blend(nv)
+		layer_mode_set(l, nv)
 		doc_touch_all(d)
 	}
 	op := int(l.opacity) * 100 / 255
@@ -1203,9 +1195,9 @@ panel_layer_list :: proc(list: Rect) {
 		if ly.is_group {
 			k := 0
 			for &x in d.layers do if x.parent == ly.uid do k += 1
-			info = fmt.tprintf("%s, %d layer%s", ly.pass_through ? "Pass Through" : BLEND_NAMES[ly.blend], k, k == 1 ? "" : "s")
-		} else if ly.blend != .Normal {
-			info = BLEND_NAMES[ly.blend]
+			info = fmt.tprintf("%s, %d layer%s", layer_mode_text(ly), k, k == 1 ? "" : "s")
+		} else if ly.blend != .Normal || layer_fx_on(ly) {
+			info = layer_mode_text(ly)
 		}
 		if ly.opacity < 255 do info = fmt.tprintf("%s %d%%", info, int(ly.opacity) * 100 / 255)
 		text_clipped(Rect{tx, ry + 17, name_r.w - 28, 10}, info, C_TEXT_DIM)
@@ -1214,7 +1206,7 @@ panel_layer_list :: proc(list: Rect) {
 		if ly.fx_n > 0 {
 			fxr = Rect{ix - 3, ry + 16, 16, 12}
 			fx_ok := true
-			if c, has := d.fx_cache[ly.uid]; has && c.err.n > 0 do fx_ok = false
+			if c, has := d.fx_cache[Fx_Key{ly.uid, d.active_frame}]; has && c.err.n > 0 do fx_ok = false
 			text(ix - 2, ry + 18, "fx", !fx_ok ? C_DANGER : (layer_fx_on(ly) ? C_ACCENT : C_TEXT_OFF))
 			if in_list do tip_area(fxr, "layer-fx", {"Layer effects", fx_ok ? "This layer has live effects: macros that run on it whenever it changes. Click to see them, switch them off or add more." : "This layer's effects can't run: click to see why."})
 			ix -= 16
@@ -1257,7 +1249,7 @@ panel_layer_list :: proc(list: Rect) {
 			popup_item("Group Layer", cmd = .Layer_Group)
 			if ly.is_group do popup_item("Ungroup", cmd = .Layer_Ungroup)
 			popup_sep()
-			if !ly.is_group do popup_item("Layer Effects...", cmd = .Layer_Effects)
+			popup_item("Layer Effects...", cmd = .Layer_Effects)
 			popup_item("Properties...", cmd = .Layer_Props)
 		}
 		if ui_hover(row) && ui_hover(list) && ui.pressed[0] {
@@ -1296,7 +1288,12 @@ panel_layer_list :: proc(list: Rect) {
 		if !layer_drag_on && ui.down[0] && abs(ui.my - layer_drag_y0) > 4 {
 			layer_drag_on = true
 		}
-		if layer_drag_on && n > 0 {
+		below_all := ui.my - inner.y + layers_scroll >= n * LAYER_ROW_H
+		if layer_drag_on && n > 0 && below_all {
+			// below every row: to the bottom, out of any group
+			fill_rect(Rect{inner.x + 22, inner.y + n * LAYER_ROW_H - layers_scroll - 1, inner.w - 22, 2}, C_ACCENT)
+			if ui.released[0] do doc_move_to(d, layer_drag, 0, .Bottom)
+		} else if layer_drag_on && n > 0 {
 			ri := clamp((ui.my - inner.y + layers_scroll) / LAYER_ROW_H, 0, n - 1)
 			target := rows[ri]
 			within := ui.my - (inner.y + ri * LAYER_ROW_H - layers_scroll) // pointer's height in the row
@@ -1318,7 +1315,7 @@ panel_layer_list :: proc(list: Rect) {
 					outline_rect(rect_inset(Rect{inner.x, ry, inner.w, LAYER_ROW_H}, 1), C_ACCENT)
 				case .Above:
 					fill_rect(Rect{inner.x + 22 + ind, ry - 1, inner.w - 22 - ind, 2}, C_ACCENT)
-				case .Below:
+				case .Below, .Bottom:
 					fill_rect(Rect{inner.x + 22 + ind, ry + LAYER_ROW_H - 1, inner.w - 22 - ind, 2}, C_ACCENT)
 				}
 				if ui.released[0] {

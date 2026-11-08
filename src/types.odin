@@ -156,6 +156,9 @@ Layer :: struct {
 	is_group:     bool, // a group: no pixels of its own; its layers are those whose parent it is, just below it
 	pass_through: bool, // a group whose layers blend straight into what is below (else they are combined first)
 	collapsed:    bool, // a group shown closed in the layer list
+	// live layer effects (layerfx.odin)
+	fx:           [MAX_LAYER_FX]Layer_Fx,
+	fx_n:         int,
 }
 
 // A layer's tiles in a frame other than the current one. Never changed in place, and shared by undo snapshots.
@@ -212,6 +215,7 @@ Doc :: struct {
 	comp_lazy:    bool, // a frame was just picked: `comp` is out of date and the canvas draws from the frame cache
 	frame_t:      f64, // when it was picked
 	fc_used:      bool, // the frame cache holds something of this document
+	fx_cache:     map[int]Fx_Cache, // what each layer's effects gave, by layer uid (layerfx.odin)
 }
 
 // Run of selection outline: `n` unit edges starting at (x, y).

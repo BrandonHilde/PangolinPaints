@@ -154,6 +154,64 @@ selftest :: proc() -> int {
 		check(after[0] == before[0] && after[2] == before[2], "a merged group looks as it did")
 	}
 
+	// --- live layer effects -------------------------------------------------------------
+	{
+		d := fresh(4, 1, white)
+		doc_add_layer(d)
+		paint := Color{200, 100, 50, 255}
+		for x in 0 ..< 4 do tiles_set(&d.layers[1].pix, x, 0, paint, {})
+		doc_touch_all(d)
+		mk :: proc(name, kind: string, args: ..string) -> ^Macro {
+			m := macro_new(name)
+			n := macro_add_node(m, kind, 200, 0)
+			for i := 0; i + 1 < len(args); i += 2 do macro_set_arg(m, n, args[i], args[i + 1])
+			macro_link(m, macro_start(m), n.id)
+			return m
+		}
+		append(&macro_lib, mk("Fx invert", "fx.Invert"), mk("Fx soft", "layer.Blend", "blend", "Soft Light"), mk("Fx export", "file.Export", "path", "C:/nowhere/x.png"))
+		uid := d.layers[1].uid
+		check(layer_fx_add(d, "Fx invert") && d.layers[1].fx_n == 1, "a macro is added to a layer as an effect")
+		fx_update(d)
+		fl := doc_flat(d, context.temp_allocator)
+		check(fl[0] == Color{55, 155, 205, 255}, "the effect shows on the canvas")
+		check(px(d, 1, 0, 0) == paint, "the layer's own pixels stay as they are")
+		d.layers[1].fx[0].on = false
+		doc_touch_all(d)
+		fx_update(d)
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[0] == paint, "an effect switched off shows the layer as it is")
+		d.layers[1].fx[0].on = true
+		tiles_set(&d.layers[1].pix, 2, 0, red, {})
+		doc_touch(d, doc_box(d))
+		fx_update(d)
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[0] == Color{55, 155, 205, 255} && fl[2] == Color{35, 225, 225, 255}, "the effect follows changes to the layer")
+		check(layer_fx_add(d, "Fx soft"), "a second effect")
+		fx_update(d)
+		fc := d.fx_cache[uid]
+		check(fc.ok && fc.blend == .Soft_Light, "an effect can set the layer's blend mode")
+		check(d.layers[1].blend == .Normal, "the layer's own blend mode stays as it is")
+		check(layer_fx_add(d, "Fx export"), "a third")
+		fx_update(d)
+		fc = d.fx_cache[uid]
+		check(!fc.ok && strings.contains(name_str(&fc.err), "layer effect"), "steps that reach outside the layer are refused in an effect")
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[0] == paint, "effects that can't run leave the layer as it is")
+		layer_fx_remove(d, 2)
+		fx_update(d)
+		check(d.fx_cache[uid].ok, "the effects run again without it")
+		data := project_encode(d)
+		d2, ok2 := project_decode(data)
+		check(ok2 && d2.layers[1].fx_n == 2 && name_str(&d2.layers[1].fx[0].name) == "Fx invert" && d2.layers[1].fx[0].on, "effects are saved with the painting")
+		if ok2 do doc_destroy(d2)
+		d.active_layer = 1
+		check(layer_fx_apply(d) && d.layers[1].fx_n == 0 && px(d, 1, 0, 0) == Color{55, 155, 205, 255} && d.layers[1].blend == .Soft_Light, "Apply Effects makes them part of the layer")
+		fx_update(d)
+		check(len(d.fx_cache) == 0, "a layer with no effects keeps nothing for them")
+		check(!fx_step_allowed("file.Export") && !fx_step_allowed("cmd.Tool_Brush") && fx_step_allowed("fx.Gaussian_Blur") && fx_step_allowed("layer.Blend"), "which steps an effect may use")
+		macros_clear()
+	}
+
 	// --- recent files (File menu) ----------------------------------------------------
 	{
 		recent_clear()

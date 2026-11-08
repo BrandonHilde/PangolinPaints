@@ -25,6 +25,7 @@ Dialog_Kind :: enum {
 	Workspaces,
 	Group_Rename,
 	Macros,
+	Layer_Fx,
 	Grid,
 	UI_Scale,
 	Frame_Props,
@@ -57,7 +58,7 @@ dialog_open :: proc(k: Dialog_Kind) {
 		msg_text  = dialog.msg_text,
 	}
 	switch k {
-	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename, .UI_Scale, .Tags:
+	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename, .UI_Scale, .Tags, .Layer_Fx:
 	case .Macros:
 		macros_refresh()
 		dialog.b = -1 // fill in the name field
@@ -201,6 +202,8 @@ dialogs_run :: proc() {
 		dlg_group_rename()
 	case .Macros:
 		dlg_macros()
+	case .Layer_Fx:
+		dlg_layer_fx()
 	}
 }
 
@@ -743,6 +746,8 @@ shortcut_name :: proc(c: Cmd) -> string {
 	case .Layer_Group_New:    return "New Group"
 	case .Layer_Group:        return "Group Layer"
 	case .Layer_Ungroup:      return "Ungroup"
+	case .Layer_Effects:      return "Layer Effects"
+	case .Layer_Fx_Apply:     return "Apply Effects"
 	case .Help_Keys:          return "Keyboard Shortcuts"
 	case .Macro_Editor:       return "Node Editor"
 	case .Macro_Record:       return "Record Macro"

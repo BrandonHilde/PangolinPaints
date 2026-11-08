@@ -17,13 +17,15 @@ import "core:strings"
 //   u32 tag_count  per tag: str name  u32 from  u32 to  u8 dir  color
 // Version 6 adds layer groups: after a layer's span_id, u32 uid  u32 parent uid  u8 group flags (1 group, 2 pass
 // through, 4 closed in the list). Older files load with every layer at the top level.
+// Version 7 adds live layer effects after the group flags: u8 count, per effect: str macro name  u8 on  str the macro
+// (its .pmacro text, so the painting opens elsewhere: a macro the library lacks is added to it).
 // a u32 span_id after a layer's blend mode, and a layer's tiles [and mask] are written once per frame, or once for a text or vector layer, which spans
 // them all. Method 2 is a tile written before (u32 size = its number, counting in file order), so tiles
 // that frames share stay shared, on disk and after loading.
 // ---------------------------------------------------------------------------
 
 PPNT_MAGIC :: "PPNT"
-PPNT_VERSION :: 6 // 2: text layers, 3: text character colours, 4: vector layers, 5: frames, 6: layer groups
+PPNT_VERSION :: 7 // 2: text layers, 3: text character colours, 4: vector layers, 5: frames, 6: layer groups, 7: layer effects
 
 GF_GROUP :: 1
 GF_PASS_THROUGH :: 2
@@ -160,6 +162,13 @@ project_encode :: proc(d: ^Doc) -> []u8 {
 		if l.pass_through do gf |= GF_PASS_THROUGH
 		if l.collapsed do gf |= GF_COLLAPSED
 		w8(&w, gf)
+		w8(&w, u8(l.fx_n))
+		for &f in l.fx[:l.fx_n] {
+			wstr(&w, name_str(&f.name))
+			w8(&w, f.on ? 1 : 0)
+			m := macro_find(name_str(&f.name))
+			wstr(&w, m != nil ? macro_to_text(m) : "")
+		}
 		for f in 0 ..< (layer_spans(&l) ? 1 : len(d.frames)) {
 			pix, mask := &l.pix, &l.mask
 			if !layer_spans(&l) do pix, mask = frame_tiles(d, &l, f)
@@ -245,6 +254,19 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 			l.parent = int(r32(&r))
 			gf := r8(&r)
 			l.is_group, l.pass_through, l.collapsed = gf & GF_GROUP != 0, gf & GF_PASS_THROUGH != 0, gf & GF_COLLAPSED != 0
+		}
+		if ver >= 7 {
+			n := int(r8(&r))
+			for k in 0 ..< n {
+				name := rstr(&r)
+				on := r8(&r) != 0
+				text := rstr(&r)
+				if k >= MAX_LAYER_FX || r.bad do continue
+				name_set(&l.fx[l.fx_n].name, name)
+				l.fx[l.fx_n].on = on
+				l.fx_n += 1
+				fx_macro_arrived(name, text)
+			}
 		}
 		if flags & LF_HAS_MASK != 0 {
 			l.has_mask = true

@@ -166,6 +166,7 @@ doc_destroy :: proc(d: ^Doc) {
 	delete(d.redo)
 	delete(d.comp)
 	delete(d.sel_edges)
+	fx_cache_free(d)
 	if d.path != "" {
 		delete(d.path)
 	}
@@ -185,6 +186,7 @@ doc_dirty :: proc(d: ^Doc, b: Box) {
 	d.comp_dirty = box_union(d.comp_dirty, cb)
 	d.thumb_dirty = true
 	d.comp_lazy = false
+	if len(d.fx_cache) > 0 && len(d.layers) > 0 do fx_mark_stale(d, d.layers[clamp(d.active_layer, 0, len(d.layers) - 1)].uid)
 	if d.fc_used {
 		// a text or vector layer shows on every frame
 		l := &d.layers[clamp(d.active_layer, 0, len(d.layers) - 1)]
@@ -194,6 +196,7 @@ doc_dirty :: proc(d: ^Doc, b: Box) {
 
 doc_dirty_all :: proc(d: ^Doc) {
 	doc_dirty(d, doc_box(d))
+	fx_mark_stale(d)
 	d.sel_dirty = true
 	frame_cache_drop(d)
 }
@@ -510,8 +513,9 @@ comp_tree :: proc(layers: []Layer, allocator := context.temp_allocator) -> Comp_
 	return t
 }
 
-composite_box :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat := 0, tree: ^Comp_Tree = nil) {
+composite_box :: proc(d: ^Doc, layers_in: []Layer, b: Box, out: []Color, flat := 0, tree: ^Comp_Tree = nil, fx_done := false) {
 	w := d.w
+	layers := fx_done ? layers_in : fx_layers(d, layers_in) // live layer effects
 	for y in b.y0 ..< b.y1 {
 		for x in b.x0 ..< b.x1 {
 			out[y * w + x] = {}
@@ -612,7 +616,7 @@ comp_layer_tile :: proc(l: ^Layer, tx, ty, x0, y0, x1, y1: int, dst: []Color, dw
 
 // composite_box on several threads when the area is large. They only read tiles (no refcounts) and each
 // writes its own rows of `out`.
-composite_box_fast :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat := 0) {
+composite_box_fast :: proc(d: ^Doc, layers_in: []Layer, b: Box, out: []Color, flat := 0) {
 	Band :: struct {
 		d:      ^Doc,
 		layers: []Layer,
@@ -624,9 +628,10 @@ composite_box_fast :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat 
 	MAX_BANDS :: 8
 	n := clamp(os.get_processor_core_count(), 1, MAX_BANDS)
 	if n < 2 || (b.x1 - b.x0) * (b.y1 - b.y0) < 1 << 20 {
-		composite_box(d, layers, b, out, flat)
+		composite_box(d, layers_in, b, out, flat)
 		return
 	}
+	layers := fx_layers(d, layers_in) // once, here: the threads only read
 	// the groups are worked out here, once: the threads only read them
 	tree: ^Comp_Tree
 	local: Comp_Tree
@@ -642,13 +647,13 @@ composite_box_fast :: proc(d: ^Doc, layers: []Layer, b: Box, out: []Color, flat 
 		if i == 0 do continue // this thread does the first band itself
 		t := thread.create(proc(t: ^thread.Thread) {
 			band := (^Band)(t.data)
-			composite_box(band.d, band.layers, band.b, band.out, band.flat, band.tree)
+			composite_box(band.d, band.layers, band.b, band.out, band.flat, band.tree, true)
 		})
 		t.data = &bands[i]
 		thread.start(t)
 		threads[i] = t
 	}
-	composite_box(d, layers, bands[0].b, out, flat, tree)
+	composite_box(d, layers, bands[0].b, out, flat, tree, true)
 	for t in threads[1:n] {
 		thread.join(t)
 		thread.destroy(t)

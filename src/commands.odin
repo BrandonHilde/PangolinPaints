@@ -55,6 +55,8 @@ Cmd :: enum {
 	Layer_Group_New,
 	Layer_Group,
 	Layer_Ungroup,
+	Layer_Effects,
+	Layer_Fx_Apply,
 	Layer_Via_Copy,
 	Layer_Via_Cut,
 	Layer_Lock_Alpha,
@@ -620,6 +622,14 @@ run_cmd :: proc(cmd: Cmd) {
 		doc_group_new(d)
 	case .Layer_Group:
 		doc_group_wrap(d)
+	case .Layer_Effects:
+		dialog_open(.Layer_Fx)
+	case .Layer_Fx_Apply:
+		if d.layers[d.active_layer].fx_n == 0 {
+			set_status("The layer has no effects to apply")
+		} else if layer_fx_apply(d) {
+			set_status("The effects are part of the layer now")
+		}
 	case .Layer_Ungroup:
 		if !doc_ungroup(d) {
 			set_status("Pick a group to take apart")

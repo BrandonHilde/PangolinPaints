@@ -190,7 +190,7 @@ MACRO_CMD_EXCLUDED := [?]Cmd {
 	.Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap,
 	.Grid_Settings, .Toggle_Mirror, .Toggle_Perspective, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless,
 	.Cycle_Canvas_Bg, .UI_Scale, .Toggle_Timeline, .Toggle_Files, .Help_Keys, .About, .Ws_Manage, .Ws_Import, .Ws_Export,
-	.Macro_Record, .Macros, .Macro_Import, .Macro_Editor, .Recent_Clear,
+	.Macro_Record, .Macros, .Macro_Import, .Macro_Editor, .Recent_Clear, .Layer_Effects, .Layer_Fx_Apply,
 }
 
 SEL_MODES := [4]string{"replace", "add", "subtract", "intersect"}
@@ -398,6 +398,7 @@ layer_problem :: proc(d: ^Doc) -> string {
 // Runs one node. `args` are its settings in the order of `def.settings`.
 macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: string) {
 	d := doc
+	if fx_sandbox && !fx_step_allowed(def.id) do return false, "this step can't be used in a layer effect"
 	kind, _, name := strings.partition(def.id, ".")
 	switch kind {
 	case "cmd":
@@ -657,6 +658,13 @@ macro_doc: ^Doc
 
 macro_begin :: proc() -> (ok: bool, msg: string) {
 	if doc == nil do return false, "there is no painting open"
+	if fx_sandbox {
+		// a layer's effects, on a copy of it: nothing else is touched
+		history_push(doc)
+		doc.history_hold += 1
+		macro_doc = doc
+		return true, ""
+	}
 	if dialog.kind != .None do return false, "close the open window first"
 	tools_commit_pending()
 	stop_playback()

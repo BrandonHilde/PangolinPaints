@@ -104,6 +104,10 @@ cmd_help :: proc(c: Cmd) -> string {
 		return "Add an empty layer group above the active layer. Drag layers onto it in the layer list to put them in it."
 	case .Layer_Group:
 		return "Put the active layer in a new group of its own. A group shows its layers together: hide it, change its opacity or blend mode, move or copy it, and they all follow."
+	case .Layer_Effects:
+		return "Attach macros to the active layer as live effects: they run on the layer whenever it changes (Soft Light and a blur, say), can be switched off or removed, and are saved with the painting."
+	case .Layer_Fx_Apply:
+		return "Make the active layer's effects part of its pixels, and take them off the layer."
 	case .Layer_Ungroup:
 		return "Take the active group apart: its layers stay where they are, out of the group."
 	case .Layer_Props:

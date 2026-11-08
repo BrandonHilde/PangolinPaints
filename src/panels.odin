@@ -187,6 +187,9 @@ menu_build :: proc(idx: int) {
 		item("Group Layer", cmd = .Layer_Group)
 		item("Ungroup", cmd = .Layer_Ungroup, enabled = l.is_group)
 		popup_sep()
+		item("Layer Effects...", cmd = .Layer_Effects, enabled = !l.is_group)
+		item("Apply Effects", cmd = .Layer_Fx_Apply, enabled = l.fx_n > 0)
+		popup_sep()
 		item("Move Up", cmd = .Layer_Up)
 		item("Move Down", cmd = .Layer_Down)
 		item(l.is_group ? "Merge Group" : "Merge Down", cmd = .Layer_Merge, enabled = l.is_group || layer_merge_target(d) >= 0)
@@ -1207,6 +1210,15 @@ panel_layer_list :: proc(list: Rect) {
 		if ly.opacity < 255 do info = fmt.tprintf("%s %d%%", info, int(ly.opacity) * 100 / 255)
 		text_clipped(Rect{tx, ry + 17, name_r.w - 28, 10}, info, C_TEXT_DIM)
 		ix := row.x + row.w - 16
+		fxr: Rect
+		if ly.fx_n > 0 {
+			fxr = Rect{ix - 3, ry + 16, 16, 12}
+			fx_ok := true
+			if c, has := d.fx_cache[ly.uid]; has && c.err.n > 0 do fx_ok = false
+			text(ix - 2, ry + 18, "fx", !fx_ok ? C_DANGER : (layer_fx_on(ly) ? C_ACCENT : C_TEXT_OFF))
+			if in_list do tip_area(fxr, "layer-fx", {"Layer effects", fx_ok ? "This layer has live effects: macros that run on it whenever it changes. Click to see them, switch them off or add more." : "This layer's effects can't run: click to see why."})
+			ix -= 16
+		}
 		if ly.text.on {
 			icon(.Text, ix, ry + 17, C_TEXT_DIM)
 			if in_list do tip_area({ix, ry + 17, 12, 12}, "layer-text", {"Text layer", "This layer's text can still be edited. Click it with the Text tool."})
@@ -1245,6 +1257,7 @@ panel_layer_list :: proc(list: Rect) {
 			popup_item("Group Layer", cmd = .Layer_Group)
 			if ly.is_group do popup_item("Ungroup", cmd = .Layer_Ungroup)
 			popup_sep()
+			if !ly.is_group do popup_item("Layer Effects...", cmd = .Layer_Effects)
 			popup_item("Properties...", cmd = .Layer_Props)
 		}
 		if ui_hover(row) && ui_hover(list) && ui.pressed[0] {
@@ -1253,6 +1266,10 @@ panel_layer_list :: proc(list: Rect) {
 				history_push(d)
 				ly.visible = !ly.visible
 				doc_touch_all(d)
+			case in_rect(fxr, ui.mx, ui.my):
+				d.active_layer = li
+				d.edit_mask = false
+				dialog_open(.Layer_Fx)
 			case ly.is_group && in_rect(rect_inset(arrow, -2), ui.mx, ui.my):
 				ly.collapsed = !ly.collapsed
 			case !ly.is_group && ly.has_mask && in_rect(mr, ui.mx, ui.my):

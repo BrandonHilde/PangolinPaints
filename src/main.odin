@@ -356,6 +356,7 @@ main :: proc() {
 
 		text_update()
 		shortcuts_update()
+		fx_update(doc) // live layer effects that are out of date
 		// never more than one frame at a time: the first time round, frames take a while to prepare,
 		// and each should still get its turn so the next round can run at full speed
 		if playing && dialog.kind == .None && !text_edit.active {

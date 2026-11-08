@@ -779,6 +779,7 @@ run_cmd :: proc(cmd: Cmd) {
 		show_navigator = !show_navigator
 	case .Toggle_Canvas_Mode:
 		canvas_mode = !canvas_mode
+		if canvas_mode do macro_editor_close() // the two views take the same space: see main_ui
 	case .Toggle_Seamless:
 		seamless_mode = !seamless_mode
 		switch_changed(.Seamless)

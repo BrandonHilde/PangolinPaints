@@ -126,7 +126,7 @@ button.menu-title {
 }
 button.menu-title:hover { background: var(--hover); color: #ffffff; }
 button.menu-title.open  { background: var(--active); color: #ffffff; }
-#canvas-mode { margin-left: 4px; }
+#node-editor, #canvas-mode { margin-left: 4px; }
 #doc-name { color: var(--text-dim); margin-left: 8px; white-space: nowrap; }
 
 /* ---- document tabs ------------------------------------------------------------------------ */

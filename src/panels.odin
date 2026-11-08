@@ -38,7 +38,10 @@ main_ui :: proc() {
 	defer oui.end(uictx)
 	panel_menubar()
 	if macro_editor_on() {
-		// the node editor takes the place of everything below the menus
+		// the node editor takes the place of everything below the menus. It and Canvas Mode are two views of the
+		// window, so only one is on: opening the editor (from the button, a menu, the Macros dialog or a layer
+		// effect) ends Canvas Mode, and turning Canvas Mode on closes the editor (see .Toggle_Canvas_Mode)
+		canvas_mode = false
 		oui_slot("viewport", "macro_editor")
 		return
 	}
@@ -318,10 +321,10 @@ panel_menubar :: proc() {
 	if macro_recording() && obutton("Stop Recording", 0, {"Recording a macro", "The commands you use are being recorded as a macro. Click to stop and save it."}, true, true, id = "rec-stop") {
 		run_cmd(.Macro_Record)
 	}
-	if c, _ := oui_icon_button("node-editor", .Node_Graph, cmd_tip("Node Editor", .Macro_Editor), {lit = macro_editor_on(), enabled = true}); c {
+	if c, _ := oui_icon_button("node-editor", .Node_Graph, cmd_tip("Node Editor", .Macro_Editor), {id = "node-editor", lit = macro_editor_on(), enabled = true}); c {
 		run_cmd(.Macro_Editor)
 	}
-	if c, _ := oui_icon_button("canvas-mode", .Canvas_Mode, cmd_tip("Canvas Mode", .Toggle_Canvas_Mode), {lit = canvas_mode, enabled = true}); c {
+	if c, _ := oui_icon_button("canvas-mode", .Canvas_Mode, cmd_tip("Canvas Mode", .Toggle_Canvas_Mode), {id = "canvas-mode", lit = canvas_mode, enabled = true}); c {
 		run_cmd(.Toggle_Canvas_Mode)
 	}
 	// a very large UI scale needs the row more: the tab shows the name too

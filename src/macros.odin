@@ -187,7 +187,7 @@ MACRO_CMD_EXCLUDED := [?]Cmd {
 	.Zoom_In, .Zoom_Out, .Zoom_Fit, .Zoom_1, .Zoom_2, .Toggle_Pixel_Grid, .Toggle_Thirds, .Toggle_Grid, .Toggle_Snap,
 	.Grid_Settings, .Toggle_Mirror, .Toggle_Perspective, .Toggle_Navigator, .Toggle_Canvas_Mode, .Toggle_Seamless,
 	.Cycle_Canvas_Bg, .UI_Scale, .Toggle_Timeline, .Toggle_Files, .Help_Keys, .About, .Ws_Manage, .Ws_Import, .Ws_Export,
-	.Macro_Record, .Macros, .Macro_Import, .Macro_Editor,
+	.Macro_Record, .Macros, .Macro_Import, .Macro_Editor, .Recent_Clear,
 }
 
 SEL_MODES := [4]string{"replace", "add", "subtract", "intersect"}

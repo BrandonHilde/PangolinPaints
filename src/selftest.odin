@@ -71,6 +71,29 @@ selftest :: proc() -> int {
 		check(ui_scale_parse(9000) == UI_SCALE_MAX, "stored scale clamped")
 	}
 
+	// --- recent files (File menu) ----------------------------------------------------
+	{
+		recent_clear()
+		recent_add("C:/art/one.ppnt")
+		recent_add("C:/art/two.png")
+		recent_add(`c:\ART\ONE.ppnt`)
+		check(len(recent_files) == 2 && recent_files[0] == `c:\ART\ONE.ppnt` &&recent_files[1] == "C:/art/two.png", "opening a file again moves it to the top, whatever its slashes and capitals")
+		for i in 0 ..< 20 do recent_add(fmt.tprintf("C:/art/f%d.png", i))
+		check(len(recent_files) == RECENT_FILES_MAX && recent_files[0] == "C:/art/f19.png", "the recent files keep the newest ones")
+		sb := strings.builder_make(context.temp_allocator)
+		recent_prefs_write(&sb)
+		recent_clear()
+		text := strings.to_string(sb)
+		for line in strings.split_lines_iterator(&text) {
+			k, _, v := strings.partition(line, "=")
+			check(recent_prefs_read(k, v), "a recent_file line is the recent list's")
+		}
+		check(len(recent_files) == RECENT_FILES_MAX && recent_files[0] == "C:/art/f19.png" && recent_files[1] == "C:/art/f18.png", "the recent files are saved with the preferences, newest first")
+		recent_remove("C:/ART/F19.PNG")
+		check(len(recent_files) == RECENT_FILES_MAX - 1 && recent_files[0] == "C:/art/f18.png", "a file can come off the list")
+		recent_clear()
+	}
+
 	// --- typing a slider's value (right-click) ---------------------------------------
 	{
 		v, ok := slider_type_parse("70", 1, 1, 1000)

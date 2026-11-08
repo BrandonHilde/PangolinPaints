@@ -11,6 +11,7 @@ Cmd :: enum {
 	Save_As,
 	Place_Image,
 	Export,
+	Recent_Clear,
 	Close_Doc,
 	Exit,
 	Swatches_Load,
@@ -162,6 +163,9 @@ Cmd :: enum {
 	// saved and built-in workspaces, in the order of `ws_entries`
 	Ws_First,
 	Ws_Last = Ws_First + WS_MAX - 1,
+	// the File menu's recent files, in the order of `recent_files`
+	Recent_First,
+	Recent_Last = Recent_First + RECENT_FILES_MAX - 1,
 	// the macros in the Macros menu, in the order of `macro_lib`
 	Macro_First,
 	Macro_Last = Macro_First + MACRO_MENU_MAX - 1,
@@ -463,6 +467,10 @@ run_cmd :: proc(cmd: Cmd) {
 		workspace_apply_index(int(cmd) - int(Cmd.Ws_First))
 		return
 	}
+	if cmd >= .Recent_First && cmd <= .Recent_Last {
+		recent_open(int(cmd) - int(Cmd.Recent_First))
+		return
+	}
 	if cmd >= .Macro_First && cmd <= .Macro_Last {
 		if i := int(cmd) - int(Cmd.Macro_First); i < len(macro_lib) do macro_run_named(macro_lib[i].name)
 		return
@@ -474,7 +482,7 @@ run_cmd :: proc(cmd: Cmd) {
 		return
 	}
 	switch cmd {
-	case .None, .Tool_Brush ..= .Tool_Seamless, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100, .Macro_First ..= .Macro_Last:
+	case .None, .Tool_Brush ..= .Tool_Seamless, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100, .Macro_First ..= .Macro_Last, .Recent_First ..= .Recent_Last:
 	case .New:
 		dialog_open(.New_Doc)
 	case .Open:
@@ -487,6 +495,9 @@ run_cmd :: proc(cmd: Cmd) {
 		file_place_dialog()
 	case .Export:
 		dialog_open(.Export)
+	case .Recent_Clear:
+		recent_clear()
+		set_status("Cleared the recent files")
 	case .Close_Doc:
 		request_close(d)
 	case .Exit:

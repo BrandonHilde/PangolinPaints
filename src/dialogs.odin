@@ -684,6 +684,7 @@ shortcut_name :: proc(c: Cmd) -> string {
 	case .Clear:              return "Delete"
 	case .Save_As:            return "Save As"
 	case .Export:             return "Export"
+	case .Recent_Clear:       return "Clear Recent Files"
 	case .Close_Doc:          return "Close"
 	case .Copy_Merged:        return "Copy Merged"
 	case .Paste:              return "Paste as Layer"

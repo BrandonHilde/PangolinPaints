@@ -361,6 +361,7 @@ open_path :: proc(path: string) {
 		return
 	}
 	add_doc(d)
+	recent_add(path)
 	if lower_ext(path) == ".ppnt" {
 		set_statusf("Opened %s", path_basename(path))
 	} else {
@@ -443,6 +444,7 @@ file_save_to :: proc(d: ^Doc, path: string) -> bool {
 		name_set(&d.title, path_stem(path))
 	}
 	d.modified = false
+	recent_add(path)
 	set_statusf("Saved %s (%d KB)", path_basename(path), len(data) / 1024)
 	return true
 }

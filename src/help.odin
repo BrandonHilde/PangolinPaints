@@ -24,6 +24,10 @@ cmd_help :: proc(c: Cmd) -> string {
 		return "Add an image file to this painting as a new layer, centered and scaled down if it is larger than the canvas."
 	case .Export:
 		return "Save a flat copy of the visible layers as PNG, JPG, BMP, TGA, QOI or TIFF, at a format and scale you choose in the next window. A painting with several frames can also export a PNG sequence or an animated GIF."
+	case .Recent_Clear:
+		return "Empty the list of recently opened and saved files in the File menu. The files themselves stay where they are."
+	case .Recent_First ..= .Recent_Last:
+		return "Open this file again. It is one you opened or saved lately."
 	case .Close_Doc:
 		return "Close the current tab. If it has unsaved changes you are asked first."
 	case .Exit:

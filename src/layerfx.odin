@@ -1,6 +1,7 @@
 package pangolin
 
 import "core:fmt"
+import "core:os"
 import "core:strings"
 import "core:sync"
 
@@ -11,7 +12,9 @@ import "core:sync"
 // The macros run in order on a copy of the layer in a document of its own (layer_fx_run), never on the painting. What
 // that copy looks like at the end, with the blend mode and opacity the macros left it, is drawn in place of the layer's
 // own pixels (a group: in place of its layers, combined). So "Soft Light + Blur" blurs the layer and blends it as Soft
-// Light. A layer's mask still applies, after the effects.
+// Light. A layer's mask still applies, after the effects. Develop nodes set to Layer pixels (develop.odin) are the one
+// exception: they are given the picture under the layer as well, change it where the layer is painted, and that is
+// what shows, which makes the layer an adjustment layer you paint.
 //
 // Results are kept per layer and frame. The current frame's are worked out once the mouse is up after a change
 // (fx_update); while painting, the layer shows as it is. Other frames' are worked out when they are drawn or exported
@@ -20,7 +23,8 @@ import "core:sync"
 //
 // How often they run is up to each macro's Trigger (its Start node, macro_trigger), so a heavy macro needn't run after
 // every stroke: On Paint after every change, After a Pause once the layer has been left alone for its Seconds, Every N
-// Seconds at most that often, On Demand only when added and on Refresh. A layer's effects run together, so the layer
+// Seconds at most that often, On Demand when added, once when painting on the layer stops (the pen has stayed up for
+// FX_PAINT_SETTLE, fx_stroke_done) and on Refresh (the circling arrow by a layer's fx, or the Layer Effects window). A layer's effects run together, so the layer
 // follows the most careful trigger among them (layer_fx_trigger). Switching an effect, adding, removing or reordering
 // them, or changing the layer's blend mode or opacity runs them straight away whatever the trigger: only new pixels
 // and edits to the macros wait for it. On Hotkey macros are run by the user, not on layers: the lists here leave them out.
@@ -50,7 +54,16 @@ Fx_Cache :: struct {
 	changed_at: f64, // gfx_time of the last change (After a Pause waits from here)
 	ran_at:  f64, // gfx_time of the last run (Every N Seconds waits from here)
 	refresh: bool, // run them again now, whatever the trigger and even if nothing changed (Refresh)
+	below:   bool, // they read the picture under the layer (a Develop node on Layer pixels): any change may change them
+	painted: bool, // On Demand: painted on (or under, for `below`); they run once painting has stopped (fx_stroke_done)
+	paint_due: bool, // painting has stopped: run them if what they read changed
+	patched: bool, // pix shows paint laid on since they ran (fx_paint_through): it isn't their result any more
 }
+
+// How long the pen has to stay up, with no new stroke, before On Demand effects count painting as finished. Shorter
+// would run them in the gaps between strokes, which is where their time would be felt.
+FX_PAINT_SETTLE :: 0.8
+fx_paint_end: f64 // gfx_time when the last brush stroke ended
 
 fx_sandbox: bool // the effects of a layer are running, on a copy of it in a document of its own
 fx_main_tid: int // the main thread: the only one that runs effects (set at start-up)
@@ -63,14 +76,83 @@ fx_on_main :: proc() -> bool {
 	return fx_main_tid == 0 || current_thread_id() == fx_main_tid
 }
 
-// Marks layer `uid`'s effects (or every layer's, with uid 0) to be checked again.
+// Marks layer `uid`'s effects (or every layer's, with uid 0) to be checked again. Effects that read the picture under
+// their layer are checked whatever changed: their signature tells whether it was under them.
 fx_mark_stale :: proc(d: ^Doc, uid := 0) {
 	if fx_sandbox do return
 	now := gfx_time()
 	for k, &c in d.fx_cache {
-		if uid == 0 || k.uid == uid {
+		if uid == 0 || k.uid == uid || c.below {
 			c.stale = true
 			c.changed_at = now
+		}
+	}
+}
+
+// A brush stroke on the active layer just ended (the mouse button is up, the pen lifted off). On Demand effects that read
+// what was painted (the layer's own, and those of layers that adjust the picture under it) are marked: fx_update runs
+// them once the pen has stayed up for FX_PAINT_SETTLE with no new stroke, so a run of strokes costs one run, at the end,
+// and none between strokes. Effects with other triggers keep to them.
+fx_stroke_done :: proc(d: ^Doc) {
+	if d == nil || len(d.layers) == 0 || fx_sandbox do return
+	uid := d.layers[clamp(d.active_layer, 0, len(d.layers) - 1)].uid
+	for &l in d.layers {
+		if l.fx_n == 0 do continue
+		if t, _ := layer_fx_trigger(&l); t != .Demand do continue
+		key := Fx_Key{l.uid, d.active_frame}
+		c, has := d.fx_cache[key]
+		if l.uid != uid && !(has && c.below) do continue
+		if !has do continue // never run yet: it runs anyway
+		cp := &d.fx_cache[key]
+		cp.stale, cp.painted = true, true // stale: the layer's refresh arrow is lit until they run
+	}
+	fx_paint_end = gfx_time()
+}
+
+// A brush stroke is painting box `b` of the active layer. Its effects don't run while painting, so their last result,
+// which is what shows, would hide the paint: instead the pixels the stroke changed (against the stroke's copy of the
+// layer from before it) are copied into that result, so the canvas shows the strokes as they go down, and the effects
+// catch up as their trigger says (On Demand once painting stops). Pixels in the box the stroke didn't change keep the
+// effect. Layers above that adjust the picture under them (Layer pixels) let the new paint show through there until
+// they run again. Nothing is worked out: it costs a pass over the box.
+fx_paint_through :: proc(d: ^Doc, b: Box) {
+	if d == nil || len(d.fx_cache) == 0 || d.edit_mask || fx_sandbox || len(d.layers) == 0 || !stroke.active do return
+	bw, bh := b.x1 - b.x0, b.y1 - b.y0
+	if bw <= 0 || bh <= 0 do return
+	li := clamp(d.active_layer, 0, len(d.layers) - 1)
+	l := &d.layers[li]
+	if l.is_group || stroke.target != &l.pix do return
+	now := make([]Color, bw * bh, context.temp_allocator)
+	before := make([]Color, bw * bh, context.temp_allocator)
+	tiles_read_box(&l.pix, b, now, {})
+	tiles_read_box(&stroke.orig, b, before, stroke.empty)
+	// lay `now` over a cached result where the stroke changed something: `over` false clears those pixels instead
+	patch :: proc(cp: ^Fx_Cache, b: Box, now, before: []Color, over: bool) {
+		shown := make([]Color, len(now), context.temp_allocator)
+		tiles_read_box(&cp.pix, b, shown, {})
+		for i in 0 ..< len(now) do if now[i] != before[i] do shown[i] = over ? now[i] : {}
+		tiles_write_box(&cp.pix, b, shown, {})
+		cp.patched = true
+	}
+	if c, has := d.fx_cache[Fx_Key{l.uid, d.active_frame}]; has && c.ok && len(c.pix.t) > 0 {
+		patch(&d.fx_cache[Fx_Key{l.uid, d.active_frame}], b, now, before, true)
+	}
+	for &o, oi in d.layers {
+		if oi <= li || o.fx_n == 0 do continue
+		c, has := d.fx_cache[Fx_Key{o.uid, d.active_frame}]
+		if !has || !c.ok || !c.below || len(c.pix.t) == 0 do continue
+		patch(&d.fx_cache[Fx_Key{o.uid, d.active_frame}], b, now, before, false)
+	}
+}
+
+// Runs again, now, the effects of every layer of `d` that uses macro `name`: it was just changed in the node editor.
+fx_refresh_macro :: proc(d: ^Doc, name: string) {
+	for &l in d.layers {
+		for &f in l.fx[:l.fx_n] {
+			if strings.equal_fold(name_str(&f.name), name) {
+				fx_refresh(d, l.uid)
+				break
+			}
 		}
 	}
 }
@@ -136,7 +218,9 @@ fx_settings_sig :: proc(l: ^Layer) -> u64 {
 // result yet, asked to Refresh, or whose effects or settings changed runs at once; otherwise its trigger decides.
 // `force` (an export, which should show the latest) doesn't wait for a timer, but On Demand still waits for Refresh.
 fx_due :: proc(l: ^Layer, c: Fx_Cache, has, force: bool) -> bool {
-	if !has || !c.has_sig || c.refresh || c.set_sig != fx_settings_sig(l) do return true
+	if !has || !c.has_sig || c.refresh || c.paint_due || c.set_sig != fx_settings_sig(l) do return true
+	// an export shows the effects' result, not the paint shown through it while painting
+	if force && (c.patched || c.painted) do return true
 	t, secs := layer_fx_trigger(l)
 	switch t {
 	case .Hotkey, .Paint:
@@ -172,8 +256,10 @@ fx_apply :: proc(d: ^Doc, layers: []Layer, frame: int, compute: bool) -> []Layer
 		if l.fx_n == 0 || !layer_fx_on(&l) do continue
 		if compute && fx_on_main() && !fx_sandbox && !macro_running {
 			if li := layer_find_uid(d.layers[:], l.uid); li >= 0 {
+				// as fx_update: only a result that something marked out of date is checked again (fx_compute copies
+				// and hashes the whole layer, too much to do whenever a frame is drawn)
 				prev, has := d.fx_cache[Fx_Key{l.uid, frame}]
-				if fx_due(&d.layers[li], prev, has, false) do fx_compute(d, li, frame)
+				if (!has || prev.stale || prev.refresh) && fx_due(&d.layers[li], prev, has, false) do fx_compute(d, li, frame)
 			}
 		}
 		c, has := d.fx_cache[Fx_Key{l.uid, frame}]
@@ -208,13 +294,46 @@ fx_input :: proc(d: ^Doc, li, f: int) -> []Color {
 	return out
 }
 
+// Do layer `l`'s effects (those switched on) read the picture under it?
+layer_fx_reads_below :: proc(l: ^Layer) -> bool {
+	for &f in l.fx[:l.fx_n] do if f.on && macro_reads_below(macro_find(name_str(&f.name))) do return true
+	return false
+}
+
+// The picture under layer `li` on frame `f`, for effects that adjust it (temp memory): the layers below it in its group
+// (or below it at all, outside any group) combined, with their own effects.
+fx_below_pixels :: proc(d: ^Doc, li, f: int) -> []Color {
+	out := make([]Color, d.w * d.h, context.temp_allocator)
+	p := layer_parent_index(d.layers[:], li)
+	start := p >= 0 ? layer_span_start(d.layers[:], p) : 0
+	end := layer_span_start(d.layers[:], li)
+	if end <= start do return out
+	run := d.layers[start:end]
+	flat := frame_flat_id(d, f)
+	if f == d.active_frame {
+		composite_box(d, run, doc_box(d), out, flat) // their effects, as worked out for this frame
+		return out
+	}
+	tmp := make([]Layer, len(run), context.temp_allocator)
+	for &l, i in run {
+		tmp[i] = l
+		pix, mask := frame_tiles(d, &l, f)
+		tmp[i].pix = pix != nil ? pix^ : Tiles{}
+		tmp[i].mask = mask != nil ? mask^ : Tiles{}
+	}
+	composite_box(d, fx_apply(d, tmp, f, true), doc_box(d), out, flat)
+	return out
+}
+
 @(private = "file")
-fx_signature :: proc(l: ^Layer, input: []Color) -> u64 {
+fx_signature :: proc(l: ^Layer, input, below: []Color) -> u64 {
 	h: u64 = 14695981039346656037
 	mix :: proc(h: ^u64, v: u64) {
 		h^ = (h^ ~ v) * 1099511628211
 	}
 	for p in input do mix(&h, u64(transmute(u32)p))
+	for p in below do mix(&h, u64(transmute(u32)p))
+	mix(&h, below != nil ? 5 : 9)
 	mix(&h, u64(l.blend))
 	mix(&h, u64(l.opacity))
 	mix(&h, l.pass_through ? 7 : 3)
@@ -232,19 +351,25 @@ fx_compute :: proc(d: ^Doc, li, f: int) -> bool {
 	key := Fx_Key{l.uid, f}
 	if _, has := d.fx_cache[key]; !has do d.fx_cache[key] = Fx_Cache{stale = true}
 	input := fx_input(d, li, f)
-	sig := fx_signature(l, input)
+	reads := layer_fx_reads_below(l)
+	below := reads ? fx_below_pixels(d, li, f) : nil // (this may run lower layers' effects, adding to the cache)
+	sig := fx_signature(l, input, below)
 	c := &d.fx_cache[key]
 	c.stale = false
-	if c.has_sig && c.sig == sig && !c.refresh do return false
-	c.has_sig, c.sig = true, sig
+	c.paint_due = false
+	c.below = reads
+	// what the settings are now, before the early return: left behind, fx_due would ask for this every frame
 	c.set_sig = fx_settings_sig(l)
+	if c.has_sig && c.sig == sig && !c.refresh && !c.patched do return false // (patched: what shows isn't their result)
+	c.patched = false
+	c.has_sig, c.sig = true, sig
 	c.refresh = false
 	c.ran_at = gfx_time()
 	if !layer_fx_on(l) {
 		c.ok = false
 		return true
 	}
-	pix, blend, op, ok, msg := layer_fx_run(d, l, input)
+	pix, blend, op, ok, msg := layer_fx_run(d, l, input, below)
 	c = &d.fx_cache[key]
 	if ok {
 		if len(c.pix.t) == 0 do c.pix = tiles_make(d.w, d.h)
@@ -260,8 +385,10 @@ fx_compute :: proc(d: ^Doc, li, f: int) -> bool {
 }
 
 // Runs the effects of layer `src` (a layer or group of the painting) on `input`, its pixels. Returns the copy as they
-// left it, w*h (temp memory).
-layer_fx_run :: proc(d: ^Doc, src: ^Layer, input: []Color) -> (pix: []Color, blend: Blend, opacity: u8, ok: bool, msg: string) {
+// left it, w*h (temp memory). `below` is the picture under the layer, for Develop nodes on Layer pixels (nil if none
+// reads it). If one of them ran, what shows is that picture as they changed it, wherever they changed it, and not the
+// layer's own pixels: those only said where.
+layer_fx_run :: proc(d: ^Doc, src: ^Layer, input: []Color, below: []Color = nil) -> (pix: []Color, blend: Blend, opacity: u8, ok: bool, msg: string) {
 	if !fx_on_main() do return nil, {}, 0, false, "effects only run on the main thread"
 	sb := doc_new(d.w, d.h, "effects")
 	defer doc_destroy(sb)
@@ -277,6 +404,8 @@ layer_fx_run :: proc(d: ^Doc, src: ^Layer, input: []Color) -> (pix: []Color, ble
 	saved := doc
 	doc = sb
 	fx_sandbox = true
+	fx_below, fx_adj, fx_adj_cov = below, nil, nil
+	defer fx_below, fx_adj, fx_adj_cov = nil, nil, nil
 	for &f in src.fx[:src.fx_n] {
 		if !f.on do continue
 		m := macro_find(name_str(&f.name))
@@ -300,6 +429,13 @@ layer_fx_run :: proc(d: ^Doc, src: ^Layer, input: []Color) -> (pix: []Color, ble
 	bi := layer_find_uid(sb.layers[:], 1)
 	if bi < 0 do return nil, {}, 0, false, "an effect has to keep its layer"
 	b := &sb.layers[bi]
+	if fx_adj != nil {
+		// the layer was a mask: what shows is the picture under it as adjusted, only where something changed it (so
+		// soft or see-through pixels under it aren't doubled where nothing did)
+		shown := make([]Color, d.w * d.h, context.temp_allocator)
+		for c, i in fx_adj do if fx_adj_cov[i] > 0 do shown[i] = c
+		tiles_from_buf(&b.pix, d.w, d.h, shown, {})
+	}
 	blend, opacity = b.blend, b.opacity
 	// the copy itself as plain pixels; layers the effects added in the copy blend onto it by their own modes
 	b.blend, b.opacity, b.visible = .Normal, 255, true
@@ -328,6 +464,14 @@ fx_update :: proc(d: ^Doc, force := false) {
 		fx_lib_seen = macro_lib_gen
 		fx_mark_stale(d)
 	}
+	// a layer with effects but no id: its result would be dropped below as "a layer that is gone", and worked out
+	// again from scratch the next frame, every frame. Give it an id first.
+	for &l in d.layers {
+		if l.fx_n > 0 && l.uid == 0 {
+			layers_give_ids(d)
+			break
+		}
+	}
 	// results of layers that are gone, have no effects any more, or of frames that are gone
 	for k, &c in d.fx_cache {
 		i := layer_find_uid(d.layers[:], k.uid)
@@ -341,6 +485,13 @@ fx_update :: proc(d: ^Doc, force := false) {
 	if !force {
 		busy := ui.down[0] || ui.down[1] || stroke.active || drag.active || text_edit.active || xform.active || (dialog.kind != .None && dialog.kind != .Layer_Fx && dialog.kind != .Layer_Props)
 		if busy do return
+	}
+	// painting has stopped (the pen stayed up long enough): On Demand effects painted on run, once
+	if gfx_time() - fx_paint_end >= FX_PAINT_SETTLE {
+		for _, &c in d.fx_cache {
+			if !c.painted do continue
+			c.painted, c.paint_due, c.stale = false, true, true
+		}
 	}
 	f := d.active_frame
 	// what is in a group comes before it in the list, so a group's effects read its layers' results
@@ -467,7 +618,8 @@ layer_fx_apply :: proc(d: ^Doc) -> bool {
 	blend: Blend
 	op: u8
 	for f in 0 ..< len(d.frames) {
-		pix, b, o, ok, msg := layer_fx_run(d, &d.layers[li], fx_input(d, li, f))
+		below := layer_fx_reads_below(&d.layers[li]) ? fx_below_pixels(d, li, f) : nil
+		pix, b, o, ok, msg := layer_fx_run(d, &d.layers[li], fx_input(d, li, f), below)
 		if !ok {
 			set_statusf("The effects can't be applied: %s", msg)
 			return false
@@ -580,7 +732,7 @@ dlg_layer_fx :: proc() {
 			run_cmd(.Layer_Fx_Apply)
 			return
 		}
-		if button(Rect{c.x + 116, c.y + c.h - 18, 80, 18}, "Refresh", {"Refresh", "Run this layer's effects again now, whatever their trigger. Effects On Demand only update when you click this; After a Pause and Every N Seconds catch up without waiting."}, layer_fx_on(l)) {
+		if button(Rect{c.x + 116, c.y + c.h - 18, 80, 18}, "Refresh", {"Refresh", "Run this layer's effects again now, whatever their trigger (the circling arrow by the layer's fx does the same). Effects On Demand update once you stop painting on the layer, and when you click this; After a Pause and Every N Seconds catch up without waiting."}, layer_fx_on(l)) {
 			fx_refresh(d, l.uid)
 		}
 	}

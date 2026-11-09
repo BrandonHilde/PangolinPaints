@@ -146,6 +146,7 @@ doc_new :: proc(w, h: int, title := "Painting") -> ^Doc {
 	d := new(Doc)
 	d.w, d.h = w, h
 	append(&d.layers, layer_make("Background", w, h))
+	layers_give_ids(d)
 	append(&d.frames, Frame{duration = FRAME_DEFAULT_MS})
 	d.zoom = 1
 	name_set(&d.title, title)
@@ -186,7 +187,10 @@ doc_dirty :: proc(d: ^Doc, b: Box) {
 	d.comp_dirty = box_union(d.comp_dirty, cb)
 	d.thumb_dirty = true
 	d.comp_lazy = false
-	if len(d.fx_cache) > 0 && len(d.layers) > 0 do fx_mark_stale(d, d.layers[clamp(d.active_layer, 0, len(d.layers) - 1)].uid)
+	if len(d.fx_cache) > 0 && len(d.layers) > 0 {
+		fx_mark_stale(d, d.layers[clamp(d.active_layer, 0, len(d.layers) - 1)].uid)
+		if stroke.active do fx_paint_through(d, cb) // painting shows as it goes down, without running the effects
+	}
 	if d.fc_used {
 		// a text or vector layer shows on every frame
 		l := &d.layers[clamp(d.active_layer, 0, len(d.layers) - 1)]

@@ -2,6 +2,7 @@ package pangolin
 
 import "core:fmt"
 import "core:math"
+import "core:strings"
 
 import oui "odinui:odinui"
 
@@ -1217,16 +1218,30 @@ panel_layer_list :: proc(list: Rect) {
 			info = layer_mode_text(ly)
 		}
 		if ly.opacity < 255 do info = fmt.tprintf("%s %d%%", info, int(ly.opacity) * 100 / 255)
-		text_clipped(Rect{tx, ry + 17, name_r.w - 28, 10}, info, C_TEXT_DIM)
+		fx_live := ly.fx_n > 0 && layer_fx_on(ly)
+		text_clipped(Rect{tx, ry + 17, name_r.w - (fx_live ? 44 : 28), 10}, info, C_TEXT_DIM)
 		ix := row.x + row.w - 16
-		fxr: Rect
+		fxr, refr: Rect
 		if ly.fx_n > 0 {
 			fxr = Rect{ix - 3, ry + 16, 16, 12}
 			fx_ok := true
-			if c, has := d.fx_cache[Fx_Key{ly.uid, d.active_frame}]; has && c.err.n > 0 do fx_ok = false
+			waiting := false
+			if c, has := d.fx_cache[Fx_Key{ly.uid, d.active_frame}]; has {
+				if c.err.n > 0 do fx_ok = false
+				waiting = c.stale // changed since they last ran: their trigger hasn't let them run yet
+			}
 			text(ix - 2, ry + 18, "fx", !fx_ok ? C_DANGER : (layer_fx_on(ly) ? C_ACCENT : C_TEXT_OFF))
 			if in_list do tip_area(fxr, "layer-fx", {"Layer effects", fx_ok ? "This layer has live effects: macros that run on it whenever it changes. Click to see them, switch them off or add more." : "This layer's effects can't run: click to see why."})
 			ix -= 16
+			if fx_live {
+				// run them now: lit while the layer has changed since they last ran
+				refr = Rect{ix - 1, ry + 16, 14, 14}
+				hot := in_list && ui_hover(refr)
+				icon(.Refresh, ix, ry + 17, hot ? WHITE : (waiting ? C_ACCENT : C_TEXT_DIM))
+				t, secs := layer_fx_trigger(ly)
+				if in_list do tip_area(refr, "layer-fx-refresh", {"Refresh effects", fmt.tprintf("Run this layer's effects again now. They update %s%s.%s", strings.to_lower(macro_trigger_words(t, secs), context.temp_allocator), t == .Demand ? ", once you stop painting on the layer (a moment after the pen lifts), and when you click this" : "", waiting ? " The layer has changed since they last ran (the arrow is lit)." : "")})
+				ix -= 16
+			}
 		}
 		if ly.text.on {
 			icon(.Text, ix, ry + 17, C_TEXT_DIM)
@@ -1275,6 +1290,8 @@ panel_layer_list :: proc(list: Rect) {
 				history_push(d)
 				ly.visible = !ly.visible
 				doc_touch_all(d)
+			case fx_live && in_rect(refr, ui.mx, ui.my):
+				fx_refresh(d, ly.uid)
 			case in_rect(fxr, ui.mx, ui.my):
 				d.active_layer = li
 				d.edit_mask = false

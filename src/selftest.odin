@@ -213,6 +213,175 @@ selftest :: proc() -> int {
 		macros_clear()
 	}
 
+	// --- layers have ids, so their effects' results are kept (not worked out again every frame) ----------
+	{
+		d := doc_new_painting(8, 4, "ids", Color{255, 255, 255, 255})
+		append(&docs, d)
+		doc = d
+		check(len(d.layers) == 2 && d.layers[0].uid != 0 && d.layers[1].uid != 0 && d.layers[0].uid != d.layers[1].uid, "a new painting's layers each have their own id")
+		m := macro_new("Ids invert")
+		macro_set_arg(m, macro_node(m, macro_start(m)), "trigger", "On Paint")
+		n := macro_add_node(m, "fx.Invert", 200, 0)
+		macro_link(m, macro_start(m), n.id)
+		append(&macro_lib, m)
+		d.layers[1].uid = 0 // as a layer from somewhere that gives none
+		tiles_set(&d.layers[1].pix, 0, 0, Color{200, 100, 50, 255}, {})
+		d.active_layer = 1
+		layer_fx_add(d, "Ids invert")
+		fx_update(d)
+		uid := d.layers[1].uid
+		c, has := d.fx_cache[Fx_Key{uid, d.active_frame}]
+		check(uid != 0 && has && c.ok, "a layer with an effect but no id gets one, and keeps its effect's result")
+		ran := c.ran_at
+		for _ in 0 ..< 3 do fx_update(d)
+		c2, has2 := d.fx_cache[Fx_Key{uid, d.active_frame}]
+		check(has2 && c2.ran_at == ran, "and its effect isn't worked out again while nothing changes")
+		macros_clear()
+	}
+
+	// --- Develop nodes: curves, exposure, tone curve, HSL, and where each applies ------------------
+	{
+		// curves: read and written as text, and the line drawn is the line applied
+		cs := Macro_Setting{key = "c", name = "C", type = .Curve, def = {text = MACRO_CURVE_DEFAULT}}
+		cv, cok := macro_value_parse(&cs, " 255,255  0,0 128,200 ")
+		check(cok && cv.text == "0,0 128,200 255,255", "a curve's points are read left to right")
+		check(macro_value_text(&cs, cv) == "0,0 128,200 255,255", "a curve is written as it was read")
+		_, bad1 := macro_value_parse(&cs, "0,0")
+		_, bad2 := macro_value_parse(&cs, "0,0 x,4")
+		check(!bad1 && !bad2, "a curve needs two points or more, each x,y")
+		ident := macro_curve_value_lut({text = "0,0 255,255"})
+		check(abs(ident[0]) < 0.01 && abs(ident[128] - 128) < 0.01 && abs(ident[255] - 255) < 0.01, "a straight diagonal changes nothing")
+		up := macro_curve_value_lut(cv)
+		check(abs(up[128] - 200) < 0.5 && up[64] > 64 && up[200] < 255, "a curve passes through its points")
+		steep := macro_curve_value_lut({text = "0,0 100,255 255,255"})
+		mono := true
+		for i in 1 ..< 256 do if steep[i] < steep[i - 1] - 0.001 || steep[i] > 255 do mono = false
+		check(mono, "a curve never bulges past its points")
+		check(abs(dev_band_weight(0, 0) - 1) < 0.001 && abs(dev_band_weight(45, 1) + dev_band_weight(45, 2) - 1) < 0.001 && dev_band_weight(200, 0) == 0, "color ranges fade into their neighbours and add up to 1")
+
+		io := macro_new("Dev io")
+		tn := macro_add_node(io, "dev.Tone_Curve", 200, 0)
+		macro_set_arg(io, tn, "curve", "0,0 90,140 255,255")
+		t1 := strings.clone(macro_to_text(io), context.temp_allocator)
+		io2, iok := macro_from_text(t1)
+		check(iok && macro_to_text(io2) == t1, "a curve setting reads back from the macro file as it was written")
+		if iok do macro_free(io2)
+		macro_free(io)
+
+		mk :: proc(name, kind: string, args: ..string) -> ^Macro {
+			m := macro_new(name)
+			macro_set_arg(m, macro_node(m, macro_start(m)), "trigger", "On Paint")
+			n := macro_add_node(m, kind, 200, 0)
+			for i := 0; i + 1 < len(args); i += 2 do macro_set_arg(m, n, args[i], args[i + 1])
+			macro_link(m, macro_start(m), n.id)
+			append(&macro_lib, m)
+			return m
+		}
+		gray := Color{100, 100, 100, 255}
+		dark := Color{30, 30, 30, 255}
+		light := Color{220, 220, 220, 255}
+		// a painting with gray, dark, light, red and blue on layer 1, and that layer's effect `name`
+		effect_on :: proc(name: string, cols: []Color) -> (^Doc, []Color) {
+			d := fresh(len(cols), 1, Color{255, 255, 255, 255})
+			doc_add_layer(d)
+			for c, x in cols do tiles_set(&d.layers[1].pix, x, 0, c, {})
+			doc_touch_all(d)
+			d.active_layer = 1
+			layer_fx_add(d, name)
+			fx_update(d)
+			return d, doc_flat(d, context.temp_allocator)
+		}
+		cols := []Color{gray, dark, light, red, blue}
+
+		mk("Dev bright", "dev.Exposure", "exposure", "1")
+		d, fl := effect_on("Dev bright", cols)
+		check(fl[0].r > 125 && fl[0].r < 150 && fl[0].r == fl[0].g && fl[1].r > dark.r && fl[2].r > light.r, "Exposure +1 stop brightens every tone, keeping grays gray")
+		check(px(d, 1, 0, 0) == gray, "a Develop effect leaves the layer's own pixels as they are")
+		check(d.fx_cache[Fx_Key{d.layers[1].uid, 0}].below == false, "an effect on the layer itself doesn't read under it")
+
+		mk("Dev contrast", "dev.Exposure", "contrast", "60")
+		_, fl = effect_on("Dev contrast", cols)
+		check(fl[1].r < dark.r && fl[2].r > light.r, "Contrast makes darks darker and lights lighter")
+
+		mk("Dev shadows", "dev.Exposure", "shadows", "100")
+		_, fl = effect_on("Dev shadows", cols)
+		check(fl[1].r > dark.r + 10 && abs(int(fl[2].r) - int(light.r)) < 12, "Shadows lifts the darks and barely touches the lights")
+
+		mk("Dev darks only", "dev.Exposure", "exposure", "1", "apply", "Curve", "where", "0,255 100,255 110,0 255,0")
+		_, fl = effect_on("Dev darks only", cols)
+		check(fl[1].r > dark.r && fl[2] == light, "Apply by Curve: only the tones the curve picks change")
+		mk("Dev lights only", "dev.Exposure", "exposure", "1", "apply", "Curve", "where", "0,255 100,255 110,0 255,0", "invert", "1")
+		_, fl = effect_on("Dev lights only", cols)
+		check(fl[1] == dark && fl[2].r > light.r, "Invert swaps the tones a curve picks")
+		mk("Dev half", "dev.Exposure", "exposure", "1", "amount", "50")
+		_, fl = effect_on("Dev half", cols)
+		check(fl[0].r > gray.r && fl[0].r < 125, "Amount fades the change")
+		mk("Dev show", "dev.Exposure", "exposure", "1", "show_mask", "1")
+		_, fl = effect_on("Dev show", cols)
+		check(int(fl[0].r) > int(fl[0].g) + 60 && fl[0].g < gray.g, "Show mask paints where the node works red, instead of changing it")
+
+		mk("Dev invert curve", "dev.Tone_Curve", "curve", "0,255 255,0")
+		_, fl = effect_on("Dev invert curve", cols)
+		check(fl[0] == Color{155, 155, 155, 255}, "a Tone Curve from white down to black inverts the tones")
+		mk("Dev red curve", "dev.Tone_Curve", "channel", "Red", "curve", "0,0 128,200 255,255")
+		_, fl = effect_on("Dev red curve", cols)
+		check(fl[0].r > gray.r && fl[0].g == gray.g && fl[0].b == gray.b, "a Tone Curve on Red changes only red")
+		mk("Dev lum curve", "dev.Tone_Curve", "channel", "Luminosity", "curve", "0,0 128,200 255,255")
+		_, fl = effect_on("Dev lum curve", cols)
+		check(fl[3].r > red.r && fl[3].g < fl[3].r / 3, "a Tone Curve on Luminosity brightens and keeps the color")
+
+		mk("Dev no blue", "dev.HSL", "colors", "Blues", "saturation", "-100")
+		_, fl = effect_on("Dev no blue", cols)
+		check(int(fl[4].b) - int(fl[4].r) < (int(blue.b) - int(blue.r)) / 8 && fl[3] == red && fl[0] == gray, "HSL on Blues takes (nearly all) the color out of blue, and leaves red and gray alone")
+		mk("Dev turn", "dev.HSL", "hue", "180")
+		_, fl = effect_on("Dev turn", cols)
+		check(fl[3].g > fl[3].r && fl[3].b > fl[3].r, "HSL on All turns red around to cyan")
+
+		// Layer pixels: the layer is a mask, and the picture under it is what changes
+		mk("Dev paint bright", "dev.Exposure", "exposure", "1", "apply", "Layer pixels")
+		check(macro_reads_below(macro_find("Dev paint bright")) && !macro_reads_below(macro_find("Dev bright")), "which effects read the picture under their layer")
+		d = fresh(3, 1, gray)
+		doc_add_layer(d)
+		tiles_set(&d.layers[1].pix, 0, 0, blue, {})
+		tiles_set(&d.layers[1].pix, 1, 0, Color{30, 60, 220, 128}, {})
+		doc_touch_all(d)
+		d.active_layer = 1
+		layer_fx_add(d, "Dev paint bright")
+		fx_update(d)
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[0].r > 125 && fl[0].r == fl[0].b, "Layer pixels: where the layer is painted, the picture under it changes, and the paint doesn't show")
+		check(fl[1].r > gray.r && fl[1].r < fl[0].r, "Layer pixels: half-opaque paint changes it half way")
+		check(fl[2] == gray, "Layer pixels: where the layer is empty, the picture under it shows as it is")
+		check(d.fx_cache[Fx_Key{d.layers[1].uid, 0}].below, "an effect on Layer pixels reads under its layer")
+		before := fl[0]
+		d.active_layer = 0
+		tiles_set(&d.layers[0].pix, 0, 0, dark, {})
+		doc_touch(d, doc_box(d))
+		fx_update(d)
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[0] != before && fl[0].r > dark.r && fl[0].r < before.r, "Layer pixels follows changes to the layers under it")
+		adjusted := fl[0]
+		stroke_begin(.Brush, {0, 0}, red)
+		stroke_move({1, 0})
+		mid := doc_flat(d, context.temp_allocator)
+		check(mid[0] == px(d, 0, 0, 0) && mid[0] != adjusted, "painting under a Layer pixels layer shows the paint as it goes down")
+		stroke_end()
+		fx_update(d)
+		fl = doc_flat(d, context.temp_allocator)
+		check(fl[0] != px(d, 0, 0, 0) && fl[0].r > px(d, 0, 0, 0).r, "and the adjustment catches up when the stroke ends")
+		d.active_layer = 1
+		check(layer_fx_apply(d) && px(d, 1, 0, 0) == fl[0] && px(d, 1, 2, 0).a == 0, "Apply Effects keeps the adjusted picture where it was painted, and nothing elsewhere")
+		fx_update(d)
+		after := doc_flat(d, context.temp_allocator)
+		check(after[0] == fl[0] && after[2] == px(d, 0, 2, 0), "the painting looks the same once the effect is applied")
+
+		// outside a layer effect there is no layer to paint the mask on
+		direct := macro_find("Dev paint bright")
+		rok, rmsg, _ := macro_run(direct)
+		check(!rok && strings.contains(rmsg, "layer effect"), "Layer pixels says why it can't run outside a layer effect")
+		macros_clear()
+	}
+
 	// --- macros in the blend list; effects on every frame and on groups; out of a group --------
 	{
 		d := fresh(4, 1, white)
@@ -327,6 +496,30 @@ selftest :: proc() -> int {
 		fx_refresh(d, d.layers[1].uid)
 		fx_update(d)
 		check(shown(d) == inv_red, "Refresh runs it")
+		d.active_layer = 1
+		repaint(d, paint)
+		fx_update(d)
+		check(shown(d) == inv_red, "still not on a change that isn't a brush stroke")
+		stroke_begin(.Brush, {0, 0}, blue)
+		stroke_move({3, 0})
+		check(shown(d) == px(d, 1, 0, 0) && shown(d) != inv_red, "the paint shows as it goes down, without the effect running")
+		stroke_end()
+		fx_update(d)
+		check(shown(d) == px(d, 1, 0, 0), "not the moment the pen lifts (that may be a gap between strokes): the paint shows as it is")
+		check(d.fx_cache[key].stale, "the layer shows its effects are behind (the refresh arrow is lit)")
+		paint_line(.Brush, red, {1, 0}, {2, 0})
+		fx_update(d)
+		check(doc_flat(d, context.temp_allocator)[1] == px(d, 1, 1, 0), "nor after the next stroke")
+		fx_paint_end -= FX_PAINT_SETTLE + 0.1 // the pen has stayed up a while: painting has stopped
+		fx_update(d)
+		p := px(d, 1, 1, 0)
+		got := doc_flat(d, context.temp_allocator)[1]
+		check(p != paint && got == Color{255 - p.r, 255 - p.g, 255 - p.b, 255} && !d.fx_cache[key].stale, "once painting stops it runs, with all the strokes")
+		ran := d.fx_cache[key].ran_at
+		fx_update(d)
+		fx_update(d)
+		check(d.fx_cache[key].ran_at == ran, "and only once")
+		repaint(d, red)
 		d.layers[1].fx[0].on = false
 		doc_touch_all(d)
 		fx_update(d)

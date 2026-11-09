@@ -750,6 +750,7 @@ stroke_end :: proc() {
 	}
 	s.active = false
 	d.thumb_dirty = true
+	if !box_empty(s.box) do fx_stroke_done(d) // the pen lifted: On Demand effects catch up once painting stops
 }
 
 // Put back the pre-stroke pixels inside the touched box and clear the coverage there.

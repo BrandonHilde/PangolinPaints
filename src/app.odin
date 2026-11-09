@@ -184,6 +184,7 @@ doc_new_painting :: proc(w, h: int, title: string, fill: Color) -> ^Doc {
 	d := doc_new_filled(w, h, title, fill)
 	if fill.a != 0 {
 		append(&d.layers, layer_make("Layer 1", w, h))
+		layers_give_ids(d)
 		d.active_layer = 1
 	}
 	return d

@@ -1243,3 +1243,121 @@ filter_canvas_texture :: proc(src, dst: []Color, w, h: int, scale: int, strength
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Develop nodes (develop.odin): the photo adjustments of live layer effects
+// ---------------------------------------------------------------------------
+
+// Exposure in stops (in linear light, as a camera), contrast -1..1 (an S curve that keeps black and white above 0,
+// toward mid gray below), then highlights and shadows -1..1, which move the light or the dark tones by brightness and
+// keep each pixel's color.
+dev_exposure :: proc(src, dst: []Color, stops, contrast, highlights, shadows: f32) {
+	mul := math.pow(f32(2), clamp(stops, -10, 10))
+	k := 1 + 3 * max(contrast, 0)
+	lut: [256]u8
+	for i in 0 ..< 256 {
+		x := clamp(ip_to_srgb(ip_to_lin(f32(i) / 255) * mul), 0, 1)
+		if contrast > 0 {
+			x = x < 0.5 ? 0.5 * math.pow(2 * x, k) : 1 - 0.5 * math.pow(2 - 2 * x, k)
+		} else if contrast < 0 {
+			x = 0.5 + (x - 0.5) * (1 + max(contrast, -1))
+		}
+		lut[i] = ip_u8(x)
+	}
+	tones := highlights != 0 || shadows != 0
+	gain: [256]f32 // by brightness: what to multiply each channel by
+	if tones {
+		for i in 0 ..< 256 {
+			l := f32(i) / 255
+			f := clamp(l + shadows * 1.6 * l * (1 - l) * (1 - l) + highlights * 1.6 * l * l * (1 - l), 0, 1)
+			gain[i] = l > 0.002 ? f / l : 1
+		}
+	}
+	for c, i in src {
+		r, g, b := lut[c.r], lut[c.g], lut[c.b]
+		if tones {
+			gk := gain[luma(Color{r, g, b, 255})]
+			r, g, b = ip_u8i(f32(r) * gk), ip_u8i(f32(g) * gk), ip_u8i(f32(b) * gk)
+		}
+		dst[i] = {r, g, b, c.a}
+	}
+}
+
+// A curve (the table of macro_curve_lut) on all channels (0), brightness only (1, keeping each color), or one of red,
+// green and blue (2, 3, 4).
+dev_tone_curve :: proc(src, dst: []Color, channel: int, curve: [256]f32) {
+	lut: [256]u8
+	for v, i in curve do lut[i] = ip_u8i(v)
+	for c, i in src {
+		o := c
+		switch channel {
+		case 1:
+			l := luma(c)
+			if l == 0 {
+				v := lut[0]
+				o.r, o.g, o.b = v, v, v
+			} else {
+				k := curve[l] / f32(l)
+				o.r, o.g, o.b = ip_u8i(f32(c.r) * k), ip_u8i(f32(c.g) * k), ip_u8i(f32(c.b) * k)
+			}
+		case 2:
+			o.r = lut[c.r]
+		case 3:
+			o.g = lut[c.g]
+		case 4:
+			o.b = lut[c.b]
+		case:
+			o.r, o.g, o.b = lut[c.r], lut[c.g], lut[c.b]
+		}
+		dst[i] = o
+	}
+}
+
+// How much color range `k` (DEV_HUES order) holds hue `deg`: 1 at its middle, fading to 0 at its neighbours' middles.
+// Two neighbouring ranges always add up to 1, so changing every range alike is the same as changing All.
+dev_band_weight :: proc(deg: f32, k: int) -> f32 {
+	wrap :: proc(a: f32) -> f32 {
+		x := math.mod(a, 360)
+		if x > 180 do x -= 360
+		if x <= -180 do x += 360
+		return x
+	}
+	c := DEV_HUES[k]
+	off := wrap(deg - c)
+	span := off >= 0 ? wrap(DEV_HUES[(k + 1) % 8] - c) : wrap(c - DEV_HUES[(k + 7) % 8])
+	if span <= 0 do span += 360
+	w := clamp(1 - abs(off) / span, 0, 1)
+	return w * w * (3 - 2 * w)
+}
+
+// Hue (degrees), saturation and luminance (-1..1) of one color range (`colors`: 0 all, then DEV_COLORS's ranges).
+dev_hsl :: proc(src, dst: []Color, colors: int, hue, sat, lum: f32) {
+	if hue == 0 && sat == 0 && lum == 0 {
+		copy(dst, src)
+		return
+	}
+	hs := hue / 360
+	for c, i in src {
+		r, g, b := f32(c.r) / 255, f32(c.g) / 255, f32(c.b) / 255
+		h, s, l := ip_rgb_hsl(r, g, b)
+		w: f32 = 1
+		if colors > 0 {
+			// a range leaves grays alone: they have no hue to be in it
+			w = dev_band_weight(h * 360, clamp(colors - 1, 0, 7)) * clamp(s * 4, 0, 1)
+		}
+		if w <= 0 {
+			dst[i] = c
+			continue
+		}
+		h += hs * w
+		h -= math.floor(h)
+		s = clamp(s * (1 + sat * w), 0, 1)
+		if lum < 0 {
+			l *= 1 + lum * w * 0.7
+		} else {
+			l += (1 - l) * lum * w * 0.7
+		}
+		r, g, b = ip_hsl_rgb(h, s, l)
+		dst[i] = {ip_u8(r), ip_u8(g), ip_u8(b), c.a}
+	}
+}

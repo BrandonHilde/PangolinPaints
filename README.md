@@ -64,6 +64,14 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   - Filter: Gaussian/box/motion/radial blur, unsharp mask, oil paint, painterly (Kuwahara), canvas texture, emboss,
     find edges, add noise, median, pixelate, vignette.
   - All with live preview, applied through the (soft) selection to the active layer or mask.
+  - **Non-destructive develop** (Macros > Node Editor, Develop category): Exposure / Contrast (with highlights and
+    shadows), Tone Curve (RGB, luminosity or one channel) and HSL Color (all colors, or one range such as the blues).
+    Give a macro of them a layer Trigger on its Start node and add it to a layer: the layer keeps its pixels and shows
+    the result, and changes in the node editor show on the canvas as you make them. Each node's **Apply** says where it
+    works: *Everywhere*; by *Curve* (a strength for each tone, drawn on the node, to touch only the shadows, say); or
+    *Layer pixels*, for local adjustments: the layer becomes a mask you paint on, and the node changes the picture
+    under it wherever you paint, the paint itself not showing. Amount fades a node, Invert flips its mask, and
+    **Show mask** paints where it works red, to see exactly what it picks. A Curve value node feeds one curve to several nodes.
   - Image size (bicubic / bilinear / nearest), canvas size with anchor, crop tool and crop to selection, trim,
     rotate 90/180 or any angle, flip, free transform (scale, stretch, rotate, move).
 - **Selections**: rectangle, ellipse, lasso (anti-aliased), magic wand (tolerance, contiguous, all layers);

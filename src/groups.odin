@@ -22,6 +22,17 @@ layer_find_uid :: proc(layers: []Layer, uid: int) -> int {
 	return -1
 }
 
+// Gives each layer of `d` that has no id one. Layer effects keep their results by layer id, and 0 is "no layer"
+// (layer_find_uid finds nothing for it), so a layer without one would have its effects worked out again every frame.
+layers_give_ids :: proc(d: ^Doc) {
+	next := layers_next_uid(d.layers[:])
+	for &l in d.layers {
+		if l.uid != 0 do continue
+		l.uid = next
+		next += 1
+	}
+}
+
 layers_next_uid :: proc(layers: []Layer) -> int {
 	m := 0
 	for &l in layers do m = max(m, l.uid)

@@ -366,6 +366,9 @@ macro_catalogue_build :: proc() {
 		append(&cat, Macro_Def{id = keep(fmt.tprintf("fx.%v", fx)), name = def.name, category = fx < FX_FIRST_FILTER ? "Adjust" : "Filter", help = def.help, settings = s[:]})
 	}
 
+	// photo adjustments for layer effects, each with where it works: everywhere, by tone, or where the layer is painted
+	append(&cat, ..dev_defs())
+
 	// file
 	node("file.Export", "Export", "File", "Save a flat copy of the visible layers, or of the active layer alone, without asking where.",
 		choice("what", "What", EXPORT_WHAT[:], 0, "The whole picture (all visible layers), or only the active layer: pick the layer first with Pick Layer."),
@@ -409,6 +412,8 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 		fx, fok := reflect.enum_from_name(Fx, name)
 		if !fok do return false, "unknown effect"
 		return macro_exec_fx(d, fx, args)
+	case "dev":
+		return dev_exec(def, args)
 	}
 	switch def.id {
 	case "sel.Rect", "sel.Ellipse":

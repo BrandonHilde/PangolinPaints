@@ -404,7 +404,7 @@ GROUP_RENAME_TIP :: "Choose the name shown at the top of this group."
 GROUP_REMOVE_TIP :: "Remove this group from the toolbar. Its tools stay available from the other groups' + buttons."
 
 panel_toolbar :: proc() {
-	oui.element(uictx, "toolbar", "toolbar", {id = "toolbar"})
+	panel_element(.Toolbar, "toolbar", "toolbar")
 	defer oui.end(uictx)
 	t := eff_tool()
 	rem_g, rem_t := -1, -1
@@ -842,7 +842,7 @@ swatch_area_w: i32 = 216 // width of the swatch grid last frame, for its height
 
 panel_right :: proc() {
 	d := doc
-	oui.element(uictx, "right", "sidepanel", {id = "right"})
+	panel_element(.Right, "right", "sidepanel")
 	defer oui.end(uictx)
 
 	// --- colour picker ---------------------------------------------------

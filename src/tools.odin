@@ -186,7 +186,7 @@ begin_drag :: proc(btn: int, p: Vec2) {
 	drag.moved = false
 	main_col := btn == 0 ? fg : bg
 	p := p
-	if t == .Bucket || t == .Wand || t == .Text {
+	if t == .Bucket || t == .Wand || t == .Smart_Select || t == .Text {
 		// point tools act on the canvas copy of whatever tile was clicked
 		p = wrap_pt(p)
 	}
@@ -269,6 +269,9 @@ begin_drag :: proc(btn: int, p: Vec2) {
 		delete(shape)
 		history_push(d)
 		doc_sel_set(d, nm)
+	case .Smart_Select:
+		drag.active = false
+		smart_click(p, sel_mode_now())
 	case .Move:
 		if tl := &d.layers[d.active_layer]; tl.text.on && d.sel == nil && !tl.locked && tl.visible {
 			// text layers move by their position, so they stay editable
@@ -408,7 +411,7 @@ update_drag :: proc(p: Vec2) {
 		crop_mouse_drag(p)
 	case .Text:
 		if drag.moved do text_drag(p)
-	case .Bucket, .Wand, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective, .Seamless:
+	case .Bucket, .Wand, .Smart_Select, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective, .Seamless:
 	}
 }
 
@@ -470,7 +473,7 @@ end_drag :: proc() {
 		crop_mouse_up()
 	case .Line:
 		line_mouse_up(drag.cur)
-	case .Picker, .Text, .Bucket, .Wand, .Hand, .Zoom, .Grid, .Mirror, .Perspective, .Seamless:
+	case .Picker, .Text, .Bucket, .Wand, .Smart_Select, .Hand, .Zoom, .Grid, .Mirror, .Perspective, .Seamless:
 	}
 	drag.active = false
 }
@@ -548,7 +551,7 @@ canvas_update :: proc(vp: Rect) {
 			ui.cursor = .RESIZE_ALL
 		case .Text:
 			ui.cursor = .IBEAM
-		case .Bucket, .Gradient, .Picker, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Crop:
+		case .Bucket, .Gradient, .Picker, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Smart_Select, .Crop:
 			ui.cursor = .CROSSHAIR
 		}
 		if ui.pressed[0] || ui.pressed[1] {

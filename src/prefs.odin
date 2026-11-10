@@ -49,6 +49,7 @@ prefs_save :: proc() {
 	fmt.sbprintf(&sb, "onion_after=%d\n", onion_after)
 	fmt.sbprintf(&sb, "onion_alpha=%d\n", onion_alpha)
 	files_prefs_write(&sb)
+	smart_prefs_write(&sb)
 	workspace_write(&sb)
 	write_file(prefs_path(), transmute([]u8)strings.to_string(sb))
 }
@@ -71,7 +72,7 @@ prefs_load :: proc() {
 		}
 		key := strings.trim_space(line[:eq])
 		sval := strings.trim_space(line[eq + 1:])
-		if workspace_apply_line(key, sval) || files_prefs_read(key, sval) {
+		if workspace_apply_line(key, sval) || files_prefs_read(key, sval) || smart_prefs_read(key, sval) {
 			continue
 		}
 		val, vok := strconv.parse_int(sval)

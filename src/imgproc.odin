@@ -18,7 +18,6 @@ import "core:math"
 @(private = "file")
 ip_P :: [4]u16
 
-@(private = "file")
 ip_u8 :: #force_inline proc(v: f32) -> u8 {
 	return u8(clamp(v * 255 + 0.5, 0, 255))
 }
@@ -58,7 +57,6 @@ ip_to_srgb :: proc(v: f32) -> f32 {
 	return v <= 0.0031308 ? v * 12.92 : 1.055 * math.pow(v, 1 / 2.4) - 0.055
 }
 
-@(private = "file")
 ip_rgb_hsl :: #force_inline proc(r, g, b: f32) -> (h, s, l: f32) {
 	mx := max(r, g, b)
 	mn := min(r, g, b)
@@ -91,7 +89,6 @@ ip_hue_ch :: #force_inline proc(p, q, t: f32) -> f32 {
 	return p
 }
 
-@(private = "file")
 ip_hsl_rgb :: #force_inline proc(h, s, l: f32) -> (r, g, b: f32) {
 	if s <= 0 {
 		return l, l, l
@@ -406,7 +403,9 @@ adj_apply_luts :: proc(src, dst: []Color, rgb, r, g, b: ^[256]u8) {
 }
 
 // GIMP-style hue (-180..180) / saturation / lightness (-100..100) in HSL; colorize tints with `hue` at saturation (sat+100)/2 %.
-adj_hue_sat_light :: proc(src, dst: []Color, hue, sat, light: int, colorize := false) {
+// `colors` limits it to one color range (0 all, then DEV_COLORS's ranges), fading out toward the neighbouring ranges
+// and leaving grays alone; colorize ignores it.
+adj_hue_sat_light :: proc(src, dst: []Color, hue, sat, light: int, colorize := false, colors := 0) {
 	hs := f32(clamp(hue, -180, 180)) / 360
 	ss := f32(clamp(sat, -100, 100)) / 100
 	ls := f32(clamp(light, -100, 100)) / 100
@@ -421,20 +420,27 @@ adj_hue_sat_light :: proc(src, dst: []Color, hue, sat, light: int, colorize := f
 		c := src[i]
 		r, g, b := f32(c[0]) / 255, f32(c[1]) / 255, f32(c[2]) / 255
 		h, s, l: f32
+		w: f32 = 1 // how much of the change this pixel gets
 		if colorize {
 			h, s = ch, cs
 			l = 0.2126 * r + 0.7152 * g + 0.0722 * b
 		} else {
 			h, s, l = ip_rgb_hsl(r, g, b)
-			h += hs
-			if h < 0 do h += 1
-			if h >= 1 do h -= 1
-			s = clamp(s * (1 + ss), 0, 1)
+			if colors > 0 {
+				w = dev_band_weight(h * 360, clamp(colors - 1, 0, 7)) * clamp(s * 4, 0, 1)
+				if w <= 0 {
+					dst[i] = c
+					continue
+				}
+			}
+			h += hs * w
+			h -= math.floor(h)
+			s = clamp(s * (1 + ss * w), 0, 1)
 		}
 		if ls < 0 {
-			l *= 1 + ls
+			l *= 1 + ls * w
 		} else {
-			l += (1 - l) * ls
+			l += (1 - l) * ls * w
 		}
 		r, g, b = ip_hsl_rgb(h, s, l)
 		dst[i] = Color{ip_u8(r), ip_u8(g), ip_u8(b), c[3]}
@@ -1265,14 +1271,8 @@ dev_exposure :: proc(src, dst: []Color, stops, contrast, highlights, shadows: f3
 		lut[i] = ip_u8(x)
 	}
 	tones := highlights != 0 || shadows != 0
-	gain: [256]f32 // by brightness: what to multiply each channel by
-	if tones {
-		for i in 0 ..< 256 {
-			l := f32(i) / 255
-			f := clamp(l + shadows * 1.6 * l * (1 - l) * (1 - l) + highlights * 1.6 * l * l * (1 - l), 0, 1)
-			gain[i] = l > 0.002 ? f / l : 1
-		}
-	}
+	gain: [256]f32
+	if tones do gain = ip_tone_gain(shadows, highlights)
 	for c, i in src {
 		r, g, b := lut[c.r], lut[c.g], lut[c.b]
 		if tones {
@@ -1280,6 +1280,30 @@ dev_exposure :: proc(src, dst: []Color, stops, contrast, highlights, shadows: f3
 			r, g, b = ip_u8i(f32(r) * gk), ip_u8i(f32(g) * gk), ip_u8i(f32(b) * gk)
 		}
 		dst[i] = {r, g, b, c.a}
+	}
+}
+
+// By brightness, what to multiply each channel by to move the dark tones by `shadows` and the light ones by
+// `highlights` (-1..1), keeping each pixel's color.
+ip_tone_gain :: proc(shadows, highlights: f32) -> (gain: [256]f32) {
+	for i in 0 ..< 256 {
+		l := f32(i) / 255
+		f := clamp(l + shadows * 1.6 * l * (1 - l) * (1 - l) + highlights * 1.6 * l * l * (1 - l), 0, 1)
+		gain[i] = l > 0.002 ? f / l : 1
+	}
+	return
+}
+
+// Shadows / Highlights (Adjust menu): the tone part of the Develop Exposure node, on its own.
+adj_shadows_highlights :: proc(src, dst: []Color, shadows, highlights: f32) {
+	if shadows == 0 && highlights == 0 {
+		ip_copy(src, dst)
+		return
+	}
+	gain := ip_tone_gain(clamp(shadows, -1, 1), clamp(highlights, -1, 1))
+	for c, i in src {
+		gk := gain[luma(c)]
+		dst[i] = {ip_u8i(f32(c.r) * gk), ip_u8i(f32(c.g) * gk), ip_u8i(f32(c.b) * gk), c.a}
 	}
 }
 

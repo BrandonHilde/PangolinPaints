@@ -238,7 +238,7 @@ cmd_help :: proc(c: Cmd) -> string {
 		return "Make the current brush about an eighth larger."
 	case .Opacity_10 ..= .Opacity_100:
 		return "Set the opacity of the current brush tool. Shift plus a number key sets 10% to 90%, and Shift+0 sets 100%."
-	case .Tool_Brush ..= .Tool_Seamless:
+	case .Tool_Brush ..= .Tool_Smart_Select:
 		return TOOL_HELP[Tool(int(c) - int(Cmd.Tool_Brush))]
 	case .Fx_First ..= .Fx_Last:
 		return FX_DEFS[Fx(int(c) - int(Cmd.Fx_First))].help
@@ -278,6 +278,7 @@ TOOL_HELP := [Tool]string {
 	.Mirror         = "A switch: paint with mirror copies across lines through a center point. Its settings show in the options bar. Click again to turn it off.",
 	.Perspective    = "A switch: show a horizon and vanishing points that strokes and lines snap to. Its settings show in the options bar. Click again to turn it off.",
 	.Seamless       = "A switch: repeat the canvas around itself and wrap strokes across its edges, for textures that tile. Click again to turn it off.",
+	.Smart_Select   = "Click to select the area of similar color, like the Magic Wand, with more control: curves give some hues or tones more or less tolerance and make the edge soft, and Edge bias stops the area at sharp edges or moves its outline onto them. Shift adds, Alt subtracts, both together intersect. Settings... opens all of it.",
 }
 
 // What the status bar says about the current tool. One short line: the tooltip has the rest.
@@ -307,6 +308,7 @@ TOOL_HINT := [Tool]string {
 	.Mirror         = "",
 	.Perspective    = "",
 	.Seamless       = "",
+	.Smart_Select   = "Click to select similar color, shaped by its curves. Shift: add. Alt: subtract",
 }
 
 WS_BUILTIN_HELP := [len(WS_BUILTIN_NAMES)]string {

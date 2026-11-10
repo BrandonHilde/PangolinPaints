@@ -15,6 +15,7 @@ Fx :: enum {
 	Color_Balance,
 	Vibrance,
 	Exposure,
+	Shadows_Highlights,
 	Temperature,
 	Posterize,
 	Threshold,
@@ -54,7 +55,9 @@ Fx_Def :: struct {
 	params:  []Fx_Param,
 	flag:    string, // optional checkbox
 	flag_def: bool,
-	choice:  []string, // optional combo (channel / tonal range)
+	choice:  []string, // optional combo (channel / tonal range / color range)
+	choice_name: string, // the combo's label
+	choice_key:  string, // its setting in a macro node
 	heavy:   bool, // preview only after the slider is released
 	help:      string, // what the effect does, for its menu item
 	flag_help: string, // what the checkbox does
@@ -66,19 +69,19 @@ FX_DEFS := [Fx]Fx_Def {
 		{"Brightness", -100, 100, 0, "", 1, "Lighten (above 0) or darken (below 0) every tone."},
 		{"Contrast", -100, 100, 0, "", 1, "Push light and dark tones apart (above 0) or toward mid gray (below 0)."},
 	}},
-	.Levels = {name = "Levels", help = "Set which tones become black and white, and how bright the midtones are.", choice = {"RGB", "Red", "Green", "Blue"}, choice_help = "Adjust all color channels together, or only one of them.", params = {
+	.Levels = {name = "Levels", help = "Set which tones become black and white, and how bright the midtones are.", choice = {"RGB", "Red", "Green", "Blue"}, choice_name = "Channel", choice_key = "channel", choice_help = "Adjust all color channels together, or only one of them.", params = {
 		{"Input black", 0, 254, 0, "", 1, "Tones at or below this become black."},
 		{"Input white", 1, 255, 255, "", 1, "Tones at or above this become white."},
 		{"Gamma", 10, 500, 100, "", 100, "Brighten (above 1) or darken (below 1) the midtones, leaving black and white in place."},
 		{"Output black", 0, 255, 0, "", 1, "The darkest tone in the result. Raise it to fade the shadows."},
 		{"Output white", 0, 255, 255, "", 1, "The lightest tone in the result. Lower it to dull the highlights."},
 	}},
-	.Hue_Saturation = {name = "Hue / Saturation", help = "Shift the colors around the color wheel, make them stronger or weaker, or tint the layer with one color.", flag = "Colorize", flag_help = "Give the whole layer a single hue, set with the Hue and Saturation sliders.", params = {
-		{"Hue", -180, 180, 0, "", 1, "Shift every color around the color wheel, in degrees."},
-		{"Saturation", -100, 100, 0, "", 1, "Make colors stronger (above 0) or closer to gray (below 0)."},
-		{"Lightness", -100, 100, 0, "", 1, "Move colors toward white (above 0) or black (below 0)."},
+	.Hue_Saturation = {name = "Hue / Saturation", help = "Shift the colors around the color wheel, make them stronger or weaker, or tint the layer with one color. All of them, or one range, such as the blues of a sky.", choice = {"All", "Reds", "Oranges", "Yellows", "Greens", "Aquas", "Blues", "Purples", "Magentas"}, choice_name = "Colors", choice_key = "colors", choice_help = "Change every color, or only one range of them. A range fades out toward its neighbours, so the change has no hard edge, and grays are left alone.", flag = "Colorize", flag_help = "Give the whole layer a single hue, set with the Hue and Saturation sliders. This tints every color, whatever Colors is set to.", params = {
+		{"Hue", -180, 180, 0, "", 1, "Shift these colors around the color wheel, in degrees."},
+		{"Saturation", -100, 100, 0, "", 1, "Make these colors stronger (above 0) or closer to gray (below 0)."},
+		{"Lightness", -100, 100, 0, "", 1, "Move these colors toward white (above 0) or black (below 0)."},
 	}},
-	.Color_Balance = {name = "Color Balance", help = "Shift the shadows, midtones or highlights toward a color.", choice = {"Shadows", "Midtones", "Highlights"}, choice_help = "The tones the sliders change.", flag = "Preserve luminosity", flag_def = true, flag_help = "Keep the brightness of each pixel, so only its color changes.", params = {
+	.Color_Balance = {name = "Color Balance", help = "Shift the shadows, midtones or highlights toward a color.", choice = {"Shadows", "Midtones", "Highlights"}, choice_name = "Tonal range", choice_key = "range", choice_help = "The tones the sliders change.", flag = "Preserve luminosity", flag_def = true, flag_help = "Keep the brightness of each pixel, so only its color changes.", params = {
 		{"Cyan / Red", -100, 100, 0, "", 1, "Shift these tones toward cyan (below 0) or red (above 0)."},
 		{"Magenta / Green", -100, 100, 0, "", 1, "Shift these tones toward magenta (below 0) or green (above 0)."},
 		{"Yellow / Blue", -100, 100, 0, "", 1, "Shift these tones toward yellow (below 0) or blue (above 0)."},
@@ -91,6 +94,10 @@ FX_DEFS := [Fx]Fx_Def {
 		{"Exposure", -500, 500, 0, " stops", 100, "Each stop up doubles the light, and each stop down halves it. This mostly moves the highlights."},
 		{"Offset", -50, 50, 0, "", 100, "Add or take away the same light everywhere. This mostly moves the shadows."},
 		{"Gamma", 10, 500, 100, "", 100, "Brighten (above 1) or darken (below 1) the midtones."},
+	}},
+	.Shadows_Highlights = {name = "Shadows / Highlights", help = "Open up the dark tones or bring back detail in the light ones, leaving the rest alone and keeping the colors.", params = {
+		{"Shadows", -100, 100, 0, "", 1, "Brighten (above 0) or darken (below 0) the dark tones. Above 0 opens up a face in shade."},
+		{"Highlights", -100, 100, 0, "", 1, "Darken (below 0) or brighten (above 0) the light tones. Below 0 brings back detail in a bright sky."},
 	}},
 	.Temperature = {name = "Temperature / Tint", help = "Correct the white balance: make the layer warmer or cooler, greener or more magenta.", params = {
 		{"Temperature", -100, 100, 0, "", 1, "Make colors cooler and bluer (below 0) or warmer and more orange (above 0)."},
@@ -178,13 +185,15 @@ fx_run :: proc(fx: Fx, st: ^Fx_State, src, dst: []Color, w, h: int) {
 	case .Levels:
 		adj_levels(src, dst, v[0], max(v[1], v[0] + 1), f32(v[2]) / 100, v[3], v[4], st.choice)
 	case .Hue_Saturation:
-		adj_hue_sat_light(src, dst, v[0], v[1], v[2], st.flag)
+		adj_hue_sat_light(src, dst, v[0], v[1], v[2], st.flag, st.choice)
 	case .Color_Balance:
 		adj_color_balance(src, dst, v[0], v[1], v[2], st.choice, st.flag)
 	case .Vibrance:
 		adj_vibrance(src, dst, v[0], v[1])
 	case .Exposure:
 		adj_exposure(src, dst, f32(v[0]) / 100, f32(v[1]) / 100, f32(v[2]) / 100)
+	case .Shadows_Highlights:
+		adj_shadows_highlights(src, dst, f32(v[0]) / 100, f32(v[1]) / 100)
 	case .Temperature:
 		adj_temperature(src, dst, v[0], v[1])
 	case .Posterize:
@@ -282,7 +291,7 @@ dlg_fx :: proc() {
 	c := dialog_frame(def.name, 300, 64 + rows * 20 + extra + 18, docked = true)
 	y := c.y
 	if def.choice != nil {
-		choice_tip := Tip{fxs.fx == .Levels ? "Channel" : "Tones", def.choice_help}
+		choice_tip := Tip{def.choice_name, def.choice_help}
 		tip_text(c.x, y + 3, choice_tip.title, C_TEXT, choice_tip)
 		if nv, ch := combo(Rect{c.x + 100, y, 120, 14}, def.choice, fxs.choice, choice_tip); ch {
 			fxs.choice = nv

@@ -150,6 +150,7 @@ menu_build :: proc(idx: int) {
 		fx_item(.Levels)
 		item("Curves...", cmd = .Curves)
 		fx_item(.Exposure)
+		fx_item(.Shadows_Highlights)
 		popup_sep()
 		fx_item(.Hue_Saturation)
 		fx_item(.Vibrance)
@@ -398,6 +399,7 @@ TOOL_ICONS := [Tool]Icon {
 	.Mirror         = .Sym_X,
 	.Perspective    = .Perspective,
 	.Seamless       = .Seamless,
+	.Smart_Select   = .Smart_Select,
 }
 
 GROUP_RENAME_TIP :: "Choose the name shown at the top of this group."
@@ -540,35 +542,32 @@ panel_toolbar :: proc() {
 			if add_clicked {
 				popup_begin(pid, oui_rect(add_node))
 				popup_grid(5)
-				any_section := false
 				if !is_colors && !is_blends && !is_macros {
+					popup_column("Tools")
 					for tool in Tool {
 						if !tool_group_has(&g, tool) {
 							popup_item_icon(TOOL_NAMES[tool], int(tool), TOOL_ICONS[tool], TOOL_HELP[tool])
 						}
 					}
-					any_section = true
 				}
 				if !is_tools && !is_blends && !is_macros {
-					if any_section do popup_sep()
+					popup_column("Colors")
 					popup_item_swatch("Foreground color", 100, fg)
 					popup_item("All current swatches", 101, tip = "Add every color in the Swatches panel to this group.")
 					for p in Swatch_Preset {
 						popup_item_palette(SWATCH_PRESET_NAMES[p], 200 + int(p), swatch_preset_colors(p), SWATCH_PRESET_HELP[p])
 					}
-					any_section = true
 				}
 				if !is_tools && !is_colors && !is_macros {
-					if any_section do popup_sep()
+					popup_column("Blend modes")
 					for b in Blend {
 						if !blend_in(g.blends[:], b) {
 							popup_item_half(BLEND_NAMES[b], 300 + int(b))
 						}
 					}
-					any_section = true
 				}
 				if !is_tools && !is_colors && !is_blends && macros_left > 0 {
-					if any_section do popup_sep()
+					popup_column("Macros")
 					for m, mi in macro_lib {
 						if !macro_is_layer_effect(m) && !group_has_macro(&g, m.name) {
 							popup_item_half(m.name, 1000 + mi)
@@ -789,6 +788,12 @@ options_other :: proc(t: Tool) {
 		ocheck("Contiguous", &topts.contiguous, {"Contiguous", HELP_CONTIGUOUS})
 		ocheck("All layers", &topts.sample_merged, {"All layers", HELP_ALL_LAYERS})
 		ocheck("Smooth edge", &topts.antialias, {"Smooth edge", HELP_SMOOTH_EDGE})
+	case .Smart_Select:
+		sel_modes()
+		oslider("Tolerance", 100, &smart.tolerance, 0, 255, {"Tolerance", HELP_SMART_TOL}, key = "smart-tol")
+		ocheck("Contiguous", &smart.contiguous, {"Contiguous", HELP_SMART_CONTIGUOUS}, key = "smart-contig")
+		ocheck("Edge bias", &smart.edges, {"Edge bias", HELP_SMART_EDGES})
+		if obutton("Settings...", 70, {"Smart Select settings", "The curves, the edge bias and the rest, beside the canvas. Clicking the canvas still selects, and each change redoes the last selection so you see it."}) do smart_settings_open()
 	case .Text:
 		options_text()
 	case .Move:

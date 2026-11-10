@@ -337,6 +337,25 @@ selftest :: proc() -> int {
 		_, fl = effect_on("Dev turn", cols)
 		check(fl[3].g > fl[3].r && fl[3].b > fl[3].r, "HSL on All turns red around to cyan")
 
+		// the same color ranges and tone moves in the Adjust menu
+		mk("Hue no blue", "fx.Hue_Saturation", "colors", "Blues", "saturation", "-100")
+		_, fl = effect_on("Hue no blue", cols)
+		check(int(fl[4].b) - int(fl[4].r) < (int(blue.b) - int(blue.r)) / 8 && fl[3] == red && fl[0] == gray, "Hue / Saturation on Blues takes the color out of blue, and leaves red and gray alone")
+		{
+			out := make([]Color, len(cols), context.temp_allocator)
+			st := Fx_State{fx = .Hue_Saturation}
+			st.v[0] = 180
+			fx_run(.Hue_Saturation, &st, cols, out, len(cols), 1)
+			check(out[3].g > out[3].r && out[4].r > out[4].b, "Hue / Saturation on All still turns every color")
+			st = Fx_State{fx = .Shadows_Highlights}
+			st.v[0] = 100
+			fx_run(.Shadows_Highlights, &st, cols, out, len(cols), 1)
+			check(out[1].r > dark.r + 10 && abs(int(out[2].r) - int(light.r)) < 12 && out[1].r == out[1].g, "Shadows lifts the darks, barely touches the lights, and keeps grays gray")
+			st.v[0], st.v[1] = 0, -100
+			fx_run(.Shadows_Highlights, &st, cols, out, len(cols), 1)
+			check(out[2].r < light.r - 10 && abs(int(out[1].r) - int(dark.r)) < 8, "Highlights darkens the lights and leaves the darks alone")
+		}
+
 		// Layer pixels: the layer is a mask, and the picture under it is what changes
 		mk("Dev paint bright", "dev.Exposure", "exposure", "1", "apply", "Layer pixels")
 		check(macro_reads_below(macro_find("Dev paint bright")) && !macro_reads_below(macro_find("Dev bright")), "which effects read the picture under their layer")
@@ -1788,6 +1807,79 @@ selftest :: proc() -> int {
 		hits = macro_search("")
 		check(len(hits) == len(macro_shared_defs()) - 1 + len(macro_catalogue()), "with nothing typed, every node but Start is offered")
 		check(len(macro_search("zzzz")) == 0, "nothing matches nonsense")
+	}
+
+	// --- Smart Select ---------------------------------------------------------
+	{
+		saved := smart
+		defer smart = saved
+		W, H :: 20, 6
+		pix := make([]Color, W * H, context.temp_allocator)
+		// columns of gray: a step of 30 at x = 10, which a tolerance of 40 spreads across
+		g :: proc(v: u8) -> Color {return {v, v, v, 255}}
+		for y in 0 ..< H do for x in 0 ..< W do pix[y * W + x] = g(x < 10 ? 100 : 130)
+		smart = Smart_Opts{tolerance = 40, contiguous = true, edge_strength = 90, snap_px = 6}
+		m := smart_region(pix, W, H, 2, 2, &smart)
+		check(m[2 * W + 18] == 255 && m[2 * W + 2] == 255, "with no edge bias it spreads like the wand")
+		delete(m)
+		smart.edges, smart.edge_mode = true, .Stop
+		m = smart_region(pix, W, H, 2, 2, &smart)
+		check(m[2 * W + 2] == 255 && m[2 * W + 9] > 0 && m[2 * W + 12] == 0 && m[2 * W + 18] == 0, "Stop at edges: it reaches the edge and doesn't spread past it")
+		delete(m)
+
+		// the curves, on separate pixels (not contiguous): gray clicked, then reddish, bluish, dark, light, near
+		cols := []Color{g(128), {168, 128, 128, 255}, {128, 128, 168, 255}, g(28), g(228), g(162)}
+		smart = Smart_Opts{tolerance = 30, contiguous = false}
+		m = smart_region(cols, len(cols), 1, 0, 0, &smart)
+		check(m[0] == 255 && m[1] == 0 && m[2] == 0, "a difference of 40 is beyond a tolerance of 30")
+		delete(m)
+		smart.curve_on[.Hue] = true
+		smart_curve_set(&smart.curves[.Hue], "0,255 40,255 80,128 255,128")
+		m = smart_region(cols, len(cols), 1, 0, 0, &smart)
+		check(m[1] == 255 && m[2] == 0, "Tolerance by hue: raised for reds, the reddish pixel joins and the bluish one doesn't")
+		delete(m)
+		smart = Smart_Opts{tolerance = 60, contiguous = false}
+		smart.curve_on[.Light] = true
+		smart_curve_set(&smart.curves[.Light], "0,0 255,255")
+		cols[0] = g(128)
+		cols[3], cols[4] = g(28), g(228) // both 100 away
+		smart.tolerance = 60
+		m = smart_region(cols, len(cols), 1, 0, 0, &smart)
+		check(m[3] == 0 && m[4] == 255, "Tolerance by brightness: less for the dark pixel, more for the light one")
+		delete(m)
+		smart = Smart_Opts{tolerance = 40, contiguous = false}
+		smart.curve_on[.Falloff] = true
+		smart_curve_set(&smart.curves[.Falloff], "0,255 128,255 255,0")
+		m = smart_region(cols, len(cols), 1, 0, 0, &smart)
+		check(m[0] == 255 && m[5] > 0 && m[5] < 200, "Falloff: the clicked color fully, a color near the tolerance only partly")
+		delete(m)
+
+		// snapping: 100 up to x = 5, 140 up to x = 9 (beyond the tolerance), then a strong edge to 230
+		for y in 0 ..< H do for x in 0 ..< W do pix[y * W + x] = g(x <= 5 ? 100 : x <= 9 ? 140 : 230)
+		smart = Smart_Opts{tolerance = 30, contiguous = true, edge_strength = 50, snap_px = 6}
+		m = smart_region(pix, W, H, 1, 2, &smart)
+		check(m[2 * W + 5] == 255 && m[2 * W + 7] == 0, "without snapping the area stops where the color changes")
+		delete(m)
+		smart.edges, smart.edge_mode = true, .Snap
+		m = smart_region(pix, W, H, 1, 2, &smart)
+		check(m[2 * W + 7] > 0 && m[2 * W + 8] > 0 && m[2 * W + 11] == 0 && m[2 * W + 15] == 0, "Snap to edges: the outline moves out onto the strong edge nearby")
+		delete(m)
+		smart.snap_px = 1
+		m = smart_region(pix, W, H, 1, 2, &smart)
+		check(m[2 * W + 8] == 0, "an edge farther than the snap distance is left alone")
+		delete(m)
+
+		// a click with the tool, and redoing it with new settings
+		d := fresh(W, H, g(100))
+		for y in 0 ..< H do for x in 10 ..< W do tiles_set(&d.layers[0].pix, x, y, g(200), {})
+		doc_touch_all(d)
+		smart = Smart_Opts{tolerance = 30, contiguous = true}
+		smart_click({2.5, 2.5}, .Replace)
+		check(d.sel != nil && d.sel.v[2 * W + 5] == 255 && d.sel.v[2 * W + 15] == 0, "a click selects the area around it")
+		smart.tolerance = 120
+		check(smart_apply() && d.sel.v[2 * W + 15] == 255, "changing a setting redoes the last click")
+		smart_doc_closed(d)
+		check(!smart_apply(), "a closed painting's click isn't redone")
 	}
 
 	check(icons_ok(), "the app icon is there at every size")

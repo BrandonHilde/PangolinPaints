@@ -109,7 +109,7 @@ Macro_Cmd :: struct {
 	name: string,
 }
 
-// Commands that are nodes as they are. The tools (Tool_Brush ..= Tool_Seamless) are added to these.
+// Commands that are nodes as they are. The tools (Tool_Brush ..= Tool_Smart_Select) are added to these.
 MACRO_CMDS := [?]Macro_Cmd {
 	{.Cut, "Edit", "Cut"},
 	{.Copy, "Edit", "Copy"},
@@ -359,10 +359,7 @@ macro_catalogue_build :: proc() {
 			append(&s, num(keep(macro_key(p.name)), p.name, f64(p.lo), f64(p.hi), f64(p.def), p.suffix, p.help, f64(p.div > 1 ? p.div : 0)))
 		}
 		if def.flag != "" do append(&s, flag(keep(macro_key(def.flag)), def.flag, def.flag_def, def.flag_help))
-		if def.choice != nil {
-			is_channel := def.choice[0] == "RGB"
-			append(&s, choice(is_channel ? "channel" : "range", is_channel ? "Channel" : "Tonal range", def.choice, fx == .Color_Balance ? 1 : 0, def.choice_help))
-		}
+		if def.choice != nil do append(&s, choice(def.choice_key, def.choice_name, def.choice, fx == .Color_Balance ? 1 : 0, def.choice_help))
 		append(&cat, Macro_Def{id = keep(fmt.tprintf("fx.%v", fx)), name = def.name, category = fx < FX_FIRST_FILTER ? "Adjust" : "Filter", help = def.help, settings = s[:]})
 	}
 
@@ -650,7 +647,7 @@ fx_record :: proc(st: ^Fx_State) {
 	args := make([dynamic]string, context.temp_allocator)
 	for p, i in def.params do append(&args, macro_key(p.name), fmt.tprint(st.v[i]))
 	if def.flag != "" do append(&args, macro_key(def.flag), st.flag ? "1" : "0")
-	if def.choice != nil do append(&args, def.choice[0] == "RGB" ? "channel" : "range", def.choice[clamp(st.choice, 0, len(def.choice) - 1)])
+	if def.choice != nil do append(&args, def.choice_key, def.choice[clamp(st.choice, 0, len(def.choice) - 1)])
 	macro_record(fmt.tprintf("fx.%v", st.fx), ..args[:])
 }
 

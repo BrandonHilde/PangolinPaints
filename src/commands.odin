@@ -162,6 +162,7 @@ Cmd :: enum {
 	Tool_Mirror,
 	Tool_Perspective,
 	Tool_Seamless,
+	Tool_Smart_Select, // after the switches, as in `Tool`
 	// adjustments and filters (must stay in the same order as `Fx`)
 	Fx_First,
 	Fx_Last = Fx_First + len(Fx) - 1,
@@ -263,6 +264,7 @@ SHORTCUTS := [?]Shortcut {
 	{.Tool_Select_Ellipse, .M, false, true, false},
 	{.Tool_Lasso, .Q, false, false, false},
 	{.Tool_Wand, .W, false, false, false},
+	{.Tool_Smart_Select, .W, false, true, false},
 	{.Tool_Move, .V, false, false, false},
 	{.Tool_Transform, .T, false, true, false},
 	{.Tool_Transform, .T, true, false, false},
@@ -451,7 +453,7 @@ run_cmd :: proc(cmd: Cmd) {
 	} else if cmd >= .Opacity_10 && cmd <= .Opacity_100 {
 		macro_record("brush.Opacity", "opacity", fmt.tprint((int(cmd) - int(Cmd.Opacity_10) + 1) * 10))
 	}
-	if cmd >= .Tool_Brush && cmd <= .Tool_Seamless {
+	if cmd >= .Tool_Brush && cmd <= .Tool_Smart_Select {
 		select_tool_in_group(Tool(int(cmd) - int(Cmd.Tool_Brush)))
 		return
 	}
@@ -493,7 +495,7 @@ run_cmd :: proc(cmd: Cmd) {
 		return
 	}
 	switch cmd {
-	case .None, .Tool_Brush ..= .Tool_Seamless, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100, .Macro_First ..= .Macro_Last, .Recent_First ..= .Recent_Last:
+	case .None, .Tool_Brush ..= .Tool_Smart_Select, .Fx_First ..= .Fx_Last, .Ws_First ..= .Ws_Last, .Opacity_10 ..= .Opacity_100, .Macro_First ..= .Macro_Last, .Recent_First ..= .Recent_Last:
 	case .New:
 		dialog_open(.New_Doc)
 	case .Open:

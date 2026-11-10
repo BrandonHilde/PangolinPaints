@@ -253,6 +253,8 @@ Tool :: enum {
 	Mirror,
 	Perspective,
 	Seamless, // the view repeats the canvas and brush dabs wrap across its edges (user-visible name: Tiled Mode)
+	// tools added later go here, after the switches: tool groups and workspaces save tools by index
+	Smart_Select,
 }
 
 TOOL_NAMES := [Tool]string {
@@ -281,6 +283,7 @@ TOOL_NAMES := [Tool]string {
 	.Mirror         = "Mirror",
 	.Perspective    = "Perspective",
 	.Seamless       = "Tiled Mode",
+	.Smart_Select   = "Smart Select",
 }
 
 Sel_Mode :: enum {

@@ -143,6 +143,7 @@ doc_index :: proc(d: ^Doc) -> int {
 }
 
 close_doc :: proc(d: ^Doc) {
+	smart_doc_closed(d)
 	if d == doc {
 		stop_playback()
 		tools_commit_pending()

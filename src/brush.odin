@@ -966,7 +966,7 @@ dab_apply_one :: proc(s: ^Stroke, dab: Dab) {
 		dab_blur(s, &e, box, alpha)
 	case .Dodge:
 		dab_dodge(s, &e, box, alpha)
-	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Move, .Transform, .Crop, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective, .Seamless:
+	case .Bucket, .Gradient, .Picker, .Text, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Smart_Select, .Move, .Transform, .Crop, .Hand, .Zoom, .Line, .Grid, .Mirror, .Perspective, .Seamless:
 	}
 	doc_dirty(d, box)
 }

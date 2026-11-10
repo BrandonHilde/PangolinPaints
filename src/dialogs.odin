@@ -30,6 +30,7 @@ Dialog_Kind :: enum {
 	UI_Scale,
 	Frame_Props,
 	Tags,
+	Smart_Select,
 }
 
 Dialog :: struct {
@@ -58,7 +59,7 @@ dialog_open :: proc(k: Dialog_Kind) {
 		msg_text  = dialog.msg_text,
 	}
 	switch k {
-	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename, .UI_Scale, .Tags, .Layer_Fx:
+	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename, .UI_Scale, .Tags, .Layer_Fx, .Smart_Select:
 	case .Macros:
 		macros_refresh()
 		dialog.b = -1 // fill in the name field
@@ -179,6 +180,8 @@ dialogs_run :: proc() {
 		dlg_frame_props()
 	case .Tags:
 		dlg_tags()
+	case .Smart_Select:
+		dlg_smart_select()
 	case .Fx:
 		dlg_fx()
 	case .Curves:
@@ -691,7 +694,7 @@ layer_props_record :: proc(l: ^Layer) {
 
 // A command's name as the menus and tooltips say it, for the shortcuts window.
 shortcut_name :: proc(c: Cmd) -> string {
-	if c >= .Tool_Brush && c <= .Tool_Seamless do return TOOL_NAMES[Tool(int(c) - int(Cmd.Tool_Brush))]
+	if c >= .Tool_Brush && c <= .Tool_Smart_Select do return TOOL_NAMES[Tool(int(c) - int(Cmd.Tool_Brush))]
 	if c >= .Fx_First && c <= .Fx_Last do return FX_DEFS[Fx(int(c) - int(Cmd.Fx_First))].name
 	if c >= .Opacity_10 && c <= .Opacity_100 do return fmt.tprintf("Opacity %d%%", (int(c) - int(Cmd.Opacity_10) + 1) * 10)
 	#partial switch c {

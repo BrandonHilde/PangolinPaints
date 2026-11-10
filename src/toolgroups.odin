@@ -159,7 +159,7 @@ tool_groups_default :: proc() {
 	}
 	add("Paint", .ONE, .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge)
 	add("Draw", .TWO, .Clone, .Bucket, .Gradient, .Line, .Picker, .Text)
-	add("Select", .THREE, .Select_Rect, .Select_Ellipse, .Lasso, .Wand)
+	add("Select", .THREE, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Smart_Select)
 	add("Transform", .FOUR, .Move, .Transform, .Crop)
 	add("View", .FIVE, .Hand, .Zoom)
 }

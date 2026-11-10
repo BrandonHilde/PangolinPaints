@@ -59,8 +59,8 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   modifier keys it takes. When there is no message, the left of the status bar shows the current tool, its key and a hint.
 - **Image editing**
   - Adjust: auto contrast, brightness/contrast, levels, curves (per channel, with histogram), exposure,
-    hue/saturation (colorize), vibrance, color balance, temperature/tint, desaturate, sepia, invert, posterize,
-    threshold.
+    shadows/highlights, hue/saturation (all colors or one range, such as the blues; colorize), vibrance, color balance,
+    temperature/tint, desaturate, sepia, invert, posterize, threshold.
   - Filter: Gaussian/box/motion/radial blur, unsharp mask, oil paint, painterly (Kuwahara), canvas texture, emboss,
     find edges, add noise, median, pixelate, vignette.
   - All with live preview, applied through the (soft) selection to the active layer or mask.
@@ -74,8 +74,10 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
     **Show mask** paints where it works red, to see exactly what it picks. A Curve value node feeds one curve to several nodes.
   - Image size (bicubic / bilinear / nearest), canvas size with anchor, crop tool and crop to selection, trim,
     rotate 90/180 or any angle, flip, free transform (scale, stretch, rotate, move).
-- **Selections**: rectangle, ellipse, lasso (anti-aliased), magic wand (tolerance, contiguous, all layers);
-  add / subtract / intersect; feather, grow, shrink, invert, select layer opacity; selections soften every tool.
+- **Selections**: rectangle, ellipse, lasso (anti-aliased), magic wand (tolerance, contiguous, all layers),
+  smart select (a wand with curves for tolerance by hue and by brightness and a soft-edge falloff, plus edge bias
+  that stops the area at sharp edges and/or snaps its outline onto them; its settings window updates the last
+  selection live); add / subtract / intersect; feather, grow, shrink, invert, select layer opacity; selections soften every tool.
 - **Text**: a text tool (T) that makes editable text layers: click the canvas and type. Pick any bundled or installed
   font, size, color, alignment, line and letter spacing. Text stays live (click it to edit, Move tool repositions it),
   is saved in `.ppnt` projects, and turns into ordinary pixels the moment you paint or filter the layer.
@@ -111,7 +113,7 @@ enabled in the Wacom driver's tablet properties.
 |-|-|
 | B / N / R / Shift+R / E | brush / oil paint / smudge / blur / eraser |
 | O / S / G / Shift+G / I | dodge & burn / clone / bucket / gradient / eyedropper |
-| M, Shift+M / Q / W | marquee / ellipse marquee / lasso / magic wand |
+| M, Shift+M / Q / W, Shift+W | marquee / ellipse marquee / lasso / magic wand, smart select |
 | V / Shift+T or Ctrl+T / C / H / Z | move / free transform / crop / hand / zoom |
 | L | line / polygon (Enter finishes, Backspace removes a point, Esc cancels) |
 | Ctrl+; / Ctrl+Shift+; | grid / snap to grid |

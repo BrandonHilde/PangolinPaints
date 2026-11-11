@@ -105,6 +105,12 @@ demo_frames :: proc(n: int) {
 }
 
 main :: proc() {
+	for a in os.args[1:] {
+		if a == "--version" {
+			version_print()
+			return
+		}
+	}
 	fx_main_tid = current_thread_id() // only this thread runs layer effects
 	macro_layer_effects = true // macros can be live layer effects: their Start node offers the layer triggers
 	macro_on_live_edit = proc(name: string) {if doc != nil do fx_refresh_macro(doc, name)} // the canvas follows the node editor

@@ -16,7 +16,7 @@ macro_app_id :: proc() -> string {
 }
 
 macro_dir :: proc() -> string {
-	return fmt.tprintf("%smacros/", gfx_app_dir())
+	return fmt.tprintf("%smacros/", gfx_data_dir())
 }
 
 // A number about the open painting, for the Document Info node (MACRO_INFO order).

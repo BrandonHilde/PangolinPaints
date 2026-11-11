@@ -14,3 +14,6 @@ macros/
 shots/
 *.dll
 src/shared_*.odin
+
+# release folders (libs/shared/release/package.sh)
+dist/

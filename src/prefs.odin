@@ -5,10 +5,11 @@ import "core:strconv"
 import "core:strings"
 import "core:os"
 
-// Tiny key=value preferences file stored next to the executable.
+// Tiny key=value preferences file, in the user's data folder (gfx_data_dir: next to the program
+// when that can be written).
 
 prefs_path :: proc() -> string {
-	return fmt.tprintf("%spaints.cfg", gfx_app_dir())
+	return fmt.tprintf("%spaints.cfg", gfx_data_dir())
 }
 
 prefs_save :: proc() {

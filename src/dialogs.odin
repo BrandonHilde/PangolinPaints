@@ -818,7 +818,7 @@ dlg_shortcuts :: proc() {
 }
 
 dlg_about :: proc() {
-	c := dialog_frame("About", 360, 160)
+	c := dialog_frame("About", 360, 174)
 	logo_draw(c.x + 4, c.y + 6, 4)
 	tx := c.x + 80
 	text(tx, c.y + 6, APP_NAME, C_ACCENT)
@@ -827,6 +827,7 @@ dlg_about :: proc() {
 	text(tx, c.y + 50, "layers with masks, adjustments and filters.", C_TEXT)
 	text(tx, c.y + 62, "A sibling of Pangolin Pixels.", C_TEXT)
 	text(tx, c.y + 80, "Written in Odin with SDL3.", C_TEXT_DIM)
+	text(tx, c.y + 96, fmt.tprintf("Version %s", app_version_short()), C_TEXT_DIM)
 	ok, _ := dialog_buttons(c, "Close this window (Enter).", "Close", "")
 	if ok {
 		dialog_close()

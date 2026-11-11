@@ -171,3 +171,8 @@ icon_atlas :: proc(size: i32) -> (Texture, i32) {
 	}
 	return a.tex, a.px
 }
+
+// One icon as white pixels with coverage in alpha, `px` pixels square (the tool cursors are built from these).
+icon_pixels :: proc(ic: Icon, px: int, allocator := context.allocator) -> []Color {
+	return svg_render(ICON_SVG[ic], px, px, allocator)
+}

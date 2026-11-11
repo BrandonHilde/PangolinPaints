@@ -615,7 +615,7 @@ dlg_smart_select :: proc() {
 
 	// a click on the canvas beside the window selects there, as the tool does
 	if !popup.open && in_rect(canvas_vp, ui.mx, ui.my) && !in_rect(box, ui.mx, ui.my) && ui.active_id == 0 {
-		ui.cursor = .CROSSHAIR
+		ui_tool_cursor(TOOL_ICONS[.Smart_Select])
 		if ui.pressed[0] && doc != nil {
 			smart_click(wrap_pt(screen_to_canvas(f32(ui.mx), f32(ui.my))), sel_mode_now())
 			sdlg.touched = true

@@ -478,6 +478,8 @@ end_drag :: proc() {
 	drag.active = false
 }
 
+ZOOM_CURSOR_HOT :: [2]f32{10.5, 10.5} // the middle of the zoom icon's lens
+
 // Called every frame with the viewport rectangle. Handles pan, zoom and tool input.
 canvas_update :: proc(vp: Rect) {
 	canvas_vp = vp
@@ -520,7 +522,7 @@ canvas_update :: proc(vp: Rect) {
 	if drag.pan_active {
 		d.ox += gfx.mouse_delta.x / ui.scale
 		d.oy += gfx.mouse_delta.y / ui.scale
-		ui.cursor = .RESIZE_ALL
+		ui_tool_cursor(.Hand, .Icon)
 		if !ui.down[2] && !(t == .Hand && ui.down[0]) {
 			drag.pan_active = false
 		}
@@ -530,18 +532,13 @@ canvas_update :: proc(vp: Rect) {
 		return
 	}
 
-	// paint tools show the brush outline only (a small brush still gets a minimum-size ring)
-	if paint_tool(t) && (over || drag.active) && ui.focus_id == 0 {
-		ui.hide_cursor = true
-	}
-
 	if over && !drag.active {
 		switch t {
 		case .Hand:
-			ui.cursor = .RESIZE_ALL
-		case .Grid, .Mirror, .Perspective, .Seamless:
+			ui_tool_cursor(.Hand, .Icon)
 		case .Zoom:
-			ui.cursor = .POINTING_HAND
+			ui_tool_cursor(.Zoom, .Icon, ZOOM_CURSOR_HOT)
+		case .Grid, .Mirror, .Perspective, .Seamless:
 		case .Brush, .Oil, .Smudge, .Eraser, .Blur, .Dodge, .Clone, .Line:
 			// the brush outline is drawn instead (see render_cursor)
 			ui.cursor = .DEFAULT
@@ -552,13 +549,19 @@ canvas_update :: proc(vp: Rect) {
 		case .Text:
 			ui.cursor = .IBEAM
 		case .Bucket, .Gradient, .Picker, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Smart_Select, .Crop:
-			ui.cursor = .CROSSHAIR
+			ui_tool_cursor(TOOL_ICONS[t])
 		}
 		if ui.pressed[0] || ui.pressed[1] {
 			persp_lock = -1
 			begin_drag(ui.pressed[0] ? 0 : 1, tool_snaps(t) ? snap_pt(p) : p)
 		}
 	} else if drag.active {
+		#partial switch t {
+		case .Bucket, .Gradient, .Picker, .Select_Rect, .Select_Ellipse, .Lasso, .Wand, .Smart_Select, .Crop:
+			ui_tool_cursor(TOOL_ICONS[t])
+		case .Move:
+			ui.cursor = .RESIZE_ALL
+		}
 		btn_down := ui.down[drag.btn]
 		update_drag(p)
 		if !btn_down || ui.released[drag.btn] {

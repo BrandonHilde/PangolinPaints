@@ -323,9 +323,12 @@ render_cursor :: proc(d: ^Doc) {
 	t := eff_tool()
 	mx := ui.ptr.x / ui.scale
 	my := ui.ptr.y / ui.scale
-	if !paint_tool(t) || persp_hover >= 0 || persp_grab >= 0 {
+	if !paint_tool(t) || persp_hover >= 0 || persp_grab >= 0 || mirror_placing || mirror_drag {
 		return
 	}
+	// paint tools show the brush outline only (a small brush still gets a minimum-size ring), so the system
+	// cursor is hidden exactly when the outline is drawn
+	ui.hide_cursor = true
 	if (grid_snapping() || persp_snapping()) && drag.active {
 		// mid-stroke the ring sits where the dabs land
 		sp := canvas_to_screen(hover_pt)

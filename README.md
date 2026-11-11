@@ -11,6 +11,9 @@ the code shared with the other Pangolin tools are git submodules in `libs/odinui
 `git clone --recursive`, or let the build scripts fetch them on the first build (`git submodule update --init`). The build
 scripts copy the shared code into `src` as `shared_*.odin`. To build by hand: `sh libs/shared/sync.sh`, then
 `odin build src -out:PangolinPaints -o:speed -collection:odinui=libs/odinui`.
+To update to the newest version, run `update.bat` (Windows) or `./update.sh`: it pulls the latest commits and moves the
+submodules to the versions they expect (a plain `git pull` leaves the submodules where they were, and the build then
+fails). `build.bat` / `./build.sh` on their own build whatever is there now.
 On Linux, `./install.sh` builds the program and installs it for your account: in `~/.local/opt/pangolin/PangolinPaints`, with
 its own settings, workspaces and macros (apart from this folder's build), and in the application list with its icon.
 Run it again to update, or `./install.sh --uninstall` to remove it. To install a build made elsewhere (for another

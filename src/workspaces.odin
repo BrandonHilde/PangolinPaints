@@ -36,7 +36,7 @@ workspace_write :: proc(sb: ^strings.Builder) {
 	for t in Tool {
 		if !paint_tool(t) do continue
 		b := &brushes[t]
-		fmt.sbprintf(sb, "size_%d=%d\nopacity_%d=%d\npreset_%d=%d\n", int(t), b.size, int(t), b.opacity, int(t), brush_preset_idx[t])
+		fmt.sbprintf(sb, "brush_preset_%d=%s\nsize_%d=%d\nopacity_%d=%d\n", int(t), name_str(&brush_preset[t]), int(t), b.size, int(t), b.opacity)
 	}
 	fmt.sbprintf(sb, "groups=%s\n", tool_groups_serialize())
 	fmt.sbprintf(sb, "swatches=")
@@ -68,6 +68,15 @@ workspace_apply_line :: proc(key, sval: string) -> bool {
 		return true
 	}
 	// per-tool brush settings: preset first so size/opacity can override it
+	if strings.has_prefix(key, "brush_preset_") {
+		ti, tok := strconv.parse_int(key[len("brush_preset_"):])
+		if tok && ti >= 0 && ti < len(Tool) && paint_tool(Tool(ti)) {
+			t := Tool(ti)
+			brush_from_preset(t, sval, &brushes[t], &brush_preset[t])
+		}
+		return true
+	}
+	// "preset_" is an index into the built-in presets, from before presets could be saved
 	for prefix in ([?]string{"preset_", "size_", "opacity_"}) {
 		if !strings.has_prefix(key, prefix) do continue
 		ti, tok := strconv.parse_int(key[len(prefix):])
@@ -77,7 +86,7 @@ workspace_apply_line :: proc(key, sval: string) -> bool {
 		switch prefix {
 		case "preset_":
 			if val >= 0 && val < len(presets) && presets[val].tool == t {
-				brush_preset_idx[t] = val
+				name_set(&brush_preset[t], presets[val].name)
 				brushes[t] = presets[val].b
 			}
 		case "size_":

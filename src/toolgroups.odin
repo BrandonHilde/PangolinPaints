@@ -25,7 +25,7 @@ Tool_Group :: struct {
 	// this group's own brush settings, so a tool shared by two groups can differ between them;
 	// the active group's live copy is the global `brushes`, swapped in by group_enter
 	own_brushes: [Tool]Brush,
-	own_preset:  [Tool]int,
+	own_preset:  [Tool]Name, // the presets the own brushes were picked from
 	has_own:     bool, // own_brushes is filled in (otherwise it starts as a copy of the live brushes)
 }
 
@@ -35,7 +35,7 @@ active_group := -1 // group whose brush settings are loaded in `brushes`, or -1
 group_save_brushes :: proc() {
 	if active_group < 0 || active_group >= len(tool_groups) do return
 	g := &tool_groups[active_group]
-	g.own_brushes, g.own_preset, g.has_own = brushes, brush_preset_idx, true
+	g.own_brushes, g.own_preset, g.has_own = brushes, brush_preset, true
 }
 
 // Makes `gi` the active group, loading its brush settings into the live brushes.
@@ -44,9 +44,9 @@ group_enter :: proc(gi: int) {
 	group_save_brushes()
 	g := &tool_groups[gi]
 	if g.has_own {
-		brushes, brush_preset_idx = g.own_brushes, g.own_preset
+		brushes, brush_preset = g.own_brushes, g.own_preset
 	} else {
-		g.own_brushes, g.own_preset, g.has_own = brushes, brush_preset_idx, true
+		g.own_brushes, g.own_preset, g.has_own = brushes, brush_preset, true
 	}
 	active_group = gi
 }
@@ -348,7 +348,7 @@ tool_groups_serialize :: proc() -> string {
 			first := true
 			for t in g.tools {
 				if !paint_tool(t) do continue
-				fmt.sbprintf(&sb, "%s%d/%d", first ? "" : ",", int(t), g.own_preset[t])
+				fmt.sbprintf(&sb, "%s%d/=%s", first ? "" : ",", int(t), group_escape(name_str(&g.own_preset[t])))
 				for x in brush_to_ints(g.own_brushes[t]) do fmt.sbprintf(&sb, "/%d", x)
 				first = false
 			}
@@ -356,6 +356,36 @@ tool_groups_serialize :: proc() -> string {
 		fmt.sbprintf(&sb, ":")
 		for &m, j in g.macros do fmt.sbprintf(&sb, "%s%s", j > 0 ? "," : "", name_str(&m))
 		fmt.sbprintf(&sb, ":%d", g.next_macro)
+	}
+	return strings.to_string(sb)
+}
+
+// A preset name inside the groups line: the characters that separate its fields become %XX.
+group_escape :: proc(s: string) -> string {
+	sb := strings.builder_make(context.temp_allocator)
+	for i in 0 ..< len(s) {
+		c := s[i]
+		switch c {
+		case '%', '/', ',', ':', ';', '|', '=':
+			fmt.sbprintf(&sb, "%%%02X", c)
+		case:
+			strings.write_byte(&sb, c)
+		}
+	}
+	return strings.to_string(sb)
+}
+
+group_unescape :: proc(s: string) -> string {
+	sb := strings.builder_make(context.temp_allocator)
+	for i := 0; i < len(s); i += 1 {
+		if s[i] == '%' && i + 2 < len(s) {
+			if v, ok := strconv.parse_int(s[i + 1:i + 3], 16); ok {
+				strings.write_byte(&sb, u8(v))
+				i += 2
+				continue
+			}
+		}
+		strings.write_byte(&sb, s[i])
 	}
 	return strings.to_string(sb)
 }
@@ -398,12 +428,17 @@ tool_groups_parse :: proc(s: string) {
 		if len(g.tools) > 0 do g.last = g.tools[0]
 		if len(fields) > 6 && fields[6] != "" {
 			// start from the live brushes so settings that are not saved keep their values
-			g.own_brushes, g.own_preset = brushes, brush_preset_idx
+			g.own_brushes, g.own_preset = brushes, brush_preset
 			for e in strings.split(fields[6], ",", context.temp_allocator) {
 				v := strings.split(e, "/", context.temp_allocator)
 				if len(v) < 2 do continue
 				ti, ok1 := strconv.parse_int(v[0])
+				// the preset: "=name" (escaped), or an index into the built-in presets before presets could be saved
+				pname := ""
 				pi, ok2 := strconv.parse_int(v[1])
+				if strings.has_prefix(v[1], "=") {
+					pname, ok2 = group_unescape(v[1][1:]), true
+				}
 				if !(ok1 && ok2) || ti < 0 || ti >= len(Tool) || !paint_tool(Tool(ti)) do continue
 				t := Tool(ti)
 				vals := make([dynamic]int, context.temp_allocator)
@@ -420,7 +455,8 @@ tool_groups_parse :: proc(s: string) {
 					}
 				}
 				g.own_brushes[t] = brush_from_ints(g.own_brushes[t], vals[:])
-				if pi >= 0 && pi < len(presets) && presets[pi].tool == t do g.own_preset[t] = pi
+				if pname == "" && pi >= 0 && pi < len(presets) && presets[pi].tool == t do pname = presets[pi].name
+				name_set(&g.own_preset[t], pname)
 			}
 			g.has_own = true
 		}

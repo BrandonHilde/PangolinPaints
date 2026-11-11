@@ -30,6 +30,11 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   wet blender, dry brush, palette knife, thick impasto, detail sable.
 - **Blending tools**: smudge (soft, hard, bristle), blur / sharpen, dodge / burn (shadows, midtones, highlights),
   clone stamp (Alt+click source, aligned, optionally sampling all layers), eraser presets.
+- **Your own presets**: every brush tool, the text tool, Smart Select (curves included) and every effect dialog has a
+  preset list. Its `...` menu saves the current settings as a preset of your own, and updates, reverts, renames or
+  deletes one. Picking a preset again puts its settings back. The Brush Settings window (F5) has the preset list too,
+  with Save as Preset and Delete Preset buttons, and the Smart Select settings window has it with a Save as Preset
+  button. Your presets are kept in `paints.cfg`, and tool groups and workspaces remember each tool's preset by name.
 - **Line / polygon tool** (L): drag for a line, or click points and double click / Enter to finish; click the first
   point to close the shape and optionally fill it. Shift keeps segments at 15 degree steps. Painted with its own
   brush settings (size, hardness, taper, ...).

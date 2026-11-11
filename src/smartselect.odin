@@ -64,7 +64,7 @@ Smart_Opts :: struct {
 	snap_px:       int, // how far the outline may move when snapping
 }
 
-smart := Smart_Opts {
+SMART_DEFAULT :: Smart_Opts {
 	tolerance     = 40,
 	contiguous    = true,
 	antialias     = true,
@@ -72,6 +72,9 @@ smart := Smart_Opts {
 	edge_strength = 50,
 	snap_px       = 4,
 }
+
+smart := SMART_DEFAULT
+smart_preset: Name // the Smart Select preset picked last (presets.odin)
 
 HELP_SMART_TOL :: "How different a color may be from the one clicked and still be selected, as the largest difference in red, green, blue or opacity. The hue and brightness curves raise or lower it for some colors."
 HELP_SMART_CURVE :: "Pick which curve to shape. Tolerance by hue: more or less tolerance for some hues. Tolerance by brightness: more or less for dark or light tones. Falloff: how strongly a pixel is selected by how different it is, for a soft edge."
@@ -95,10 +98,79 @@ smart_curve_set :: proc(c: ^Smart_Curve, text: string) -> bool {
 
 // The points of curve `k` (its default until it is shaped).
 smart_curve :: proc(k: Smart_Curve_Kind) -> []Vec2 {
-	c := &smart.curves[k]
+	return smart_curve_of(&smart, k)
+}
+
+smart_curve_of :: proc(o: ^Smart_Opts, k: Smart_Curve_Kind) -> []Vec2 {
+	c := &o.curves[k]
 	if c.n < 2 do smart_curve_set(c, SMART_CURVE_DEFAULTS[k])
 	return c.pts[:c.n]
 }
+
+// ---------------------------------------------------------------------------
+// Presets: the settings as numbers, and the three curves as text ("x,y x,y;x,y ...;...", hue, brightness, falloff)
+// ---------------------------------------------------------------------------
+
+smart_preset_vals :: proc(o: ^Smart_Opts) -> (vals: []int, txt: string) {
+	b2i :: proc(b: bool) -> int {return b ? 1 : 0}
+	v := [?]int {
+		o.tolerance, b2i(o.contiguous), b2i(o.sample_merged), b2i(o.antialias), b2i(o.edges), int(o.edge_mode),
+		o.edge_strength, o.snap_px, b2i(o.curve_on[.Hue]), b2i(o.curve_on[.Light]), b2i(o.curve_on[.Falloff]),
+	}
+	vals = make([]int, len(v), context.temp_allocator)
+	copy(vals, v[:])
+	sb := strings.builder_make(context.temp_allocator)
+	for k in Smart_Curve_Kind {
+		if k != .Hue do strings.write_byte(&sb, ';')
+		strings.write_string(&sb, macro_curve_text(smart_curve_of(o, k)))
+	}
+	return vals, strings.to_string(sb)
+}
+
+smart_preset_apply :: proc(o: ^Smart_Opts, vals: []int, txt: string) {
+	at :: proc(v: []int, i: int, old: int) -> int {return i < len(v) ? v[i] : old}
+	o.tolerance = clamp(at(vals, 0, o.tolerance), 0, 255)
+	o.contiguous = at(vals, 1, int(o.contiguous)) != 0
+	o.sample_merged = at(vals, 2, int(o.sample_merged)) != 0
+	o.antialias = at(vals, 3, int(o.antialias)) != 0
+	o.edges = at(vals, 4, int(o.edges)) != 0
+	o.edge_mode = Smart_Edge_Mode(clamp(at(vals, 5, int(o.edge_mode)), 0, len(Smart_Edge_Mode) - 1))
+	o.edge_strength = clamp(at(vals, 6, o.edge_strength), 1, 100)
+	o.snap_px = clamp(at(vals, 7, o.snap_px), 1, 32)
+	for k, i in Smart_Curve_Kind do o.curve_on[k] = at(vals, 8 + int(i), int(o.curve_on[k])) != 0
+	for part, i in strings.split(txt, ";", context.temp_allocator) {
+		if i < len(Smart_Curve_Kind) do smart_curve_set(&o.curves[Smart_Curve_Kind(i)], part)
+	}
+}
+
+smart_builtins :: proc() -> []Preset_Builtin {
+	out := make([dynamic]Preset_Builtin, context.temp_allocator)
+	add :: proc(out: ^[dynamic]Preset_Builtin, name: string, o: Smart_Opts) {
+		o := o
+		v, t := smart_preset_vals(&o)
+		append(out, Preset_Builtin{name = name, vals = v, text = t})
+	}
+	o := SMART_DEFAULT
+	add(&out, "Default", o)
+	o.curve_on[.Falloff], o.antialias = false, false
+	add(&out, "Hard edge", o)
+	o = SMART_DEFAULT
+	o.edges, o.edge_mode = true, .Stop
+	add(&out, "Stop at edges", o)
+	o.edge_mode, o.snap_px = .Both, 6
+	add(&out, "Snap to edges", o)
+	return out[:]
+}
+
+// Settings saved without a preset name (before presets, or a first start) are "Default" if they match it.
+smart_preset_guess :: proc() {
+	if smart_preset.n > 0 do return
+	sv, st := smart_preset_vals(&smart)
+	b := smart_builtins()
+	if preset_same({b[0].vals, b[0].text}, sv, st) do name_set(&smart_preset, b[0].name)
+}
+
+SMART_PRESET_TIP :: Tip{"Smart Select preset", "Ready-made or saved Smart Select settings, curves included. Picking one replaces them all. The ... menu saves your own."}
 
 // ---------------------------------------------------------------------------
 // The area
@@ -442,6 +514,7 @@ smart_apply :: proc() -> bool {
 @(private = "file")
 Smart_Dlg :: struct {
 	saved:   Smart_Opts, // to put back on Cancel
+	saved_preset: Name,
 	sel:     []u8, // the selection when the window opened (owned), for Cancel
 	sel_w:   int,
 	sel_h:   int,
@@ -456,7 +529,8 @@ Smart_Dlg :: struct {
 sdlg: Smart_Dlg
 
 smart_settings_open :: proc() {
-	sdlg.saved = smart
+	sdlg.saved, sdlg.saved_preset = smart, smart_preset
+	preset_naming_cancel()
 	delete(sdlg.sel)
 	sdlg.sel = nil
 	sdlg.touched = false
@@ -476,10 +550,19 @@ SMART_GRAPH_H :: 120
 
 dlg_smart_select :: proc() {
 	LW :: 96
-	c := dialog_frame("Smart Select", 330, 26 + 24 + 22 + SMART_GRAPH_H + 30 + 22 + 3 * 20 + 18 + 28, docked = true)
+	c := dialog_frame("Smart Select", 330, 22 + 26 + 24 + 22 + SMART_GRAPH_H + 30 + 22 + 3 * 20 + 18 + 28, docked = true)
 	box := Rect{c.x - 12, c.y - 26, c.w + 24, c.h + 34}
 	changed := false
 	y := c.y
+
+	smart_preset_guess()
+	sv, st := smart_preset_vals(&smart)
+	tip_text(c.x, y + 3, "Preset", C_TEXT, SMART_PRESET_TIP)
+	if v, ok := preset_row(Rect{c.x + LW, y, c.w - LW, 14}, "smart-select", smart_builtins(), &smart_preset, sv, st, SMART_PRESET_TIP); ok {
+		smart_preset_apply(&smart, v.vals, v.text)
+		changed = true
+	}
+	y += 22
 
 	tol_tip := Tip{"Tolerance", HELP_SMART_TOL}
 	tip_text(c.x, y + 3, "Tolerance", C_TEXT, tol_tip)
@@ -546,9 +629,14 @@ dlg_smart_select :: proc() {
 		if smart_apply() do sdlg.touched = true
 	}
 
+	naming := preset_naming("smart-select", true)
+	if button(Rect{c.x, c.y + c.h - 18, 104, 18}, "Save as Preset...", {"Save as Preset", "Keep these settings, curves included, as a Smart Select preset of your own, under a name you type above."}, !naming) {
+		preset_save_begin("smart-select", sv, st, row = true)
+	}
 	ok, cancel := dialog_buttons(c, "Keep these settings (Enter).")
+	if ok || cancel do preset_naming_cancel()
 	if cancel {
-		smart = sdlg.saved
+		smart, smart_preset = sdlg.saved, sdlg.saved_preset
 		if d := doc; sdlg.touched && d != nil && d.w == sdlg.sel_w && d.h == sdlg.sel_h {
 			v := make([]u8, d.w * d.h)
 			if sdlg.sel != nil do copy(v, sdlg.sel)
@@ -740,11 +828,16 @@ smart_prefs_write :: proc(sb: ^strings.Builder) {
 	for k in Smart_Curve_Kind {
 		fmt.sbprintf(sb, "smart_curve_%v=%d:%s\n", k, b2i(smart.curve_on[k]), macro_curve_text(smart_curve(k)))
 	}
+	fmt.sbprintf(sb, "smart_preset=%s\n", name_str(&smart_preset))
 }
 
 // Reads one preferences line if it is a Smart Select setting.
 smart_prefs_read :: proc(key, val: string) -> bool {
 	if !strings.has_prefix(key, "smart_") do return false
+	if key == "smart_preset" {
+		name_set(&smart_preset, val) // the name only: the settings come from their own lines
+		return true
+	}
 	for k in Smart_Curve_Kind {
 		if key == fmt.tprintf("smart_curve_%v", k) {
 			on, _, pts := strings.partition(val, ":")

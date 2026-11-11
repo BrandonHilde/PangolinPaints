@@ -1,6 +1,8 @@
 package pangolin
 
+import "core:fmt"
 import "core:math"
+import "core:slice"
 
 // ---------------------------------------------------------------------------
 // Brush settings
@@ -170,7 +172,7 @@ brush_from_ints :: proc(base: Brush, v: []int) -> Brush {
 
 // Per-tool settings (each painting tool remembers its own brush).
 brushes: [Tool]Brush
-brush_preset_idx: [Tool]int
+brush_preset: [Tool]Name // the preset (built-in or the user's) each tool's brush was picked from, by name
 
 Preset :: struct {
 	name: string,
@@ -291,14 +293,39 @@ brush_presets_init :: proc() {
 	}
 	// start every tool on its first preset
 	for t in Tool {
-		for pr, i in presets {
+		for pr in presets {
 			if pr.tool == t {
 				brushes[t] = pr.b
-				brush_preset_idx[t] = i
+				name_set(&brush_preset[t], pr.name)
 				break
 			}
 		}
 	}
+}
+
+// The user's brush presets are kept per tool (presets.odin).
+brush_kind :: proc(t: Tool) -> string {
+	return fmt.tprintf("brush/%v", t)
+}
+
+// The built-in presets of tool `t`, as the shared presets take them.
+brush_builtins :: proc(t: Tool) -> []Preset_Builtin {
+	out := make([dynamic]Preset_Builtin, context.temp_allocator)
+	for &p in presets {
+		if p.tool != t do continue
+		v := brush_to_ints(p.b)
+		append(&out, Preset_Builtin{name = p.name, vals = slice.clone(v[:], context.temp_allocator)})
+	}
+	return out[:]
+}
+
+// Sets `b` (tool `t`'s brush) and `name` from the preset called `name`, built-in or the user's; false if there is none.
+brush_from_preset :: proc(t: Tool, name: string, b: ^Brush, cur: ^Name) -> bool {
+	v, ok := preset_value(brush_kind(t), name, brush_builtins(t))
+	if !ok do return false
+	b^ = brush_from_ints(brush_default(t), v.vals)
+	name_set(cur, name)
+	return true
 }
 
 paint_tool :: proc(t: Tool) -> bool {

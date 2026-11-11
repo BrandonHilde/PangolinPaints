@@ -561,6 +561,7 @@ run_cmd :: proc(cmd: Cmd) {
 	case .Fill_Bg:
 		edit_fill(bg)
 	case .Brush_Settings:
+		preset_naming_cancel()
 		dialog_open(.Brush_Settings)
 	case .Preferences:
 		dialog_open(.Prefs)

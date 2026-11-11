@@ -493,10 +493,20 @@ dlg_export :: proc() {
 dlg_brush_settings :: proc() {
 	t := paint_tool(cur_tool) ? cur_tool : Tool.Brush
 	b := &brushes[t]
-	c := dialog_frame(fmt.tprintf("Brush Settings - %s", TOOL_NAMES[t]), 440, 300, false)
+	c := dialog_frame(fmt.tprintf("Brush Settings - %s", TOOL_NAMES[t]), 440, 322, false)
+	// the tool's presets, as in the options bar
+	kind := brush_kind(t)
+	cv := brush_to_ints(b^)
+	{
+		PRESET_TIP :: Tip{"Brush preset", "A ready-made brush for this tool, or one you saved. Picking one replaces all these settings. Save as Preset keeps them as one of your own."}
+		tip_text(c.x, c.y + 3, "Preset", C_TEXT, PRESET_TIP)
+		if v, ok := preset_row(Rect{c.x + 96, c.y, (c.w - 16) / 2 - 96 + 120, 14}, kind, brush_builtins(t), &brush_preset[t], cv[:], tip = PRESET_TIP); ok {
+			b^ = brush_from_ints(brush_default(t), v.vals)
+		}
+	}
 	col_w := (c.w - 16) / 2
-	L := Rect{c.x, c.y, col_w, c.h}
-	R := Rect{c.x + col_w + 16, c.y, col_w, c.h}
+	L := Rect{c.x, c.y + 22, col_w, c.h - 22}
+	R := Rect{c.x + col_w + 16, c.y + 22, col_w, c.h - 22}
 	y := L.y
 	row_slider(L, y, "Size", &b.size, 1, BRUSH_MAX, " px", HELP_SIZE, 2.5)
 	y += 18
@@ -583,8 +593,28 @@ dlg_brush_settings :: proc() {
 	pv := Rect{R.x, R.y + R.h - 86, R.w, 64}
 	brush_preview(pv, t)
 	tip_area(pv, "brush-preview", {"Preview", "A sample stroke with these settings, in the foreground color."})
+	// save / delete presets here as well as in the preset menu
+	by := c.y + c.h - 18
+	naming := preset_naming(kind, true)
+	if button(Rect{c.x, by, 104, 18}, "Save as Preset...", {"Save as Preset", "Keep these settings as a preset of your own for this tool, under a name you type above."}, !naming) {
+		preset_save_begin(kind, cv[:], row = true)
+		dialog.flag2 = false
+	}
+	own := preset_find(kind, name_str(&brush_preset[t])) >= 0
+	if !own do dialog.flag2 = false
+	del_label := dialog.flag2 ? "Click to Confirm" : "Delete Preset"
+	DEL_TIP :: "Remove the picked preset of yours (click twice). Built-in presets can't be deleted. These settings stay as they are."
+	if button(Rect{c.x + 108, by, 100, 18}, del_label, {"Delete Preset", DEL_TIP}, own && !naming, dialog.flag2) {
+		if dialog.flag2 {
+			preset_delete(kind, &brush_preset[t])
+			dialog.flag2 = false
+		} else {
+			dialog.flag2 = true
+		}
+	}
 	ok, _ := dialog_buttons(c, "Close this window (Enter, or F5 again). The settings are already applied.", "Close", "")
 	if ok || IsKeyPressed(.F5) {
+		preset_naming_cancel()
 		dialog_close()
 	}
 }

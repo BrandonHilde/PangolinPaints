@@ -52,6 +52,74 @@ selftest :: proc() -> int {
 	blue := Color{30, 60, 220, 255}
 	white := Color{255, 255, 255, 255}
 
+	// --- saveable presets ---------------------------------------------------
+	{
+		brushes0, names0 := brushes, brush_preset
+		n0 := len(user_presets)
+		ODD :: "Odd, name/with:seps=%"
+		bp := brush_default(.Brush)
+		bp.size, bp.hardness = 33, 12
+		bv := brush_to_ints(bp)
+		preset_store(brush_kind(.Brush), ODD, bv[:])
+		preset_store("text", "Title", {72, 1, 120, 5}, "Alice")
+		sb := strings.builder_make(context.temp_allocator)
+		files_prefs_write(&sb)
+		for len(user_presets) > n0 do preset_remove(len(user_presets) - 1)
+		lines := strings.to_string(sb)
+		for line in strings.split_lines_iterator(&lines) {
+			k, _, v := strings.partition(line, "=")
+			preset_prefs_read(k, v)
+		}
+		check(len(user_presets) == n0 + 2, "the user's presets are saved with the preferences and read back")
+		tb: Brush
+		cur: Name
+		check(brush_from_preset(.Brush, ODD, &tb, &cur) && tb.size == 33 && tb.hardness == 12 && name_str(&cur) == ODD, "a saved brush preset gives back its brush")
+		check(brush_from_preset(.Brush, "Pencil", &tb, &cur) && tb.size == 3 && name_str(&cur) == "Pencil", "built-in presets are found by name")
+		check(!brush_from_preset(.Oil, ODD, &tb, &cur), "a brush preset belongs to its tool")
+		tv, tok := preset_value("text", "Title", nil)
+		check(tok && len(tv.vals) == 4 && tv.vals[0] == 72 && tv.text == "Alice", "a preset keeps its text (the font)")
+		check(preset_same({vals = {72, 1}}, {72, 1, 120, 5}, "") && !preset_same({vals = {72, 2}}, {72, 1, 120, 5}, ""), "a preset with fewer values matches on the ones it has")
+
+		// groups keep their tools' preset names; older groups kept an index into the built-in presets
+		tool_groups_clear()
+		g: Tool_Group
+		append(&g.tools, Tool.Brush)
+		g.own_brushes, g.has_own = brushes, true
+		g.own_brushes[.Brush] = bp
+		name_set(&g.own_preset[.Brush], ODD)
+		append(&tool_groups, g)
+		saved := strings.clone(tool_groups_serialize(), context.temp_allocator)
+		tool_groups_parse(saved)
+		check(len(tool_groups) == 1 && name_str(&tool_groups[0].own_preset[.Brush]) == ODD && tool_groups[0].own_brushes[.Brush].size == 33, "a group's preset name survives the separators in its line")
+		tool_groups_parse("49:0:::0:Paint:0/2/40/100/100/80/8")
+		check(len(tool_groups) == 1 && name_str(&tool_groups[0].own_preset[.Brush]) == presets[2].name, "group preferences from before saved presets still load")
+		check(workspace_apply_line("preset_0", "1") && name_str(&brush_preset[.Brush]) == presets[1].name, "workspaces from before saved presets still load")
+		check(workspace_apply_line("brush_preset_0", ODD) && brushes[.Brush].size == 33 && name_str(&brush_preset[.Brush]) == ODD, "workspaces pick a tool's preset by name")
+
+		st := Fx_State{fx = .Unsharp_Mask}
+		fx_preset_apply(&st, {150, 30, 4, 0, 0})
+		fv := fx_preset_vals(&st)
+		check(st.v[0] == 150 && len(fv) == 5 && fv[1] == 30, "an effect's settings go into a preset and back")
+
+		// Smart Select: the numbers and the three curves
+		so := SMART_DEFAULT
+		so.tolerance, so.edges, so.edge_mode = 90, true, .Snap
+		smart_curve_set(&so.curves[.Light], "0,40 128,200 255,90")
+		sov, sot := smart_preset_vals(&so)
+		preset_store("smart-select", "Fur", sov, sot)
+		got := SMART_DEFAULT
+		spv, spok := preset_value("smart-select", "Fur", smart_builtins())
+		smart_preset_apply(&got, spv.vals, spv.text)
+		check(spok && got.tolerance == 90 && got.edges && got.edge_mode == .Snap && macro_curve_text(smart_curve_of(&got, .Light)) == "0,40 128,200 255,90", "a Smart Select preset keeps its settings and curves")
+		check(macro_curve_text(smart_curve_of(&got, .Falloff)) == SMART_CURVE_DEFAULTS[.Falloff], "the curves it didn't change stay as they were")
+		dv, dt := smart_preset_vals(&got)
+		check(preset_same(spv, dv, dt), "a picked Smart Select preset matches the settings it set")
+
+		for len(user_presets) > n0 do preset_remove(len(user_presets) - 1)
+		tool_groups_default()
+		brushes, brush_preset = brushes0, names0
+	}
+
 	// --- UI scale -----------------------------------------------------------
 	{
 		check(ui_scale_auto(1366, 768) == 100, "auto scale on a small laptop")

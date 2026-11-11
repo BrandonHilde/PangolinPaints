@@ -687,23 +687,10 @@ panel_options :: proc() {
 
 options_brush :: proc(t: Tool) {
 	b := &brushes[t]
-	// presets for this tool
-	names := make([dynamic]string, context.temp_allocator)
-	idx := make([dynamic]int, context.temp_allocator)
-	cur := -1
-	for p, i in presets {
-		if p.tool == t {
-			if i == brush_preset_idx[t] do cur = len(names)
-			append(&names, p.name)
-			append(&idx, i)
-		}
-	}
-	if len(names) > 0 {
-		if nv, ch := ocombo("preset", 96, names[:], cur, {"Brush preset", "A ready-made brush for this tool. Picking one replaces all this tool's settings."}); ch {
-			pi := idx[nv]
-			brush_preset_idx[t] = pi
-			brushes[t] = presets[pi].b
-		}
+	// presets for this tool: the built-in ones and the user's
+	cv := brush_to_ints(b^)
+	if v, ok := preset_bar(brush_kind(t), brush_builtins(t), &brush_preset[t], cv[:], tip = {"Brush preset", "A ready-made brush for this tool, or one you saved. Picking one replaces all this tool's settings. The ... menu saves your own."}); ok {
+		b^ = brush_from_ints(brush_default(t), v.vals)
 	}
 	oslider("Size", 92, &b.size, 1, BRUSH_MAX, {"Brush size ([ and ])", HELP_SIZE}, "px", 2.5)
 	oslider("Opacity", 84, &b.opacity, 1, 100, {"Opacity (Shift+number keys)", HELP_OPACITY}, "%")
@@ -789,6 +776,11 @@ options_other :: proc(t: Tool) {
 		ocheck("All layers", &topts.sample_merged, {"All layers", HELP_ALL_LAYERS})
 		ocheck("Smooth edge", &topts.antialias, {"Smooth edge", HELP_SMOOTH_EDGE})
 	case .Smart_Select:
+		{
+			smart_preset_guess()
+			sv, st := smart_preset_vals(&smart)
+			if v, ok := preset_bar("smart-select", smart_builtins(), &smart_preset, sv, st, tip = SMART_PRESET_TIP); ok do smart_preset_apply(&smart, v.vals, v.text)
+		}
 		sel_modes()
 		oslider("Tolerance", 100, &smart.tolerance, 0, 255, {"Tolerance", HELP_SMART_TOL}, key = "smart-tol")
 		ocheck("Contiguous", &smart.contiguous, {"Contiguous", HELP_SMART_CONTIGUOUS}, key = "smart-contig")

@@ -241,6 +241,37 @@ fx_run :: proc(fx: Fx, st: ^Fx_State, src, dst: []Color, w, h: int) {
 fx_saved: [Fx]Fx_State
 fx_saved_ok: [Fx]bool
 fx_last: Fx = .Gaussian_Blur
+fx_preset: [Fx]Name // the preset each effect's settings were picked from (presets.odin)
+
+// An effect's settings as the shared presets take them: the sliders, then the checkbox and the choice.
+fx_preset_vals :: proc(st: ^Fx_State) -> []int {
+	n := len(FX_DEFS[st.fx].params)
+	out := make([]int, n + 2, context.temp_allocator)
+	copy(out, st.v[:n])
+	out[n] = st.flag ? 1 : 0
+	out[n + 1] = st.choice
+	return out
+}
+
+fx_preset_apply :: proc(st: ^Fx_State, vals: []int) {
+	def := &FX_DEFS[st.fx]
+	n := len(def.params)
+	for p, i in def.params {
+		if i < len(vals) do st.v[i] = clamp(vals[i], p.lo, p.hi)
+	}
+	if n < len(vals) do st.flag = vals[n] != 0
+	if n + 1 < len(vals) && def.choice != nil do st.choice = clamp(vals[n + 1], 0, len(def.choice) - 1)
+}
+
+// The built-in preset of every effect: its defaults.
+fx_builtins :: proc(fx: Fx) -> []Preset_Builtin {
+	def := &FX_DEFS[fx]
+	st := Fx_State{fx = fx, flag = def.flag_def, choice = fx == .Color_Balance ? 1 : 0}
+	for p, i in def.params do st.v[i] = p.def
+	out := make([]Preset_Builtin, 1, context.temp_allocator)
+	out[0] = {name = "Default", vals = fx_preset_vals(&st)}
+	return out
+}
 
 fx_open :: proc(fx: Fx) {
 	def := &FX_DEFS[fx]
@@ -261,6 +292,8 @@ fx_open :: proc(fx: Fx) {
 	if fx_saved_ok[fx] {
 		fxs.v, fxs.flag, fxs.choice = fx_saved[fx].v, fx_saved[fx].flag, fx_saved[fx].choice
 	}
+	if fx_preset[fx].n == 0 do name_set(&fx_preset[fx], "Default")
+	preset_naming_cancel()
 	if fx >= FX_FIRST_FILTER {
 		fx_last = fx
 	}
@@ -288,8 +321,17 @@ dlg_fx :: proc() {
 	extra: i32 = 0
 	if def.choice != nil do extra += 20
 	if def.flag != "" do extra += 18
-	c := dialog_frame(def.name, 300, 64 + rows * 20 + extra + 18, docked = true)
+	c := dialog_frame(def.name, 300, 64 + rows * 20 + extra + 18 + 20, docked = true)
 	y := c.y
+	{
+		PRESET_TIP :: Tip{"Preset", "Settings for this effect: its defaults, or ones you saved. Picking one replaces the settings. The ... menu saves your own."}
+		tip_text(c.x, y + 3, "Preset", C_TEXT, PRESET_TIP)
+		if v, ok := preset_row(Rect{c.x + 100, y, c.w - 100, 14}, fmt.tprintf("fx/%v", fxs.fx), fx_builtins(fxs.fx), &fx_preset[fxs.fx], fx_preset_vals(&fxs), tip = PRESET_TIP); ok {
+			fx_preset_apply(&fxs, v.vals)
+			fxs.dirty = true
+		}
+		y += 20
+	}
 	if def.choice != nil {
 		choice_tip := Tip{def.choice_name, def.choice_help}
 		tip_text(c.x, y + 3, choice_tip.title, C_TEXT, choice_tip)
@@ -334,6 +376,7 @@ dlg_fx :: proc() {
 	if button(Rect{c.x, c.y + c.h - 16, 60, 16}, "Reset", {"", "Put every setting of this effect back to its default."}) {
 		for p, i in def.params do fxs.v[i] = p.def
 		fxs.flag = def.flag_def
+		name_set(&fx_preset[fxs.fx], "Default")
 		fxs.dirty = true
 	}
 	ok, cancel := dialog_buttons(c, "Apply this to the active layer (Enter).")

@@ -35,6 +35,7 @@ text_defaults := Text_Info {
 	line_pct = 100,
 }
 
+text_preset: Name // the text preset picked last (presets.odin)
 text_hist_open: bool // one undo step covers a whole edit session / slider drag
 text_end_time: f64 = -1 // frame on which a session ended, so the same key press is not handled twice
 
@@ -450,6 +451,21 @@ options_text :: proc() {
 		if live do text_changed()
 	}
 	before := ti^
+	// preset: font, size, alignment, line and letter spacing
+	{
+		cv := [?]int{ti.size, int(ti.align), ti.line_pct, ti.track}
+		builtin := [?]Preset_Builtin{{name = "Default", vals = {48, 0, 100, 0}, text = DEFAULT_FONT}}
+		if text_preset.n == 0 do name_set(&text_preset, "Default")
+		if v, ok := preset_bar("text", builtin[:], &text_preset, cv[:], name_str(&ti.font), 100, {"Text preset", "A font with its size, alignment and spacing, saved under a name. Picking one sets them. The ... menu saves your own."}); ok {
+			if live do text_begin_change()
+			if v.text != "" do name_set(&ti.font, v.text)
+			if len(v.vals) > 0 do ti.size = clamp(v.vals[0], 6, 600)
+			if len(v.vals) > 1 do ti.align = u8(clamp(v.vals[1], 0, 2))
+			if len(v.vals) > 2 do ti.line_pct = clamp(v.vals[2], 50, 300)
+			if len(v.vals) > 3 do ti.track = clamp(v.vals[3], -20, 100)
+			apply(live)
+		}
+	}
 	// font
 	if obutton(name_str(&ti.font), 120, {"Font", "The typeface of this text. Click to choose from the bundled and installed fonts."}, key = "font") {
 		text_font_pick_open()

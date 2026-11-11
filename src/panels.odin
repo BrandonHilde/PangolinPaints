@@ -408,6 +408,8 @@ GROUP_REMOVE_TIP :: "Remove this group from the toolbar. Its tools stay availabl
 panel_toolbar :: proc() {
 	panel_element(.Toolbar, "toolbar", "toolbar")
 	defer oui.end(uictx)
+	// the groups scroll when they outgrow the bar; the color chips stay pinned below them
+	oui.scroll_begin(uictx, "groups-scroll", {node = {id = "groups-scroll"}})
 	t := eff_tool()
 	rem_g, rem_t := -1, -1
 	cur_group := current_group()
@@ -628,6 +630,7 @@ panel_toolbar :: proc() {
 			append(&tool_groups, Tool_Group{})
 		}
 	}
+	oui.scroll_end(uictx)
 	oui.separator(uictx, "chips-sep")
 	oui_slot("color-chips", "color_chips")
 }

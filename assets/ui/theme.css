@@ -302,6 +302,7 @@ optionsbar #mask { margin-right: 2px; }
 toolbar {
 	display: flex;
 	flex-direction: column;
+	height: 100%; /* bounded by the window, so the groups scroll inside it */
 	gap: 6px;
 	padding: 8px 4.5px 0 4px;
 	background: var(--panel);
@@ -363,6 +364,12 @@ button.color-chip.same   { border-color: #ffffff; }
 button.color-chip.linked { border: 1px solid var(--accent); outline: 1px solid var(--accent); outline-offset: 1px; }
 button.btn.blend-row { height: 20px; justify-content: flex-start; padding-left: 8px; }
 #new-group { height: 18px; margin: 0 1px; }
+/* the groups scroll inside the bar when there are more than fit; the chips below stay put */
+#groups-scroll { position: relative; flex: 0 1 auto; min-height: 0; height: auto; margin-right: -4.5px; padding-right: 4.5px; }
+toolbar scroll-content { display: flex; flex-direction: column; gap: 6px; padding-bottom: 1px; }
+toolbar scrollbar { background: transparent; }
+toolbar scrollbar-thumb { width: 3px; background: var(--ring-hi); border-radius: 2px; }
+toolbar scrollbar-thumb:hover { background: var(--text-off); }
 toolbar separator { height: 0.5px; margin: 6px 6px 0 6px; background: var(--ring-hi); flex: none; }
 #color-chips { height: 46px; margin: 7px 0 0 5px; flex: none; }
 

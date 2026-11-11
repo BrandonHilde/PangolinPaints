@@ -196,6 +196,15 @@ Doc :: struct {
 	history_hold: int, // above 0 while a macro runs: its edits share the one snapshot taken before it
 	active_layer: int,
 	edit_mask:    bool, // brushes paint on the active layer's mask
+	// color channels (channels.odin)
+	chan_exposed:    [dynamic]int, // uids of the layers whose channels are listed under the layers
+	edit_chan:       int, // 1..4: brushes paint on this channel (red, green, blue, alpha) of layer chan_uid; 0: not
+	chan_uid:        int,
+	chan_raw:        bool, // the canvas shows that channel in grey, not the picture
+	chan_c:          int, // the edit_chan chan_grid holds (0: not built)
+	chan_grid:       Tiles, // the channel, grey in .r
+	chan_shadow:     Tiles, // chan_grid's tiles as last synced
+	chan_pix_shadow: Tiles, // the layer's tiles as last synced
 	path:         string, // empty if never saved
 	title:        Name,
 	modified:     bool,

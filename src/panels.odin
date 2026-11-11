@@ -25,6 +25,7 @@ panels_init :: proc() {
 	oui_slot_register("swatches", proc(r: Rect, _: int) {panel_swatches(r)})
 	oui_slot_register("recent", proc(r: Rect, _: int) {panel_recent(r)})
 	oui_slot_register("layer_list", proc(r: Rect, _: int) {panel_layer_list(r)})
+	oui_slot_register("chan_list", proc(r: Rect, _: int) {panel_chan_list(r)})
 	oui_slot_register("navigator", proc(r: Rect, _: int) {panel_navigator(r)})
 	oui_slot_register("cursor_info", proc(r: Rect, _: int) {panel_cursor_info(r)})
 	oui_slot_register("groups_bar", proc(r: Rect, _: int) {panel_groups_bar(r)})
@@ -203,6 +204,8 @@ menu_build :: proc(idx: int) {
 		item("Rasterize Layer", cmd = .Layer_Rasterize, enabled = l.text.on || l.shape != nil)
 		popup_sep()
 		item("Lock Transparency", cmd = .Layer_Lock_Alpha, checked = l.lock_alpha)
+		item("Expose Color Channels", cmd = .Layer_Channels, checked = chan_exposed(d, l.uid), enabled = !l.is_group)
+		item("Raw Channel View", cmd = .Channels_Raw, checked = d.chan_raw)
 		item("Properties...", cmd = .Layer_Props)
 		popup_sep()
 		item("Add Mask (Reveal All)", cmd = .Mask_Add, enabled = !l.has_mask && !l.is_group)
@@ -840,10 +843,21 @@ osection :: proc(key, title, desc: string) {
 
 swatch_area_w: i32 = 216 // width of the swatch grid last frame, for its height
 
+// A list in the side panel that scrolls by itself (layers, channels, swatches) had the pointer last frame
+// and more than it shows: the wheel is its, not the panel's.
+side_list_wheel: bool
+
 panel_right :: proc() {
 	d := doc
 	panel_element(.Right, "right", "sidepanel")
 	defer oui.end(uictx)
+	// the panel scrolls when its sections don't fit, so none of them gets squeezed
+	wheel := uictx.input.wheel
+	if side_list_wheel do uictx.input.wheel = {}
+	oui.scroll_begin(uictx, "right-scroll", {node = {id = "right-scroll"}})
+	uictx.input.wheel = wheel
+	side_list_wheel = false
+	defer oui.scroll_end(uictx)
 
 	// --- colour picker ---------------------------------------------------
 	osection("color-head", color_linked() != nil ? "Color - editing toolbar color" : "Color", color_linked() != nil ? "Your changes here also change the toolbar color you picked, until you choose another color." : "The foreground color, the one you paint with.")
@@ -962,6 +976,8 @@ panel_right :: proc() {
 		}
 	}
 	oui.end(uictx)
+	// --- color channels of the layers that show them (right-click a layer > Expose Color Channels) ---
+	panel_channels(d)
 	if show_navigator {
 		osection("nav-head", "Navigator", "The whole canvas, with a box around what the view shows.")
 		oui_slot("navigator", "navigator")
@@ -1019,6 +1035,7 @@ panel_swatches :: proc(pal: Rect) {
 	cols := max((pal.w - 4) / cell, 1)
 	@(static) pal_scroll: i32
 	all_rows := i32((len(swatches) + int(cols) - 1) / int(cols))
+	if ui_hover(pal) && all_rows * cell + 4 > pal.h do side_list_wheel = true
 	if ui_hover(pal) && ui.wheel != 0 {
 		pal_scroll -= i32(ui.wheel) * cell
 	}
@@ -1146,6 +1163,7 @@ panel_layer_list :: proc(list: Rect) {
 	n := i32(len(rows))
 	content := n * LAYER_ROW_H
 	inner := rect_inset(list, 1)
+	if ui_hover(list) && content > inner.h do side_list_wheel = true
 	if ui_hover(list) && ui.wheel != 0 {
 		layers_scroll -= i32(ui.wheel) * LAYER_ROW_H
 	}
@@ -1282,6 +1300,7 @@ panel_layer_list :: proc(list: Rect) {
 			if ly.is_group do popup_item("Ungroup", cmd = .Layer_Ungroup)
 			popup_sep()
 			popup_item("Layer Effects...", cmd = .Layer_Effects)
+			if !ly.is_group do popup_item(chan_exposed(d, ly.uid) ? "Hide Color Channels" : "Expose Color Channels", cmd = .Layer_Channels)
 			popup_item("Properties...", cmd = .Layer_Props)
 		}
 		if ui_hover(row) && ui_hover(list) && ui.pressed[0] {
@@ -1310,6 +1329,7 @@ panel_layer_list :: proc(list: Rect) {
 				if d.active_layer != li do tools_commit_pending()
 				d.active_layer = li
 				d.edit_mask = false
+				chan_end(d) // the layer itself, not one of its channels
 				layer_drag, layer_drag_y0, layer_drag_on = li, ui.my, false
 				if ui.dbl_click {
 					dialog_open(.Layer_Props)
@@ -1527,7 +1547,13 @@ panel_status :: proc() {
 	}
 	oui.element_leaf(uictx, "spacer", "spacer")
 	l := &d.layers[d.active_layer]
-	oui_tip(oui.label(uictx, "target", d.edit_mask ? fmt.tprintf("%s (mask)", name_str(&l.name)) : name_str(&l.name)), {"Active layer", "The layer tools change. It says (mask) when you are painting on its mask."})
+	target := name_str(&l.name)
+	if d.edit_mask {
+		target = fmt.tprintf("%s (mask)", target)
+	} else if d.edit_chan != 0 {
+		target = fmt.tprintf("%s (%s)", target, chan_label(d))
+	}
+	oui_tip(oui.label(uictx, "target", target), {"Active layer", "The layer tools change. It says (mask) when you are painting on its mask, and names the channel when you are painting on one of its color channels."})
 	oui.separator(uictx, "sep2")
 	if len(d.frames) > 1 {
 		oui_tip(oui.label(uictx, "frame", fmt.tprintf("Frame %d / %d", d.active_frame + 1, len(d.frames))), {"Current frame", "The frame you are working on. View > Timeline shows them all, and , and . step through them."})

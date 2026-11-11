@@ -1143,6 +1143,48 @@ selftest :: proc() -> int {
 		check(len(d.layers) == 1 && px(d, 0, 30, 10).r == 100 && px(d, 0, 30, 50).r == 200, "merge down applies the mask")
 	}
 
+	// --- color channels -------------------------------------------------------------
+	{
+		grey := Color{100, 100, 100, 255}
+		d := fresh(64, 64, grey)
+		run_cmd(.Layer_Channels)
+		check(chan_exposed(d, d.layers[0].uid), "Expose Color Channels lists the layer's channels")
+		chan_select(d, 0, 0)
+		_, _, is_ch := doc_target(d)
+		check(d.edit_chan == 1 && is_ch, "clicking the red channel makes it what tools paint")
+		b := &brushes[.Brush]
+		b.size, b.hardness, b.opacity, b.flow = 20, 100, 100, 100
+		paint_line(.Brush, white, {0, 10}, {63, 10})
+		doc_refresh_comp(d)
+		check(px(d, 0, 30, 10) == Color{255, 100, 100, 255}, fmt.tprintf("painting the red channel changes only red (got %v)", px(d, 0, 30, 10)))
+		check(px(d, 0, 30, 50) == grey, "away from the stroke the layer is untouched")
+		check(d.comp[10 * 64 + 30] == Color{255, 100, 100, 255}, "Image view shows the picture")
+		chan_set_raw(d, true)
+		doc_refresh_comp(d)
+		check(d.comp[10 * 64 + 30] == white && d.comp[50 * 64 + 30] == grey, "Raw view shows the channel in grey")
+		chan_select(d, 0, 3)
+		doc_refresh_comp(d)
+		check(d.comp[50 * 64 + 30] == white, "Raw view of the alpha channel")
+		e := &brushes[.Eraser]
+		e.size, e.hardness, e.opacity, e.flow = 20, 100, 100, 100
+		paint_line(.Eraser, white, {0, 50}, {63, 50})
+		doc_refresh_comp(d)
+		check(px(d, 0, 30, 50) == Color{100, 100, 100, 0}, fmt.tprintf("erasing the alpha channel clears it, keeping the colors (got %v)", px(d, 0, 30, 50)))
+		history_undo(d)
+		doc_refresh_comp(d)
+		check(px(d, 0, 30, 50) == grey && tiles_get(&d.chan_grid, 30, 50, CHAN_EMPTY).r == 255, "undo comes back into the channel")
+		chan_set_raw(d, false)
+		chan_select(d, 0, 1)
+		edit_fill(Color{0, 0, 0, 255})
+		doc_refresh_comp(d)
+		check(px(d, 0, 5, 60) == Color{100, 0, 100, 255} && px(d, 0, 30, 10) == Color{255, 0, 100, 255}, "filling the green channel")
+		chan_end(d)
+		_, _, is_ch = doc_target(d)
+		check(d.edit_chan == 0 && !is_ch, "back to painting the layer")
+		run_cmd(.Layer_Channels)
+		check(!chan_exposed(d, d.layers[0].uid), "Hide Color Channels")
+	}
+
 	// --- transforms -------------------------------------------------------------
 	{
 		d := fresh(100, 50, white)

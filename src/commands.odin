@@ -60,6 +60,8 @@ Cmd :: enum {
 	Layer_Via_Copy,
 	Layer_Via_Cut,
 	Layer_Lock_Alpha,
+	Layer_Channels,
+	Channels_Raw,
 	Mask_Add,
 	Mask_From_Sel,
 	Mask_Delete,
@@ -641,6 +643,11 @@ run_cmd :: proc(cmd: Cmd) {
 		edit_layer_via(false)
 	case .Layer_Via_Cut:
 		edit_layer_via(true)
+	case .Layer_Channels:
+		chan_toggle_expose(d)
+	case .Channels_Raw:
+		chan_set_raw(d, !d.chan_raw)
+		set_status(d.chan_raw ? "Raw: a channel you paint shows in grey" : "Image: the picture shows while you paint a channel")
 	case .Layer_Lock_Alpha:
 		l := &d.layers[d.active_layer]
 		l.lock_alpha = !l.lock_alpha

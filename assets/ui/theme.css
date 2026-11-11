@@ -444,7 +444,7 @@ sidepanel row { display: flex; align-items: center; flex: none; }
 #hex { width: 62px; height: 18px; margin-left: 2px; }
 #color-row .dim { margin-left: 2px; }
 slider-bar.wide { width: auto; flex: 1; margin-bottom: 3px; }
-sidepanel > slider-bar.wide { flex: none; }
+#right-scroll > scroll-content > slider-bar.wide { flex: none; }
 slider-bar.ch-r bar-fill { background: rgba(236, 96, 86, 0.26); }
 slider-bar.ch-g bar-fill { background: rgba(108, 196, 116, 0.26); }
 slider-bar.ch-b bar-fill { background: rgba(96, 150, 236, 0.26); }
@@ -463,9 +463,19 @@ slider-bar.ch-b bar-handle { background: #6096ec; }
 #recent { flex: 1; height: 12px; }
 #layer-props { gap: 4px; margin-bottom: 6px; }
 #layer-props button.combo, #layer-props slider-bar { height: 16px; margin-bottom: 0; }
-#layer-list { flex: 1; min-height: 60px; margin-bottom: 5px; }
+/* the panel scrolls when its sections don't fit; with room to spare the layer list takes it */
+#right-scroll { position: relative; flex: 1 1 auto; min-height: 0; height: auto; margin-right: -8px; padding-right: 8px; }
+#right-scroll > scroll-content { flex: none; min-height: 100%; }
+#right-scroll scrollbar { background: transparent; }
+#right-scroll scrollbar-thumb { width: 3px; background: var(--ring-hi); border-radius: 2px; }
+#right-scroll scrollbar-thumb:hover { background: var(--text-off); }
+#layer-list { flex: 1 0 auto; min-height: 150px; margin-bottom: 5px; }
 #layer-buttons { gap: 2px; margin-bottom: 4px; }
+#chan-head { margin-top: 2px; }
+#chan-view { gap: 2px; height: 16px; margin-bottom: 5px; }
+#chan-view button.btn { height: 16px; }
+#chan-list { flex: none; margin-bottom: 5px; }
 button.icon-btn.layer-btn { position: relative; width: 26px; height: 18px; }
 .badge { position: absolute; top: 0; right: 3px; font-size: 7px; line-height: 7px; color: var(--accent); }
 #nav-head { margin-top: 4px; }
-#navigator { flex: 0 1 130px; min-height: 0; }
+#navigator { flex: none; height: 130px; }

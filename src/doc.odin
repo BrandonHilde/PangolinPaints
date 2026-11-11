@@ -167,6 +167,7 @@ doc_destroy :: proc(d: ^Doc) {
 	delete(d.redo)
 	delete(d.comp)
 	delete(d.sel_edges)
+	chan_free(d)
 	fx_cache_free(d)
 	if d.path != "" {
 		delete(d.path)
@@ -286,11 +287,15 @@ history_redo :: proc(d: ^Doc) -> bool {
 	return true
 }
 
-// The grid that painting tools write to: the active layer, or its mask.
+// The grid that painting tools write to: the active layer, its mask, or one of its color channels
+// (painted like a mask: grey values, see channels.odin).
 doc_target :: proc(d: ^Doc) -> (g: ^Tiles, empty: Color, is_mask: bool) {
 	l := &d.layers[d.active_layer]
 	if d.edit_mask && l.has_mask {
 		return &l.mask, MASK_EMPTY, true
+	}
+	if cg, ok := chan_target(d); ok {
+		return cg, CHAN_EMPTY, true
 	}
 	return &l.pix, Color{}, false
 }
@@ -672,11 +677,16 @@ doc_refresh_comp :: proc(d: ^Doc) {
 		d.comp_dirty = doc_box(d)
 	}
 	d.comp_lazy = false
+	chan_sync(d) // a channel painted since: into its layer first
 	b := box_clip(d.comp_dirty, d.w, d.h)
 	if box_empty(b) {
 		return
 	}
-	composite_box_fast(d, d.layers[:], b, d.comp, frame_flat_id(d, d.active_frame))
+	if chan_showing_raw(d) {
+		chan_fill_raw(d, b, d.comp)
+	} else {
+		composite_box_fast(d, d.layers[:], b, d.comp, frame_flat_id(d, d.active_frame))
+	}
 	d.comp_dirty = {}
 	d.tex_dirty = box_union(d.tex_dirty, b)
 }

@@ -141,6 +141,8 @@ MACRO_CMDS := [?]Macro_Cmd {
 	{.Layer_Via_Copy, "Layer", "Layer via Copy"},
 	{.Layer_Via_Cut, "Layer", "Layer via Cut"},
 	{.Layer_Lock_Alpha, "Layer", "Lock Transparency"},
+	{.Layer_Channels, "Layer", "Expose Color Channels"},
+	{.Channels_Raw, "Layer", "Raw Channel View"},
 	{.Mask_Add, "Layer", "Add Layer Mask"},
 	{.Mask_From_Sel, "Layer", "Mask from Selection"},
 	{.Mask_Delete, "Layer", "Delete Mask"},

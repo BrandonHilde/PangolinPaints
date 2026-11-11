@@ -116,6 +116,10 @@ cmd_help :: proc(c: Cmd) -> string {
 		return "Copy the selection to a new layer above the active one. With no selection this duplicates the layer."
 	case .Layer_Via_Cut:
 		return "Move the selection to a new layer above the active one. With no selection this duplicates the layer."
+	case .Layer_Channels:
+		return "List the active layer's red, green, blue and alpha channels under the layers. Click one to paint on it alone: brushes put the brightness of the color into it, and the eraser sets it to 0."
+	case .Channels_Raw:
+		return "Raw shows the channel you are painting on the canvas in grey: white is 255, black 0. Image shows the picture as usual while you paint the channel."
 	case .Layer_Lock_Alpha:
 		return "Keep the layer's transparency as it is: paint only lands where the layer already has pixels."
 	case .Mask_Add:

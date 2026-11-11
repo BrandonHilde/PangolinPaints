@@ -19,13 +19,14 @@ import "core:strings"
 // through, 4 closed in the list). Older files load with every layer at the top level.
 // Version 7 adds live layer effects after the group flags: u8 count, per effect: str macro name  u8 on  str the macro
 // (its .pmacro text, so the painting opens elsewhere: a macro the library lacks is added to it).
+// Version 8 writes that macro text as u32 length + bytes: as a str it was cut off at 255 bytes.
 // a u32 span_id after a layer's blend mode, and a layer's tiles [and mask] are written once per frame, or once for a text or vector layer, which spans
 // them all. Method 2 is a tile written before (u32 size = its number, counting in file order), so tiles
 // that frames share stay shared, on disk and after loading.
 // ---------------------------------------------------------------------------
 
 PPNT_MAGIC :: "PPNT"
-PPNT_VERSION :: 7 // 2: text layers, 3: text character colours, 4: vector layers, 5: frames, 6: layer groups, 7: layer effects
+PPNT_VERSION :: 8 // 2: text layers, 3: text character colours, 4: vector layers, 5: frames, 6: layer groups, 7: layer effects, 8: whole macro text
 
 GF_GROUP :: 1
 GF_PASS_THROUGH :: 2
@@ -167,7 +168,10 @@ project_encode :: proc(d: ^Doc) -> []u8 {
 			wstr(&w, name_str(&f.name))
 			w8(&w, f.on ? 1 : 0)
 			m := macro_find(name_str(&f.name))
-			wstr(&w, m != nil ? macro_to_text(m) : "")
+			// a macro's text can be any length (a name is at most 255 bytes, so wstr is enough for those)
+			text := m != nil ? macro_to_text(m) : ""
+			w32(&w, u32(len(text)))
+			append(&w.b, ..transmute([]u8)text)
 		}
 		for f in 0 ..< (layer_spans(&l) ? 1 : len(d.frames)) {
 			pix, mask := &l.pix, &l.mask
@@ -260,7 +264,18 @@ project_decode :: proc(data: []u8) -> (d: ^Doc, ok: bool) {
 			for k in 0 ..< n {
 				name := rstr(&r)
 				on := r8(&r) != 0
-				text := rstr(&r)
+				text: string
+				if ver >= 8 {
+					n := int(r32(&r))
+					if n < 0 || r.pos + n > len(r.d) {
+						r.bad = true
+					} else {
+						text = string(r.d[r.pos:r.pos + n])
+						r.pos += n
+					}
+				} else {
+					text = rstr(&r) // up to version 7 the text was cut off at 255 bytes
+				}
 				if k >= MAX_LAYER_FX || r.bad do continue
 				name_set(&l.fx[l.fx_n].name, name)
 				l.fx[l.fx_n].on = on

@@ -349,6 +349,8 @@ main :: proc() {
 		ui.input_layer = (dialog.kind != .None ? 2 : 0) + (popup.open ? 1 : 0)
 
 		for p in gfx.dropped {
+			// a dialog is working on the painting in front (an effect's preview, a question about it): it stays there
+			if dialog.kind != .None do break
 			// Shift while dropping places images as layers in the open painting
 			if ui.shift && lower_ext(p) != ".ppnt" && lower_ext(p) != ".gpl" {
 				place_image(p)

@@ -120,6 +120,8 @@ recent_push :: proc(c: Color) {
 
 add_doc :: proc(d: ^Doc) {
 	stop_playback()
+	// a transform, text or crop still open belongs to the painting that was in front
+	if doc != nil do tools_commit_pending()
 	append(&docs, d)
 	doc = d
 	d.view_init = false

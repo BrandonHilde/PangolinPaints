@@ -108,7 +108,7 @@ Drag images or projects onto the window to open them; hold Shift while dropping 
   setting), BMP, TGA, QOI, TIFF, optionally scaled. Multiple documents in tabs, unsaved-change prompts.
   New paintings start with a clear layer selected above the background.
 - **Photoshop and Krita files**: open `.psd` / `.psb` and `.kra` with their layers (names, opacity, blend modes,
-  visibility, layer masks; 8 or 16 bit). Groups are flattened into the layer list; Krita vector, fill and filter
+  visibility, layer masks; 8 or 16 bit) and their groups. Krita vector, fill and filter
   layers have no pixels in the file and are left out.
 - **Big canvases**: pixels live in 64x64 copy-on-write tiles, so undo (100 steps) only stores what changed and
   painting stays fast on 4000x3000 images. Navigator, rule-of-thirds guide, smooth zooming with mipmaps.
@@ -173,7 +173,9 @@ take it on), `--size WxH`, `--scale N` (UI scale in percent for this run: not sa
 `--clicks "frame:x,y;..."` (left clicks at window pixels on those frames, for checking the interface with `--shot`),
 `--hover "frame:x,y"` (rests the pointer there from that frame on, for checking tooltips with `--shot` and a later `--shot-frame`),
 `--bench` (timings on a 4000x3000 canvas), `--brush-sheet out.png` (one stroke per preset),
-`--icon-sheet out.png` (every icon at each size and UI scale, and the logo).
+`--icon-sheet out.png` (every icon at each size and UI scale, and the logo),
+`--crop x,y,w,h` (the part of the window `--shot` saves), `--type "frame:text;frame:ENTER"` (typing on those frames, for checking
+text fields with `--shot`), `--convert in out` (opens one file, saves it as the other and exits, with no window).
 
 Icons are SVG files in `assets/icons` (24 x 24, drawn in `currentColor` with round-capped 2 px strokes) and the logo is
 `assets/icon`; both are built into the executable and rasterised at the screen's resolution by `src/svg.odin`.

@@ -31,7 +31,9 @@ native_dialog :: proc(save: bool, title: string, filters: []Filter, def_ext, ini
 	when ODIN_OS == .Windows {
 		return native_dialog_windows(save, title, filters, def_ext, initial, dir)
 	} else {
-		return native_dialog_zenity(save, title, filters, def_ext, initial, dir)
+		p, pok := native_dialog_zenity(save, title, filters, def_ext, initial, dir)
+		if pok && save do p = path_default_ext(p, def_ext)
+		return p, pok
 	}
 }
 
@@ -134,6 +136,7 @@ when ODIN_OS != .Windows {
 				return clone_trim(out), true
 			}
 		}
+		set_status("No file picker could be started: install zenity or kdialog")
 		return "", false
 	}
 

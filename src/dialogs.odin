@@ -670,7 +670,8 @@ dlg_confirm :: proc() {
 		if file_save(d, false) {
 			proceed = true
 		} else {
-			dialog_close()
+			// a save that failed has put its message up in place of this dialog: that one stays
+			if dialog.kind == .Confirm do dialog_close()
 			return
 		}
 	}

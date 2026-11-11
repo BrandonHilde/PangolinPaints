@@ -269,7 +269,11 @@ selftest :: proc() -> int {
 		layer_fx_remove(d, 2)
 		fx_update(d)
 		check(d.fx_cache[Fx_Key{uid, d.active_frame}].ok, "the effects run again without it")
+		// a macro longer than 255 bytes is saved whole
+		long := macro_find("Fx soft")
+		macro_set_arg(long, macro_node(long, macro_start(long)), "note", strings.repeat("n", 300, context.temp_allocator))
 		data := project_encode(d)
+		check(len(macro_to_text(long)) > 300 && strings.contains(string(data), macro_to_text(long)), "an effect's macro is saved whole, however long")
 		d2, ok2 := project_decode(data)
 		check(ok2 && d2.layers[1].fx_n == 2 && name_str(&d2.layers[1].fx[0].name) == "Fx invert" && d2.layers[1].fx[0].on, "effects are saved with the painting")
 		if ok2 do doc_destroy(d2)

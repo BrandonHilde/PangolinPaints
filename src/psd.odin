@@ -446,7 +446,10 @@ psd_read_layers :: proc(r: ^Psd_Reader, nd: ^Doc, w, h, depth, mode: int) {
 		cp: [4][]u8
 		for c in 0 ..< nc do cp[c] = find(L, chan_data[:], c)
 		alpha := find(L, chan_data[:], -1)
-		if cp[nc - 1] == nil do continue
+		// a layer with a color channel that couldn't be read is left out
+		whole := true
+		for c in 0 ..< nc do if cp[c] == nil do whole = false
+		if !whole do continue
 		l := layer_make(L.name, w, h)
 		l.blend, l.opacity, l.visible = L.blend, u8(L.opacity), !L.hidden
 		buf := make([]Color, lw * lh, context.temp_allocator)

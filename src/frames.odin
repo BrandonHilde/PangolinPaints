@@ -259,7 +259,8 @@ doc_frame_from_visible :: proc(d: ^Doc) {
 	frame_insert_after_current(d, Frame{duration = d.frames[d.active_frame].duration, flat = span_next_id(d)}, nil)
 	plain :: proc(l: ^Layer) -> bool {
 		// any mask is reveal-all on the new frame, so it changes nothing
-		return !layer_spans(l) && l.visible && !l.locked && l.opacity == 255 && l.blend == .Normal
+		// a group shows its layers, not pixels of its own; effects and a group around the layer would change the look
+		return !l.is_group && l.fx_n == 0 && l.parent == 0 && !layer_spans(l) && l.visible && !l.locked && l.opacity == 255 && l.blend == .Normal
 	}
 	target := -1
 	if plain(&d.layers[d.active_layer]) {
@@ -274,6 +275,7 @@ doc_frame_from_visible :: proc(d: ^Doc) {
 	}
 	if target < 0 {
 		append(&d.layers, layer_make("Visible", d.w, d.h))
+		layers_give_ids(d) // effects and groups find a layer by its id
 		target = len(d.layers) - 1
 	}
 	tiles_from_buf(&d.layers[target].pix, d.w, d.h, flat_pix, {})

@@ -1,187 +1,95 @@
-# Pangolin Paints
+<p align="center">
+  <img src="assets/icon/icon_128.png" width="96" alt="Pangolin Paints icon">
+</p>
 
-*Brushstrokes, scale by scale.* Written in Odin with SDL3.
+<h1 align="center">Pangolin Paints</h1>
 
-A painting, oil painting and image editing app, and the sibling of
-[Pangolin Pixels](https://github.com/BrandonHilde/PangolinPixels): same look and feel,
-built for big painted canvases instead of pixel art.
+<p align="center"><em>Brushstrokes, scale by scale.</em></p>
 
-Build with `./build.sh` on Linux/macOS or `build.bat` on Windows. [OdinUI](https://gitlab.com/patrick.pixelshuffle/odinui) and
-the code shared with the other Pangolin tools are git submodules in `libs/odinui` and `libs/shared`: clone with
-`git clone --recursive`, or let the build scripts fetch them on the first build (`git submodule update --init`). The build
-scripts copy the shared code into `src` as `shared_*.odin`. To build by hand: `sh libs/shared/sync.sh`, then
-`odin build src -out:PangolinPaints -o:speed -collection:odinui=libs/odinui`.
-To update to the newest version, run `update.bat` (Windows) or `./update.sh`: it pulls the latest commits and moves the
-submodules to the versions they expect (a plain `git pull` leaves the submodules where they were, and the build then
-fails). `build.bat` / `./build.sh` on their own build whatever is there now.
-On Linux, `./install.sh` builds the program and installs it for your account: in `~/.local/opt/pangolin/PangolinPaints`, with
-its own settings, workspaces and macros (apart from this folder's build), and in the application list with its icon.
-Run it again to update, or `./install.sh --uninstall` to remove it. To install a build made elsewhere (for another
-account on the computer, or without Odin), put `install.sh`, the `PangolinPaints` program and `assets/icon` in one folder and
-run `sh install.sh --no-build` there.
-Drag images or projects onto the window to open them; hold Shift while dropping to import an image as a layer.
-`PangolinPaints --selftest` runs the headless test suite (on Windows use `PangolinPaints-console.exe`, since the GUI build has no console).
+<p align="center">
+  A painting app with natural brushes and real wet oil paint, plus the photo tools you'd expect.<br>
+  Free and open source, for Windows, macOS and Linux.
+</p>
 
-## Features
-- **Natural brushes**: size up to 1000 px, opacity, flow, hardness, spacing, smoothing (stabiliser), scatter,
-  size jitter, paper grain, angle and roundness; round, bristle, chalk and flat tips; airbrush build-up;
-  simulated pressure (tapered ends or stroke speed) driving size and/or opacity; Shift+click for straight strokes.
-  Presets: hard/soft round, airbrush, pencil, ink pen, marker, chalk, charcoal, watercolor wash, bristle,
-  calligraphy, splatter.
-- **Oil paint**: a wet brush that carries a reservoir of paint, deposits it, picks up color from the canvas
-  (wetness), runs dry over distance (paint load) and leaves bristle streaks. Presets: oil round, oil flat,
-  wet blender, dry brush, palette knife, thick impasto, detail sable.
-- **Blending tools**: smudge (soft, hard, bristle), blur / sharpen, dodge / burn (shadows, midtones, highlights),
-  clone stamp (Alt+click source, aligned, optionally sampling all layers), eraser presets.
-- **Your own presets**: every brush tool, the text tool, Smart Select (curves included) and every effect dialog has a
-  preset list. Its `...` menu saves the current settings as a preset of your own, and updates, reverts, renames or
-  deletes one. Picking a preset again puts its settings back. The Brush Settings window (F5) has the preset list too,
-  with Save as Preset and Delete Preset buttons, and the Smart Select settings window has it with a Save as Preset
-  button. Your presets are kept in `paints.cfg`, and tool groups and workspaces remember each tool's preset by name.
-- **Line / polygon tool** (L): drag for a line, or click points and double click / Enter to finish; click the first
-  point to close the shape and optionally fill it. Shift keeps segments at 15 degree steps. Painted with its own
-  brush settings (size, hardness, taper, ...).
-- **Grid**: a resizable grid (View > Grid, Ctrl+;) that every tool snaps to while Snap to Grid (Ctrl+Shift+;) is on:
-  brush strokes, lines, selections, gradients, crops, moves, transforms and text placement. Snapping applies once a
-  tool is pressed; hovering stays free, so transform handles are always reachable. The grid can be rotated.
-- **Mirror painting**: any number of mirror lines through a movable centre (Move Center, then click or drag on the
-  canvas), at any angle: one mirror reflects left / right, more make kaleidoscope / snowflake symmetry. Applies to
-  every brush tool and the line tool, including filled shapes.
-- **Perspective guides** (View > Perspective Guides): a horizon and 1, 2 or 3 vanishing points with guide lines
-  fanning out across the canvas. While their settings are shown, drag a point (or the horizon, which carries its
-  points) to move it; points out of sight wait at the edge of the view. With Snap on, brush strokes and the line tool
-  pick the guide closest to the way they set off and keep to it (verticals, and in 1-point horizontals, count too).
-- **Animation**: a painting can have any number of frames, each layer holding its own pixels and mask per frame; text
-  and vector layers span all frames. A Frame menu, a timeline (View > Timeline) with a layers-by-frames grid, playback,
-  tags (named ranges that play forward, backward or back and forth) and onion skin. **New Frame from Visible** adds a
-  frame holding one flat image of everything visible, looking exactly the same, on a plain layer. Duplicate frames share
-  their pixels and take no extra memory until painted on. Playback draws from a cache of composited frames at the view's
-  size, so even 12 MP paintings play smoothly after the first time round. Export a PNG sequence or an animated GIF of all
-  frames, or of the tag picked for playback.
-- **File browser** (View > File Browser): thumbnails of a folder's images and projects (PNG, JPG, WebP, BMP, TGA, GIF,
-  QOI, TIFF, PSD, Krita, `.ppnt`). Drag an image onto the canvas to add it as a layer at that point, at its own size. A
-  project dropped on the canvas, anything dropped on the tab bar, or a double-click opens it.
-- **Tiled Mode** (View > Tiled Mode): the canvas repeats around itself, and strokes, selections and moves wrap across its
-  edges, for textures that tile without a visible seam.
-- **Grid, Mirror, Perspective and Tiled Mode switches** can be added to tool groups (the group's + button) to turn them on
-  and off with a click or the group's hotkey. The options bar shows whatever was picked last: clicking a switch shows its
-  settings there (clicking it again turns it off), and picking or using a tool brings that tool's settings back.
-- **Tool groups** hold tools, switches, colors or brush blend modes. The default groups are Paint, Draw, Select, Transform
-  and View, on the keys 1 to 5. Right-click a group's header to rename or remove it, and click its key to change it.
-- **Tooltips**: rest the pointer on any control for its name and shortcut, and a moment longer for what it does and which
-  modifier keys it takes. When there is no message, the left of the status bar shows the current tool, its key and a hint.
-- **Image editing**
-  - Adjust: auto contrast, brightness/contrast, levels, curves (per channel, with histogram), exposure,
-    shadows/highlights, hue/saturation (all colors or one range, such as the blues; colorize), vibrance, color balance,
-    temperature/tint, desaturate, sepia, invert, posterize, threshold.
-  - Filter: Gaussian/box/motion/radial blur, unsharp mask, oil paint, painterly (Kuwahara), canvas texture, emboss,
-    find edges, add noise, median, pixelate, vignette.
-  - All with live preview, applied through the (soft) selection to the active layer or mask.
-  - **Non-destructive develop** (Macros > Node Editor, Develop category): Exposure / Contrast (with highlights and
-    shadows), Tone Curve (RGB, luminosity or one channel) and HSL Color (all colors, or one range such as the blues).
-    Give a macro of them a layer Trigger on its Start node and add it to a layer: the layer keeps its pixels and shows
-    the result, and changes in the node editor show on the canvas as you make them. Each node's **Apply** says where it
-    works: *Everywhere*; by *Curve* (a strength for each tone, drawn on the node, to touch only the shadows, say); or
-    *Layer pixels*, for local adjustments: the layer becomes a mask you paint on, and the node changes the picture
-    under it wherever you paint, the paint itself not showing. Amount fades a node, Invert flips its mask, and
-    **Show mask** paints where it works red, to see exactly what it picks. A Curve value node feeds one curve to several nodes.
-  - Image size (bicubic / bilinear / nearest), canvas size with anchor, crop tool and crop to selection, trim,
-    rotate 90/180 or any angle, flip, free transform (scale, stretch, rotate, move).
-- **Selections**: rectangle, ellipse, lasso (anti-aliased), magic wand (tolerance, contiguous, all layers),
-  smart select (a wand with curves for tolerance by hue and by brightness and a soft-edge falloff, plus edge bias
-  that stops the area at sharp edges and/or snaps its outline onto them; its settings window updates the last
-  selection live); add / subtract / intersect; feather, grow, shrink, invert, select layer opacity; selections soften every tool.
-- **Text**: a text tool (T) that makes editable text layers: click the canvas and type. Pick any bundled or installed
-  font, size, color, alignment, line and letter spacing. Text stays live (click it to edit, Move tool repositions it),
-  is saved in `.ppnt` projects, and turns into ordinary pixels the moment you paint or filter the layer.
-  Select text (drag, Shift+arrows, double click, Ctrl+A) and pick any color to color just that part.
-  Layer > Convert Text to Path (or right-click the layer) makes a vector layer from the glyph outlines: moving, transforming and resizing it
-  redraws the outlines, so it stays sharp at any size.
-- **Pen tablets**: pressure, tilt and the eraser end work with Wacom/Huion-style tablets on Windows (Windows Ink) and
-  Linux (SDL pen events). Set `PANGOLIN_PEN_DEBUG=1` on Linux to print pen events.
-- **Layers**: unlimited layers with opacity and 17 blend modes (multiply, screen, overlay, soft/hard light,
-  dodge/burn, hue, saturation, color, luminosity, ...) plus Erase, which cuts the layer's shape out of everything
-  below it (e.g. knock text out of a painting), lock, lock transparency, layer masks (paint black to hide,
-  white to reveal; from selection; apply or delete), merge down, flatten, layer via copy/cut, thumbnails.
-- **Color**: HSV picker, RGB sliders, hex entry, swatch sets (oil paints, skin tones, earth & sky, pastels, ...),
-  recent colors, GIMP `.gpl` swatch import/export, eyedropper with averaging. Click a color in a toolbar color
-  group, then use the color picker to change that color.
-- **Files**: native `.ppnt` project (all layers, masks, frames and settings, compressed sparse tiles); open PNG / JPG (built-in
-  decoder: progressive, CMYK, EXIF rotation) / WebP / BMP / TGA / GIF / QOI / TIFF; export PNG, JPG (built-in encoder, quality
-  setting), BMP, TGA, QOI, TIFF, optionally scaled. Multiple documents in tabs, unsaved-change prompts.
-  New paintings start with a clear layer selected above the background.
-- **Photoshop and Krita files**: open `.psd` / `.psb` and `.kra` with their layers (names, opacity, blend modes,
-  visibility, layer masks; 8 or 16 bit) and their groups. Krita vector, fill and filter
-  layers have no pixels in the file and are left out.
-- **Big canvases**: pixels live in 64x64 copy-on-write tiles, so undo (100 steps) only stores what changed and
-  painting stays fast on 4000x3000 images. Navigator, rule-of-thirds guide, smooth zooming with mipmaps.
+<p align="center">
+  <a href="https://github.com/BrandonHilde/PangolinPaints/releases"><strong>Download the beta</strong></a>
+  ·
+  <a href="GUIDE.md">Guide</a>
+  ·
+  <a href="DEVELOPING.md">For developers</a>
+</p>
 
-Graphics tablets (Windows Ink: Wacom, Huion, Surface, ...): real pen pressure drives size and/or opacity for every brush
-out of the box (unless its Pressure setting is turned Off), and the eraser end of the pen erases with the brush / oil
-tools. The mouse paints at full pressure, or with simulated pressure (taper / speed) if a brush is set to it. If pressure doesn't register, make sure Windows Ink is
-enabled in the Wacom driver's tablet properties.
+![Pangolin Paints with an oil painting of a pangolin open](docs/screenshots/paints-editor.png)
 
-## Shortcuts (F1 in the app shows the full list)
-| | |
-|-|-|
-| B / N / R / Shift+R / E | brush / oil paint / smudge / blur / eraser |
-| O / S / G / Shift+G / I | dodge & burn / clone / bucket / gradient / eyedropper |
-| M, Shift+M / Q / W, Shift+W | marquee / ellipse marquee / lasso / magic wand, smart select |
-| V / Shift+T or Ctrl+T / C / H / Z | move / free transform / crop / hand / zoom |
-| L | line / polygon (Enter finishes, Backspace removes a point, Esc cancels) |
-| Ctrl+; / Ctrl+Shift+; | grid / snap to grid |
-| Shift on a slider | move in chunks: angles by 5 degrees, sizes along 1, 2, 3, 5, 10, 15, 20, 25, 50 ..., others by about 5% |
-| [ ] / Shift+1-9, Shift+0 | brush size / opacity 10%-90%, 100% |
-| 1-5 | the default tool groups: press again to step through a group |
-| X / D | swap colors / default colors |
-| Space (hold) / Alt (hold) | pan / eyedropper |
-| Ctrl+L / Ctrl+M / Ctrl+U / Ctrl+B | levels / curves / hue-saturation / color balance |
-| Ctrl+Shift+N / Ctrl+J / Ctrl+E | new layer / layer via copy / merge down |
-| Ctrl+Shift+E / Ctrl+D / Del | export / deselect / delete the selected pixels |
-| T | text tool (Esc or Ctrl+Enter finishes typing) |
-| / and \ | lock transparency / paint on the layer mask |
-| Ctrl+0 / Ctrl+1 / wheel | fit / 100% / zoom |
-| Enter / Esc | apply / cancel transform or crop |
-| Alt+N / , / . | new frame / previous frame / next frame |
-| Shift+, or Home / Shift+. or End | first frame / last frame |
-| Enter | play or pause, when nothing else is using it |
-| Alt+O | onion skin |
+## Download
 
-## Customising the interface
-View > UI Scale sets the size of the whole interface: Auto, the default, sizes it to the screen the window is on (150% at
-1080p, 200% at 1440p, 300% at 4K), or a slider from 50% to 500% stays at the size you choose. The window never limits it:
-the panels have a `max-width` in the theme, so the canvas stays in view at any size. Edit > Preferences has the transparency
-display, the pixel grid and the navigator.
+**Version 0.9.0-beta.** This is a beta: it's ready to use, and we'd love to hear what goes wrong.
 
-The interface is laid out and styled with CSS through [OdinUI](https://gitlab.com/patrick.pixelshuffle/odinui). The
-default theme is [assets/ui/theme.css](assets/ui/theme.css). To change it, create `theme.css` next to the executable:
-it is applied on top of the default theme and reloaded while the program runs, so it only needs what you change.
+| Your computer | Download |
+|---|---|
+| **Windows** 10 or 11 | [PangolinPaints-0.9.0-beta-windows.zip](https://github.com/BrandonHilde/PangolinPaints/releases/download/v0.9.0-beta/PangolinPaints-0.9.0-beta-windows.zip) |
+| **macOS** 11 or later, Apple silicon (M1 or newer) | [PangolinPaints-0.9.0-beta-macos.zip](https://github.com/BrandonHilde/PangolinPaints/releases/download/v0.9.0-beta/PangolinPaints-0.9.0-beta-macos.zip) |
+| **Linux**, 64-bit (Ubuntu 22.04, Fedora 36, Debian 12 or newer) | [PangolinPaints-0.9.0-beta-linux.tar.gz](https://github.com/BrandonHilde/PangolinPaints/releases/download/v0.9.0-beta/PangolinPaints-0.9.0-beta-linux.tar.gz) |
 
-```css
-:root   { --accent: #6aa8ff; --accent-tint: rgba(106, 168, 255, 0.22); --panel: #1f2430; }
-#body   { flex-direction: row-reverse; }   /* tools on the right, color and layers on the left */
-#right  { width: 300px; }
-optionsbar slider-bar { width: 110px; }    /* wider sliders in the options bar */
-```
+All versions are on the [releases page](https://github.com/BrandonHilde/PangolinPaints/releases).
 
-The color variables in `:root` also drive the parts the program draws itself (canvas surroundings, layer list,
-dialogs, menus). Icons are a font (`font-family: icons`), so `color` and `font-size` style them like text.
+### Getting started
 
-## Developer flags
-`--selftest` (tests), `--demo` (sample painting), `--shot file.png` (screenshot after a few frames), `--shot-frame N` (the frame to
-take it on), `--size WxH`, `--scale N` (UI scale in percent for this run: not saved),
-`--menu N` (opens menu N), `--dialog N` (opens dialog N), `--demo-frames N` (the sample painting with N frames and the timeline showing),
-`--files folder` (opens the file browser there, as the system's folder picker can't be scripted),
-`--drag "frame:x0,y0,x1,y1;..."` (presses at the first point on that frame, moves to the second and releases, for checking drags),
-`--clicks "frame:x,y;..."` (left clicks at window pixels on those frames, for checking the interface with `--shot`),
-`--hover "frame:x,y"` (rests the pointer there from that frame on, for checking tooltips with `--shot` and a later `--shot-frame`),
-`--bench` (timings on a 4000x3000 canvas), `--brush-sheet out.png` (one stroke per preset),
-`--icon-sheet out.png` (every icon at each size and UI scale, and the logo),
-`--crop x,y,w,h` (the part of the window `--shot` saves), `--type "frame:text;frame:ENTER"` (typing on those frames, for checking
-text fields with `--shot`), `--convert in out` (opens one file, saves it as the other and exits, with no window).
+1. **Unzip** the download anywhere you like. Nothing needs installing.
+2. **Open** `PangolinPaints.exe` (Windows), `Pangolin Paints.app` (macOS) or `PangolinPaints` (Linux).
+3. **The first time only**, your computer may want to check with you, because the beta isn't signed yet:
+   - **Windows:** "Windows protected your PC". Click **More info**, then **Run anyway**.
+   - **macOS:** it says the app can't be opened. Go to **System Settings > Privacy & Security** and click
+     **Open Anyway**. On macOS 14 or earlier, right-click the app and choose **Open**.
 
-Icons are SVG files in `assets/icons` (24 x 24, drawn in `currentColor` with round-capped 2 px strokes) and the logo is
-`assets/icon`; both are built into the executable and rasterised at the screen's resolution by `src/svg.odin`.
+Each download has an `INSTALL.txt` with the details, including where your settings are kept.
+
+## What you can do
+
+- **Paint with natural brushes**: pencil, ink, marker, chalk, charcoal, watercolor wash, airbrush, calligraphy and
+  more, each with size, hardness, texture and smoothing you can tune and save as your own presets.
+- **Paint in wet oils.** The oil brushes carry paint, pick up the color already on the canvas, run dry and leave
+  bristle streaks, with presets from a detail sable to a palette knife and thick impasto.
+- **Blend and touch up** with smudge, blur, sharpen, dodge, burn and a clone stamp.
+- **Use layers** with 17 blend modes, layer masks, groups, editable text and live effects.
+- **Edit photos**: levels, curves, hue and saturation, color balance, blurs, sharpening and more, all with a live
+  preview, plus selections with feathering and a smart select tool that follows edges.
+- **Paint on a single color channel.** Right-click a layer and choose **Expose Color Channels** to paint on its red,
+  green, blue or alpha alone, and see that channel in grey with **Raw** view.
+- **Get help with composition** from mirror symmetry (kaleidoscopes too), perspective guides with up to three
+  vanishing points, a grid, and seamless tiling for textures.
+- **Animate** a painting frame by frame, with onion skin, playback and animated GIF export.
+- **Draw with a tablet.** Pen pressure, tilt and the eraser end work with Wacom, Huion and similar tablets.
+- **Open your files**, including Photoshop (`.psd`) and Krita (`.kra`) files with their layers, along with PNG, JPG,
+  WebP, TIFF and more. Export to PNG, JPG, TIFF, BMP, TGA and QOI.
+
+![Oil paint strokes in Pangolin Paints](docs/screenshots/paints-oil-paint.png)
+
+![Painting on the red channel alone, shown in Raw view](docs/screenshots/paints-color-channels.png)
+
+Every control tells you what it does when you rest the pointer on it, and **F1** lists all the shortcuts. The
+[full guide](GUIDE.md) covers everything in detail.
+
+## The Pangolin family
+
+Three editors with the same look and feel, so what you learn in one carries over to the others.
+
+| | | |
+|---|---|---|
+| <img src="https://raw.githubusercontent.com/BrandonHilde/PangolinPixels/main/assets/icon/icon_64.png" width="48" alt=""> | **[Pangolin Pixels](https://github.com/BrandonHilde/PangolinPixels)**: pixel art and sprite animation | [Download](https://github.com/BrandonHilde/PangolinPixels/releases) |
+| <img src="https://raw.githubusercontent.com/BrandonHilde/PangolinPaints/main/assets/icon/icon_64.png" width="48" alt=""> | **[Pangolin Paints](https://github.com/BrandonHilde/PangolinPaints)**: painting, oil paint and photo editing | [Download](https://github.com/BrandonHilde/PangolinPaints/releases) |
+| <img src="https://raw.githubusercontent.com/BrandonHilde/PangolinScales/main/assets/icon/icon_64.png" width="48" alt=""> | **[Pangolin Scales](https://github.com/BrandonHilde/PangolinScales)**: vector drawings (SVG) and fonts | [Download](https://github.com/BrandonHilde/PangolinScales/releases) |
+
+## Found a problem? Have an idea?
+
+[Open an issue](https://github.com/BrandonHilde/PangolinPaints/issues). Please say which computer you're on and the
+version from **Help > About**. A screenshot helps a lot.
+
+## For developers
+
+Pangolin Paints is written in [Odin](https://odin-lang.org) with SDL3. [DEVELOPING.md](DEVELOPING.md) covers building
+it, running the tests, and how the release builds are made.
 
 ## License
+
 BSD 3-Clause. See [LICENSE](LICENSE).

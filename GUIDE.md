@@ -1,0 +1,158 @@
+# Pangolin Paints: the full guide
+
+Everything Pangolin Paints does, in detail. For a quick introduction and the downloads, see the [README](README.md);
+for building it yourself, [DEVELOPING.md](DEVELOPING.md).
+
+## Features
+- **Natural brushes**: size up to 1000 px, opacity, flow, hardness, spacing, smoothing (stabiliser), scatter,
+  size jitter, paper grain, angle and roundness; round, bristle, chalk and flat tips; airbrush build-up;
+  simulated pressure (tapered ends or stroke speed) driving size and/or opacity; Shift+click for straight strokes.
+  Presets: hard/soft round, airbrush, pencil, ink pen, marker, chalk, charcoal, watercolor wash, bristle,
+  calligraphy, splatter.
+- **Oil paint**: a wet brush that carries a reservoir of paint, deposits it, picks up color from the canvas
+  (wetness), runs dry over distance (paint load) and leaves bristle streaks. Presets: oil round, oil flat,
+  wet blender, dry brush, palette knife, thick impasto, detail sable.
+- **Blending tools**: smudge (soft, hard, bristle), blur / sharpen, dodge / burn (shadows, midtones, highlights),
+  clone stamp (Alt+click source, aligned, optionally sampling all layers), eraser presets.
+- **Your own presets**: every brush tool, the text tool, Smart Select (curves included) and every effect dialog has a
+  preset list. Its `...` menu saves the current settings as a preset of your own, and updates, reverts, renames or
+  deletes one. Picking a preset again puts its settings back. The Brush Settings window (F5) has the preset list too,
+  with Save as Preset and Delete Preset buttons, and the Smart Select settings window has it with a Save as Preset
+  button. Your presets are kept in `paints.cfg`, and tool groups and workspaces remember each tool's preset by name.
+- **Line / polygon tool** (L): drag for a line, or click points and double click / Enter to finish; click the first
+  point to close the shape and optionally fill it. Shift keeps segments at 15 degree steps. Painted with its own
+  brush settings (size, hardness, taper, ...).
+- **Grid**: a resizable grid (View > Grid, Ctrl+;) that every tool snaps to while Snap to Grid (Ctrl+Shift+;) is on:
+  brush strokes, lines, selections, gradients, crops, moves, transforms and text placement. Snapping applies once a
+  tool is pressed; hovering stays free, so transform handles are always reachable. The grid can be rotated.
+- **Mirror painting**: any number of mirror lines through a movable centre (Move Center, then click or drag on the
+  canvas), at any angle: one mirror reflects left / right, more make kaleidoscope / snowflake symmetry. Applies to
+  every brush tool and the line tool, including filled shapes.
+- **Perspective guides** (View > Perspective Guides): a horizon and 1, 2 or 3 vanishing points with guide lines
+  fanning out across the canvas. While their settings are shown, drag a point (or the horizon, which carries its
+  points) to move it; points out of sight wait at the edge of the view. With Snap on, brush strokes and the line tool
+  pick the guide closest to the way they set off and keep to it (verticals, and in 1-point horizontals, count too).
+- **Animation**: a painting can have any number of frames, each layer holding its own pixels and mask per frame; text
+  and vector layers span all frames. A Frame menu, a timeline (View > Timeline) with a layers-by-frames grid, playback,
+  tags (named ranges that play forward, backward or back and forth) and onion skin. **New Frame from Visible** adds a
+  frame holding one flat image of everything visible, looking exactly the same, on a plain layer. Duplicate frames share
+  their pixels and take no extra memory until painted on. Playback draws from a cache of composited frames at the view's
+  size, so even 12 MP paintings play smoothly after the first time round. Export a PNG sequence or an animated GIF of all
+  frames, or of the tag picked for playback.
+- **File browser** (View > File Browser): thumbnails of a folder's images and projects (PNG, JPG, WebP, BMP, TGA, GIF,
+  QOI, TIFF, PSD, Krita, `.ppnt`). Drag an image onto the canvas to add it as a layer at that point, at its own size. A
+  project dropped on the canvas, anything dropped on the tab bar, or a double-click opens it.
+- **Tiled Mode** (View > Tiled Mode): the canvas repeats around itself, and strokes, selections and moves wrap across its
+  edges, for textures that tile without a visible seam.
+- **Grid, Mirror, Perspective and Tiled Mode switches** can be added to tool groups (the group's + button) to turn them on
+  and off with a click or the group's hotkey. The options bar shows whatever was picked last: clicking a switch shows its
+  settings there (clicking it again turns it off), and picking or using a tool brings that tool's settings back.
+- **Tool groups** hold tools, switches, colors or brush blend modes. The default groups are Paint, Draw, Select, Transform
+  and View, on the keys 1 to 5. Right-click a group's header to rename or remove it, and click its key to change it.
+- **Tooltips**: rest the pointer on any control for its name and shortcut, and a moment longer for what it does and which
+  modifier keys it takes. When there is no message, the left of the status bar shows the current tool, its key and a hint.
+- **Image editing**
+  - Adjust: auto contrast, brightness/contrast, levels, curves (per channel, with histogram), exposure,
+    shadows/highlights, hue/saturation (all colors or one range, such as the blues; colorize), vibrance, color balance,
+    temperature/tint, desaturate, sepia, invert, posterize, threshold.
+  - Filter: Gaussian/box/motion/radial blur, unsharp mask, oil paint, painterly (Kuwahara), canvas texture, emboss,
+    find edges, add noise, median, pixelate, vignette.
+  - All with live preview, applied through the (soft) selection to the active layer or mask.
+  - **Non-destructive develop** (Macros > Node Editor, Develop category): Exposure / Contrast (with highlights and
+    shadows), Tone Curve (RGB, luminosity or one channel) and HSL Color (all colors, or one range such as the blues).
+    Give a macro of them a layer Trigger on its Start node and add it to a layer: the layer keeps its pixels and shows
+    the result, and changes in the node editor show on the canvas as you make them. Each node's **Apply** says where it
+    works: *Everywhere*; by *Curve* (a strength for each tone, drawn on the node, to touch only the shadows, say); or
+    *Layer pixels*, for local adjustments: the layer becomes a mask you paint on, and the node changes the picture
+    under it wherever you paint, the paint itself not showing. Amount fades a node, Invert flips its mask, and
+    **Show mask** paints where it works red, to see exactly what it picks. A Curve value node feeds one curve to several nodes.
+  - Image size (bicubic / bilinear / nearest), canvas size with anchor, crop tool and crop to selection, trim,
+    rotate 90/180 or any angle, flip, free transform (scale, stretch, rotate, move).
+- **Selections**: rectangle, ellipse, lasso (anti-aliased), magic wand (tolerance, contiguous, all layers),
+  smart select (a wand with curves for tolerance by hue and by brightness and a soft-edge falloff, plus edge bias
+  that stops the area at sharp edges and/or snaps its outline onto them; its settings window updates the last
+  selection live); add / subtract / intersect; feather, grow, shrink, invert, select layer opacity; selections soften every tool.
+- **Text**: a text tool (T) that makes editable text layers: click the canvas and type. Pick any bundled or installed
+  font, size, color, alignment, line and letter spacing. Text stays live (click it to edit, Move tool repositions it),
+  is saved in `.ppnt` projects, and turns into ordinary pixels the moment you paint or filter the layer.
+  Select text (drag, Shift+arrows, double click, Ctrl+A) and pick any color to color just that part.
+  Layer > Convert Text to Path (or right-click the layer) makes a vector layer from the glyph outlines: moving, transforming and resizing it
+  redraws the outlines, so it stays sharp at any size.
+- **Pen tablets**: pressure, tilt and the eraser end work with Wacom/Huion-style tablets on Windows (Windows Ink) and
+  Linux (SDL pen events). Set `PANGOLIN_PEN_DEBUG=1` on Linux to print pen events.
+- **Layers**: unlimited layers with opacity and 17 blend modes (multiply, screen, overlay, soft/hard light,
+  dodge/burn, hue, saturation, color, luminosity, ...) plus Erase, which cuts the layer's shape out of everything
+  below it (e.g. knock text out of a painting), lock, lock transparency, layer masks (paint black to hide,
+  white to reveal; from selection; apply or delete), merge down, flatten, layer via copy/cut, thumbnails.
+- **Color channels**: right-click a layer > **Expose Color Channels** (also in the Layer menu) lists its red, green, blue
+  and alpha channels in a Channels section under the layers. Click one to paint on it alone: every tool works on it as it
+  does on a mask, putting the brightness of the color into that channel, and the eraser sets it to 0 (on alpha, that
+  makes pixels clear while keeping their colors). **Raw** shows the channel being painted in grey on the canvas;
+  **Image** shows the picture as usual. Click the layer itself to paint on all of it again, and the x on the layer's
+  block (or the same menu item) hides its channels.
+- **Color**: HSV picker, RGB sliders, hex entry, swatch sets (oil paints, skin tones, earth & sky, pastels, ...),
+  recent colors, GIMP `.gpl` swatch import/export, eyedropper with averaging. Click a color in a toolbar color
+  group, then use the color picker to change that color.
+- **Files**: native `.ppnt` project (all layers, masks, frames and settings, compressed sparse tiles); open PNG / JPG (built-in
+  decoder: progressive, CMYK, EXIF rotation) / WebP / BMP / TGA / GIF / QOI / TIFF; export PNG, JPG (built-in encoder, quality
+  setting), BMP, TGA, QOI, TIFF, optionally scaled. Multiple documents in tabs, unsaved-change prompts.
+  New paintings start with a clear layer selected above the background.
+- **Photoshop and Krita files**: open `.psd` / `.psb` and `.kra` with their layers (names, opacity, blend modes,
+  visibility, layer masks; 8 or 16 bit) and their groups. Krita vector, fill and filter
+  layers have no pixels in the file and are left out.
+- **Big canvases**: pixels live in 64x64 copy-on-write tiles, so undo (100 steps) only stores what changed and
+  painting stays fast on 4000x3000 images. Navigator, rule-of-thirds guide, smooth zooming with mipmaps.
+
+Graphics tablets (Windows Ink: Wacom, Huion, Surface, ...): real pen pressure drives size and/or opacity for every brush
+out of the box (unless its Pressure setting is turned Off), and the eraser end of the pen erases with the brush / oil
+tools. The mouse paints at full pressure, or with simulated pressure (taper / speed) if a brush is set to it. If pressure doesn't register, make sure Windows Ink is
+enabled in the Wacom driver's tablet properties.
+
+## Shortcuts (F1 in the app shows the full list)
+| | |
+|-|-|
+| B / N / R / Shift+R / E | brush / oil paint / smudge / blur / eraser |
+| O / S / G / Shift+G / I | dodge & burn / clone / bucket / gradient / eyedropper |
+| M, Shift+M / Q / W, Shift+W | marquee / ellipse marquee / lasso / magic wand, smart select |
+| V / Shift+T or Ctrl+T / C / H / Z | move / free transform / crop / hand / zoom |
+| L | line / polygon (Enter finishes, Backspace removes a point, Esc cancels) |
+| Ctrl+; / Ctrl+Shift+; | grid / snap to grid |
+| Shift on a slider | move in chunks: angles by 5 degrees, sizes along 1, 2, 3, 5, 10, 15, 20, 25, 50 ..., others by about 5% |
+| [ ] / Shift+1-9, Shift+0 | brush size / opacity 10%-90%, 100% |
+| 1-5 | the default tool groups: press again to step through a group |
+| X / D | swap colors / default colors |
+| Space (hold) / Alt (hold) | pan / eyedropper |
+| Ctrl+L / Ctrl+M / Ctrl+U / Ctrl+B | levels / curves / hue-saturation / color balance |
+| Ctrl+Shift+N / Ctrl+J / Ctrl+E | new layer / layer via copy / merge down |
+| Ctrl+Shift+E / Ctrl+D / Del | export / deselect / delete the selected pixels |
+| T | text tool (Esc or Ctrl+Enter finishes typing) |
+| / and \ | lock transparency / paint on the layer mask |
+| Ctrl+0 / Ctrl+1 / wheel | fit / 100% / zoom |
+| Enter / Esc | apply / cancel transform or crop |
+| Alt+N / , / . | new frame / previous frame / next frame |
+| Shift+, or Home / Shift+. or End | first frame / last frame |
+| Enter | play or pause, when nothing else is using it |
+| Alt+O | onion skin |
+
+## Customising the interface
+View > UI Scale sets the size of the whole interface: Auto, the default, sizes it to the screen the window is on (150% at
+1080p, 200% at 1440p, 300% at 4K), or a slider from 50% to 500% stays at the size you choose. The window never limits it:
+the panels have a `max-width` in the theme, so the canvas stays in view at any size. Edit > Preferences has the transparency
+display, the pixel grid and the navigator.
+
+The interface is laid out and styled with CSS through [OdinUI](https://gitlab.com/patrick.pixelshuffle/odinui). The
+default theme is [assets/ui/theme.css](assets/ui/theme.css). To change it, create `theme.css` in the settings folder (next to the program when that folder can be written, otherwise your user data folder; `--version` prints which):
+it is applied on top of the default theme and reloaded while the program runs, so it only needs what you change.
+
+```css
+:root   { --accent: #6aa8ff; --accent-tint: rgba(106, 168, 255, 0.22); --panel: #1f2430; }
+#body   { flex-direction: row-reverse; }   /* tools on the right, color and layers on the left */
+#right  { width: 300px; }
+optionsbar slider-bar { width: 110px; }    /* wider sliders in the options bar */
+```
+
+The color variables in `:root` also drive the parts the program draws itself (canvas surroundings, layer list,
+dialogs, menus). Icons are a font (`font-family: icons`), so `color` and `font-size` style them like text.
+
+## License
+BSD 3-Clause. See [LICENSE](LICENSE).

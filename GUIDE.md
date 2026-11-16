@@ -41,7 +41,9 @@ for building it yourself, [DEVELOPING.md](DEVELOPING.md).
   frames, or of the tag picked for playback.
 - **File browser** (View > File Browser): thumbnails of a folder's images and projects (PNG, JPG, WebP, BMP, TGA, GIF,
   QOI, TIFF, PSD, Krita, `.ppnt`). Drag an image onto the canvas to add it as a layer at that point, at its own size. A
-  project dropped on the canvas, anything dropped on the tab bar, or a double-click opens it.
+  project dropped on the canvas, anything dropped on the tab bar, or a double-click opens it. Right-click a file or folder
+  to open it, show it in the system's file manager or copy its path; right-click the empty space to open the folder
+  being browsed in the file manager.
 - **Tiled Mode** (View > Tiled Mode): the canvas repeats around itself, and strokes, selections and moves wrap across its
   edges, for textures that tile without a visible seam.
 - **Grid, Mirror, Perspective and Tiled Mode switches** can be added to tool groups (the group's + button) to turn them on
@@ -49,6 +51,8 @@ for building it yourself, [DEVELOPING.md](DEVELOPING.md).
   settings there (clicking it again turns it off), and picking or using a tool brings that tool's settings back.
 - **Tool groups** hold tools, switches, colors or brush blend modes. The default groups are Paint, Draw, Select, Transform
   and View, on the keys 1 to 5. Right-click a group's header to rename or remove it, and click its key to change it.
+  Drag a group by its header to move it up or down the toolbar. The + menu lists tools kind by kind (painting, drawing,
+  selection, transform, view, switches), and a tool added to a group goes in beside the group's tools of the same kind.
 - **Tooltips**: rest the pointer on any control for its name and shortcut, and a moment longer for what it does and which
   modifier keys it takes. When there is no message, the left of the status bar shows the current tool, its key and a hint.
 - **Image editing**
@@ -66,6 +70,8 @@ for building it yourself, [DEVELOPING.md](DEVELOPING.md).
     *Layer pixels*, for local adjustments: the layer becomes a mask you paint on, and the node changes the picture
     under it wherever you paint, the paint itself not showing. Amount fades a node, Invert flips its mask, and
     **Show mask** paints where it works red, to see exactly what it picks. A Curve value node feeds one curve to several nodes.
+  - In the node editor a color setting takes a typed color (`#rrggbb`, `#rgb`, `rgb()`, `hsl()` or a name such as
+    `cornflowerblue`), or click its swatch for a color picker with hue and opacity.
   - Image size (bicubic / bilinear / nearest), canvas size with anchor, crop tool and crop to selection, trim,
     rotate 90/180 or any angle, flip, free transform (scale, stretch, rotate, move).
 - **Selections**: rectangle, ellipse, lasso (anti-aliased), magic wand (tolerance, contiguous, all layers),
@@ -73,7 +79,7 @@ for building it yourself, [DEVELOPING.md](DEVELOPING.md).
   that stops the area at sharp edges and/or snaps its outline onto them; its settings window updates the last
   selection live); add / subtract / intersect; feather, grow, shrink, invert, select layer opacity; selections soften every tool.
 - **Text**: a text tool (T) that makes editable text layers: click the canvas and type. Pick any bundled or installed
-  font, size, color, alignment, line and letter spacing. Text stays live (click it to edit, Move tool repositions it),
+  font (the font list writes each name in its own font), size, color, alignment, line and letter spacing. Text stays live (click it to edit, Move tool repositions it),
   is saved in `.ppnt` projects, and turns into ordinary pixels the moment you paint or filter the layer.
   Select text (drag, Shift+arrows, double click, Ctrl+A) and pick any color to color just that part.
   Layer > Convert Text to Path (or right-click the layer) makes a vector layer from the glyph outlines: moving, transforming and resizing it
@@ -84,6 +90,13 @@ for building it yourself, [DEVELOPING.md](DEVELOPING.md).
   dodge/burn, hue, saturation, color, luminosity, ...) plus Erase, which cuts the layer's shape out of everything
   below it (e.g. knock text out of a painting), lock, lock transparency, layer masks (paint black to hide,
   white to reveal; from selection; apply or delete), merge down, flatten, layer via copy/cut, thumbnails.
+  **Several layers at once**: Ctrl-click layers in the list to select them, Shift-click for a run of rows, or Layer >
+  Select All Layers (Ctrl+Alt+A). Group (Ctrl+G), Merge (Ctrl+E), Duplicate and Delete then work on all of them, and
+  right-clicking one of them offers Merge and Group. A plain click, or Layer > Deselect Layers, selects one layer again.
+  In macros, **Pick Layer** has *Add to Selection* (and *all named*, for every layer whose name contains the text);
+  effects and layer settings then go on every selected layer, **Export** can write the selected layers together or each
+  one to its own file (`{layer}` in the file name), and Select All / Deselect All / Group Selected / Merge Selected
+  Layers are nodes too.
 - **Color channels**: right-click a layer > **Expose Color Channels** (also in the Layer menu) lists its red, green, blue
   and alpha channels in a Channels section under the layers. Click one to paint on it alone: every tool works on it as it
   does on a mask, putting the brightness of the color into that channel, and the eraser sets it to 0 (on alpha, that
@@ -91,7 +104,10 @@ for building it yourself, [DEVELOPING.md](DEVELOPING.md).
   **Image** shows the picture as usual. Click the layer itself to paint on all of it again, and the x on the layer's
   block (or the same menu item) hides its channels.
 - **Color**: HSV picker, RGB sliders, hex entry, swatch sets (oil paints, skin tones, earth & sky, pastels, ...),
-  recent colors, GIMP `.gpl` swatch import/export, eyedropper with averaging. Click a color in a toolbar color
+  recent colors, GIMP `.gpl` swatch import/export, eyedropper with averaging. The swatches' **Presets** menu pastes
+  colors copied as text (web colors: `#264653`, `#f80`, `rgb(42, 157, 143)`, `hsl(...)`, names such as `teal`, in any
+  list, stylesheet or JSON), copies the swatches as hex codes, and saves them as a preset of your own (kept as `.gpl`
+  files in the `palettes` folder next to the settings), listed in the same menu to bring back or delete. Click a color in a toolbar color
   group, then use the color picker to change that color.
 - **Files**: native `.ppnt` project (all layers, masks, frames and settings, compressed sparse tiles); open PNG / JPG (built-in
   decoder: progressive, CMYK, EXIF rotation) / WebP / BMP / TGA / GIF / QOI / TIFF; export PNG, JPG (built-in encoder, quality

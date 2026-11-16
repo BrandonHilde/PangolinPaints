@@ -87,15 +87,15 @@ cmd_help :: proc(c: Cmd) -> string {
 	case .Layer_New:
 		return "Add an empty layer above the active one."
 	case .Layer_Dup:
-		return "Add a copy of the active layer above it."
+		return "Add a copy of the active layer above it, or of each selected layer when several are selected."
 	case .Layer_Del:
-		return "Remove the active layer. The last layer can't be removed."
+		return "Remove the active layer, or every selected layer when several are selected. The last layer can't be removed."
 	case .Layer_Up:
 		return "Move the active layer one step up the stack, in front of the layer above it."
 	case .Layer_Down:
 		return "Move the active layer one step down the stack, behind the layer below it."
 	case .Layer_Merge:
-		return "Combine the active layer with the layer below it."
+		return "Combine the active layer with the layer below it. When several layers are selected, merge the selected layers into one."
 	case .Layer_Text_To_Path:
 		return "Turn this text layer into a vector layer of glyph outlines. It stays sharp when resized, but can no longer be typed in."
 	case .Layer_Rasterize:
@@ -103,7 +103,7 @@ cmd_help :: proc(c: Cmd) -> string {
 	case .Layer_Group_New:
 		return "Add an empty layer group above the active layer. Drag layers onto it in the layer list to put them in it."
 	case .Layer_Group:
-		return "Put the active layer in a new group of its own. A group shows its layers together: hide it, change its opacity or blend mode, move or copy it, and they all follow."
+		return "Put the active layer, or all the selected layers, in a new group. A group shows its layers together: hide it, change its opacity or blend mode, move or copy it, and they all follow."
 	case .Layer_Effects:
 		return "Attach macros to the active layer as live effects: they run on the layer whenever it changes (Soft Light and a blur, say), can be switched off or removed, and are saved with the painting."
 	case .Layer_Fx_Apply:
@@ -122,6 +122,10 @@ cmd_help :: proc(c: Cmd) -> string {
 		return "Raw shows the channel you are painting on the canvas in grey: white is 255, black 0. Image shows the picture as usual while you paint the channel."
 	case .Layer_Lock_Alpha:
 		return "Keep the layer's transparency as it is: paint only lands where the layer already has pixels."
+	case .Layer_Select_All:
+		return "Select every layer, so Group, Merge, Duplicate and Delete, and a macro's effects and layer settings, work on all of them. Ctrl-click or Shift-click layers in the list to select some of them."
+	case .Layer_Deselect:
+		return "Keep only the active layer selected, after several were selected."
 	case .Mask_Add:
 		return "Give the active layer a white mask that shows everything. Paint on it with black to hide parts of the layer."
 	case .Mask_From_Sel:

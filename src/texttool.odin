@@ -536,7 +536,7 @@ dlg_font :: proc() {
 	text_field({c.x + 50, c.y, c.w - 50, 14}, &font_filter, {"Search", SEARCH_TIP})
 	list := Rect{c.x, c.y + 22, c.w, c.h - 22 - 24}
 	ctl_well(list)
-	ROW :: 16
+	ROW :: 22 // each name is written in its own font
 	flt := strings.to_lower(name_str(&font_filter), context.temp_allocator)
 	idx := make([dynamic]int, context.temp_allocator)
 	for f, i in ufonts {
@@ -563,8 +563,8 @@ dlg_font :: proc() {
 		} else if hover {
 			fill_rect(rr, Color{255, 255, 255, 14})
 		}
-		text(rr.x + 8, rr.y + (ROW - FONT_CAP) / 2, f.name, f.name == cur ? C_ACCENT : C_TEXT)
-		tip_area(rr, "font-row", {"", "Click to use this font. The list scrolls with the mouse wheel."})
+		font_name_draw(Rect{rr.x + 8, rr.y, rr.w - 16, rr.h}, f.name, f.name, f.path, f.data, f.ok ? &f.info : nil, 15, f.name == cur ? C_ACCENT : C_TEXT)
+		tip_area(rr, "font-row", {f.name, "Click to use this font. Each name is written in its own font. The list scrolls with the mouse wheel."})
 		if hover && ui.pressed[0] do chosen = k
 	}
 	clip_end()

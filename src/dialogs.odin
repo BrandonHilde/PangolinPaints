@@ -31,6 +31,7 @@ Dialog_Kind :: enum {
 	Frame_Props,
 	Tags,
 	Smart_Select,
+	Palette_Save,
 }
 
 Dialog :: struct {
@@ -59,7 +60,7 @@ dialog_open :: proc(k: Dialog_Kind) {
 		msg_text  = dialog.msg_text,
 	}
 	switch k {
-	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename, .UI_Scale, .Tags, .Layer_Fx, .Smart_Select:
+	case .None, .Message, .Shortcuts, .About, .Confirm, .Fx, .Brush_Settings, .Font, .Group_Rename, .UI_Scale, .Tags, .Layer_Fx, .Smart_Select, .Palette_Save:
 	case .Macros:
 		macros_refresh()
 		dialog.b = -1 // fill in the name field
@@ -202,6 +203,8 @@ dialogs_run :: proc() {
 		dlg_workspaces()
 	case .Group_Rename:
 		dlg_group_rename()
+	case .Palette_Save:
+		dlg_palette_save()
 	case .Macros:
 		dlg_macros()
 	case .Layer_Fx:
@@ -745,8 +748,10 @@ shortcut_name :: proc(c: Cmd) -> string {
 	case .Layer_New:          return "New Layer"
 	case .Layer_Via_Copy:     return "Layer via Copy"
 	case .Layer_Via_Cut:      return "Layer via Cut"
-	case .Layer_Merge:        return "Merge Down"
+	case .Layer_Merge:        return "Merge Down / Merge Selected"
 	case .Layer_Lock_Alpha:   return "Lock Transparency"
+	case .Layer_Select_All:   return "Select All Layers"
+	case .Layer_Deselect:     return "Deselect Layers"
 	case .Frame_New:          return "New Frame"
 	case .Frame_Prev:         return "Previous Frame"
 	case .Frame_Next:         return "Next Frame"
@@ -772,7 +777,7 @@ shortcut_name :: proc(c: Cmd) -> string {
 	case .Brush_Smaller:      return "Smaller Brush"
 	case .Brush_Bigger:       return "Bigger Brush"
 	case .Layer_Group_New:    return "New Group"
-	case .Layer_Group:        return "Group Layer"
+	case .Layer_Group:        return "Group Layers"
 	case .Layer_Ungroup:      return "Ungroup"
 	case .Layer_Effects:      return "Layer Effects"
 	case .Layer_Fx_Apply:     return "Apply Effects"

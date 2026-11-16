@@ -183,22 +183,26 @@ menu_build :: proc(idx: int) {
 		fx_item(.Pixelate)
 		fx_item(.Vignette)
 	case 5:
+		multi := layer_sel_multi(d)
 		item("New Layer", cmd = .Layer_New)
-		item("Duplicate Layer", cmd = .Layer_Dup)
-		item("Delete Layer", cmd = .Layer_Del)
+		item(multi ? "Duplicate Selected Layers" : "Duplicate Layer", cmd = .Layer_Dup)
+		item(multi ? "Delete Selected Layers" : "Delete Layer", cmd = .Layer_Del)
 		item("Layer via Copy", cmd = .Layer_Via_Copy)
 		item("Layer via Cut", cmd = .Layer_Via_Cut)
 		popup_sep()
 		item("New Group", cmd = .Layer_Group_New)
-		item("Group Layer", cmd = .Layer_Group)
+		item(multi ? "Group Selected Layers" : "Group Layer", cmd = .Layer_Group)
 		item("Ungroup", cmd = .Layer_Ungroup, enabled = l.is_group)
+		popup_sep()
+		item("Select All Layers", cmd = .Layer_Select_All)
+		item("Deselect Layers", cmd = .Layer_Deselect, enabled = multi)
 		popup_sep()
 		item("Layer Effects...", cmd = .Layer_Effects)
 		item("Apply Effects", cmd = .Layer_Fx_Apply, enabled = l.fx_n > 0)
 		popup_sep()
 		item("Move Up", cmd = .Layer_Up)
 		item("Move Down", cmd = .Layer_Down)
-		item(l.is_group ? "Merge Group" : "Merge Down", cmd = .Layer_Merge, enabled = l.is_group || layer_merge_target(d) >= 0)
+		item(multi ? "Merge Selected Layers" : (l.is_group ? "Merge Group" : "Merge Down"), cmd = .Layer_Merge, enabled = multi || l.is_group || layer_merge_target(d) >= 0)
 		popup_sep()
 		item("Convert Text to Path", cmd = .Layer_Text_To_Path, enabled = l.text.on)
 		item("Rasterize Layer", cmd = .Layer_Rasterize, enabled = l.text.on || l.shape != nil)
@@ -417,11 +421,12 @@ panel_toolbar :: proc() {
 	rem_g, rem_t := -1, -1
 	cur_group := current_group()
 	for &g, gi in tool_groups {
-		oui.element(uictx, fmt.tprintf("g%d", gi), "tool-group", {class = g.pen_eraser ? "eraser" : ""})
+		gclass := fmt.tprintf("%s %s", g.pen_eraser ? "eraser" : "", group_drag_class(gi, len(tool_groups)))
+		gnode := oui.element(uictx, fmt.tprintf("g%d", gi), "tool-group", {class = gclass})
 		// header: the name on the left, the hotkey as a keycap on the right
 		// (click the keycap for options; right-click the header for rename / remove)
 		hdr := oui.element(uictx, "head", "group-head")
-		oui_tip(hdr, {group_title(&g), "A tool group: tools, switches, colors, blend modes or macros kept together. Right-click to rename or remove it."})
+		oui_tip(hdr, {group_title(&g), "A tool group: tools, switches, colors, blend modes or macros kept together. Drag here to move the group up or down; right-click to rename or remove it."})
 		oui.label(uictx, "title", group_title(&g), {class = "group-title"})
 		waiting := group_key_wait == gi
 		label := waiting ? "..." : (g.key == .KEY_NULL ? "-" : key_name(g.key))
@@ -430,6 +435,7 @@ panel_toolbar :: proc() {
 		oui.end(uictx)
 		oui_tip(kc, {"Group hotkey", len(g.macros) > 0 ? "Press this key to run the group's selected macro; the next press runs the macro after it. Click to change the key, rename or remove the group." : "Press this key to pick the group's last tool, and again to step through what it holds. Click to change the key, rename or remove the group, or use it for the pen's eraser end."})
 		oui.end(uictx)
+		group_drag_track(gi, gnode, hdr, kc)
 		bid := make_id({}, fmt.tprintf("grpbadge%d", gi))
 		if kc.clicked {
 			popup_begin(bid, oui_rect(kc), 120)
@@ -549,11 +555,7 @@ panel_toolbar :: proc() {
 				popup_grid(5)
 				if !is_colors && !is_blends && !is_macros {
 					popup_column("Tools")
-					for tool in Tool {
-						if !tool_group_has(&g, tool) {
-							popup_item_icon(TOOL_NAMES[tool], int(tool), TOOL_ICONS[tool], TOOL_HELP[tool])
-						}
-					}
+					popup_tools_by_kind(proc(t: Tool, g: rawptr) -> bool {return !tool_group_has((^Tool_Group)(g), t)}, &g)
 				}
 				if !is_tools && !is_blends && !is_macros {
 					popup_column("Colors")
@@ -584,7 +586,7 @@ panel_toolbar :: proc() {
 				v := ui.popup_result_val
 				switch {
 				case v < 100:
-					append(&g.tools, Tool(v))
+					tool_list_insert(&g.tools, Tool(v))
 				case v == 100:
 					append(&g.colors, fg)
 				case v == 101:
@@ -627,6 +629,8 @@ panel_toolbar :: proc() {
 			ordered_remove(&tool_groups, rem_g)
 			group_key_wait = -1
 		}
+	} else if from, to, moved := group_drag_update(len(tool_groups)); moved {
+		tool_group_move(from, to)
 	}
 	if len(tool_groups) < MAX_TOOL_GROUPS {
 		if obutton("+ New Group", 0, {"", "Add an empty tool group, then use its + button to fill it with tools, colors, blend modes or macros."}, id = "new-group") {
@@ -890,9 +894,10 @@ panel_right :: proc() {
 	oui.element(uictx, "swatch-head", "row", {id = "swatch-head"})
 	otext("t", "Swatches", "dim", {"Swatches", "Colors kept ready to use, shared by all paintings. File > Load Swatches reads a palette from a file."})
 	oui.element_leaf(uictx, "spacer", "spacer")
-	if obutton("Presets", 54, {"", "Replace the swatches with one of the ready-made sets."}) {
+	if obutton("Presets", 54, {"", "Paste colors copied as text (hex codes, rgb(), color names), save the swatches as a preset of your own, or replace them with a saved or ready-made set."}) {
 		r := oui_rect(oui_last)
 		popup_begin(SWATCH_PRESET_ID, r, 110)
+		palette_menu_items("swatches")
 		for p in Swatch_Preset {
 			popup_item(SWATCH_PRESET_NAMES[p], int(p), tip = SWATCH_PRESET_HELP[p])
 		}
@@ -909,9 +914,24 @@ panel_right :: proc() {
 	}
 	oui.end(uictx)
 	if ui.popup_result_id == SWATCH_PRESET_ID {
-		swatches_set_preset(Swatch_Preset(ui.popup_result_val))
+		v := ui.popup_result_val
 		ui.popup_result_id = 0
+		if palette_menu_owns(v) {
+			act, cols := palette_menu_pick(v, swatches[:])
+			switch act {
+			case .None:
+			case .Replace:
+				clear(&swatches)
+				fallthrough
+			case .Add:
+				for c in cols do if len(swatches) < PALETTE_MAX do append(&swatches, c)
+				swatch_sel = clamp(swatch_sel, 0, max(len(swatches) - 1, 0))
+			}
+		} else {
+			swatches_set_preset(Swatch_Preset(v))
+		}
 	}
+	palette_menu_frame()
 	// up to three rows of swatches, scrolled with the wheel
 	cell: i32 = 14
 	cols := max((swatch_area_w - 4) / cell, 1)
@@ -962,12 +982,13 @@ panel_right :: proc() {
 		oui_tip(n, cmd_tip("New layer", .Layer_New))
 		if n.clicked do run_cmd(.Layer_New)
 	}
-	if lb("dup", .Copy, cmd_tip("Duplicate layer", .Layer_Dup)) do run_cmd(.Layer_Dup)
-	if lb("del", .Trash, cmd_tip("Delete layer", .Layer_Del), len(d.layers) > 1) do run_cmd(.Layer_Del)
+	multi := layer_sel_multi(d)
+	if lb("dup", .Copy, cmd_tip(multi ? "Duplicate selected layers" : "Duplicate layer", .Layer_Dup)) do run_cmd(.Layer_Dup)
+	if lb("del", .Trash, cmd_tip(multi ? "Delete selected layers" : "Delete layer", .Layer_Del), len(d.layers) > 1) do run_cmd(.Layer_Del)
 	if lb("group", .Folder, cmd_tip("New group", .Layer_Group_New)) do run_cmd(.Layer_Group_New)
 	if lb("up", .Up, cmd_tip("Move layer up", .Layer_Up), len(d.layers) > 1) do run_cmd(.Layer_Up)
 	if lb("down", .Down, cmd_tip("Move layer down", .Layer_Down), len(d.layers) > 1) do run_cmd(.Layer_Down)
-	if lb("merge", .Merge, l.is_group ? cmd_tip("Merge group", .Layer_Merge) : cmd_tip("Merge down", .Layer_Merge), l.is_group || layer_merge_target(d) >= 0) do run_cmd(.Layer_Merge)
+	if lb("merge", .Merge, multi ? cmd_tip("Merge selected layers", .Layer_Merge) : (l.is_group ? cmd_tip("Merge group", .Layer_Merge) : cmd_tip("Merge down", .Layer_Merge)), multi || l.is_group || layer_merge_target(d) >= 0) do run_cmd(.Layer_Merge)
 	if l.has_mask {
 		if lb("mask", .Mask, cmd_tip("Delete mask", .Mask_Delete), lit = true) do run_cmd(.Mask_Delete)
 	} else if !l.is_group {
@@ -1167,6 +1188,7 @@ panel_layer_list :: proc(list: Rect) {
 	if ui_hover(list) && ui.wheel != 0 {
 		layers_scroll -= i32(ui.wheel) * LAYER_ROW_H
 	}
+	multi := layer_sel_multi(d)
 	layers_scroll = clamp(layers_scroll, 0, max(content - inner.h, 0))
 	clip_begin(inner)
 	for li, i in rows {
@@ -1178,6 +1200,10 @@ panel_layer_list :: proc(list: Rect) {
 		if active {
 			fill_rect(row, C_ACCENT_TINT)
 			fill_rect(Rect{row.x, row.y, 2, row.h}, C_ACCENT)
+		} else if multi && layer_is_selected(d, li) {
+			// selected along with the active layer
+			fill_rect(row, with_alpha(C_ACCENT, 34))
+			fill_rect(Rect{row.x, row.y, 2, row.h}, with_alpha(C_ACCENT, 120))
 		} else if ui_hover(row) && ui_hover(list) {
 			fill_rect(row, Color{255, 255, 255, 12})
 		}
@@ -1191,7 +1217,7 @@ panel_layer_list :: proc(list: Rect) {
 			if ly.is_group {
 				tip_area(row, "layer-row", {name_str(&ly.name), "A layer group. Click to make it the active layer, double-click for its properties, right-click for more. Drag layers onto it to put them in it; drag it to move it with everything in it."})
 			} else {
-				tip_area(row, "layer-row", {name_str(&ly.name), "Click to make this the active layer. Drag to change its place in the stack (onto a group to put it in the group), double-click for its properties, right-click for more."})
+				tip_area(row, "layer-row", {name_str(&ly.name), "Click to make this the active layer; Ctrl-click to select several, Shift-click for a run of them. Drag to change its place in the stack (onto a group to put it in the group), double-click for its properties, right-click for more."})
 			}
 			tip_area(rect_inset(eye, -3), "layer-eye", {"Visible", hidden_by_group ? "Click to show or hide this layer. It is hidden now by a group it is in." : "Click to show or hide this layer."})
 		}
@@ -1281,10 +1307,23 @@ panel_layer_list :: proc(list: Rect) {
 			if in_list do tip_area({ix, ry + 17, 12, 12}, "layer-alpha", cmd_tip("Transparency locked", .Layer_Lock_Alpha))
 		}
 		// right-click: select the layer and open its menu (on release, so the press doesn't close it)
-		if ui_hover(row) && ui_hover(list) && ui.released[1] && !popup.open {
+		if ui_hover(row) && ui_hover(list) && ui.released[1] && !popup.open && multi && layer_is_selected(d, li) {
+			// several layers selected: the menu works on all of them
+			if d.active_layer != li do tools_commit_pending()
+			n_sel := len(layers_selected(d))
+			popup_begin(make_id(list, "layermenu"), Rect{ui.mx, ui.my, 1, 1}, 170)
+			popup_item(fmt.tprintf("Merge %d Layers", n_sel), cmd = .Layer_Merge, tip = "Combine the selected layers into one, where the top one of them is.")
+			popup_item(fmt.tprintf("Group %d Layers", n_sel), cmd = .Layer_Group, tip = "Put the selected layers into a new group, in their order.")
+			popup_item("Duplicate Selected Layers", cmd = .Layer_Dup)
+			popup_item("Delete Selected Layers", cmd = .Layer_Del, enabled = len(layers_selected_roots(d)) < len(d.layers))
+			popup_sep()
+			popup_item("Select All Layers", cmd = .Layer_Select_All)
+			popup_item("Deselect Layers", cmd = .Layer_Deselect)
+		} else if ui_hover(row) && ui_hover(list) && ui.released[1] && !popup.open {
 			if d.active_layer != li do tools_commit_pending()
 			d.active_layer = li
 			d.edit_mask = false
+			layer_sel_clear(d)
 			popup_begin(make_id(list, "layermenu"), Rect{ui.mx, ui.my, 1, 1}, 150)
 			if !ly.is_group {
 				popup_item("Convert Text to Path", cmd = .Layer_Text_To_Path, enabled = ly.text.on)
@@ -1298,6 +1337,7 @@ panel_layer_list :: proc(list: Rect) {
 			popup_item("New Group", cmd = .Layer_Group_New)
 			popup_item("Group Layer", cmd = .Layer_Group)
 			if ly.is_group do popup_item("Ungroup", cmd = .Layer_Ungroup)
+			popup_item("Select All Layers", cmd = .Layer_Select_All)
 			popup_sep()
 			popup_item("Layer Effects...", cmd = .Layer_Effects)
 			if !ly.is_group do popup_item(chan_exposed(d, ly.uid) ? "Hide Color Channels" : "Expose Color Channels", cmd = .Layer_Channels)
@@ -1325,10 +1365,21 @@ panel_layer_list :: proc(list: Rect) {
 					ly.mask_on = !ly.mask_on
 					doc_touch_all(d)
 				}
+			case ui.ctrl:
+				// add the layer to the selection, or take it out
+				if d.active_layer != li do tools_commit_pending()
+				layer_sel_toggle(d, li)
+				chan_end(d)
+			case ui.shift:
+				// the run of rows from the active layer to this one
+				if d.active_layer != li do tools_commit_pending()
+				layer_sel_range(d, rows, li)
+				chan_end(d)
 			case:
 				if d.active_layer != li do tools_commit_pending()
 				d.active_layer = li
 				d.edit_mask = false
+				layer_sel_clear(d)
 				chan_end(d) // the layer itself, not one of its channels
 				layer_drag, layer_drag_y0, layer_drag_on = li, ui.my, false
 				if ui.dbl_click {

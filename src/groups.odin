@@ -189,8 +189,8 @@ group_count :: proc(d: ^Doc) -> int {
 }
 
 // Puts the active layer (and all that is in it, for a group) into a new group, which becomes the active layer.
-doc_group_wrap :: proc(d: ^Doc) {
-	history_push(d)
+doc_group_wrap :: proc(d: ^Doc, push := true) {
+	if push do history_push(d)
 	i := d.active_layer
 	g := layer_make(fmt.tprintf("Group %d", group_count(d) + 1), d.w, d.h)
 	g.is_group, g.pass_through = true, true
@@ -382,10 +382,10 @@ group_pixels :: proc(d: ^Doc, g, f: int, allocator := context.temp_allocator) ->
 }
 
 // Turns the active group into one layer showing what it showed, on every frame. False if it isn't a group.
-doc_merge_group :: proc(d: ^Doc) -> bool {
+doc_merge_group :: proc(d: ^Doc, push := true) -> bool {
 	g := d.active_layer
 	if !d.layers[g].is_group do return false
-	history_push(d)
+	if push do history_push(d)
 	s := layer_span_start(d.layers[:], g)
 	grp := &d.layers[g]
 	nl := layer_make(name_str(&grp.name), d.w, d.h)

@@ -60,6 +60,8 @@ Cmd :: enum {
 	Layer_Via_Copy,
 	Layer_Via_Cut,
 	Layer_Lock_Alpha,
+	Layer_Select_All,
+	Layer_Deselect,
 	Layer_Channels,
 	Channels_Raw,
 	Mask_Add,
@@ -222,6 +224,7 @@ SHORTCUTS := [?]Shortcut {
 	{.Layer_Via_Copy, .J, true, false, false},
 	{.Layer_Via_Cut, .J, true, true, false},
 	{.Layer_Merge, .E, true, false, false},
+	{.Layer_Select_All, .A, true, false, true},
 	{.Layer_Lock_Alpha, .SLASH, false, false, false},
 	{.Mask_Edit, .BACKSLASH, false, false, false},
 	{.Frame_New, .N, false, false, true},
@@ -604,9 +607,15 @@ run_cmd :: proc(cmd: Cmd) {
 	case .Layer_New:
 		doc_add_layer(d)
 	case .Layer_Dup:
-		doc_dup_layer(d)
+		if layer_sel_multi(d) {
+			doc_dup_selected(d)
+		} else {
+			doc_dup_layer(d)
+		}
 	case .Layer_Del:
-		if !doc_delete_layer(d) {
+		if layer_sel_multi(d) {
+			if !doc_delete_selected(d) do set_status("Cannot delete every layer")
+		} else if !doc_delete_layer(d) {
 			set_status("Cannot delete the only layer")
 		}
 	case .Layer_Up:
@@ -614,7 +623,9 @@ run_cmd :: proc(cmd: Cmd) {
 	case .Layer_Down:
 		doc_move_layer(d, -1)
 	case .Layer_Merge:
-		if !doc_merge_down(d) {
+		if layer_sel_multi(d) {
+			doc_merge_selected(d)
+		} else if !doc_merge_down(d) {
 			set_status("No layer below in this group to merge into (a layer can't merge into a group)")
 		}
 	case .Layer_Text_To_Path:
@@ -626,7 +637,12 @@ run_cmd :: proc(cmd: Cmd) {
 	case .Layer_Group_New:
 		doc_group_new(d)
 	case .Layer_Group:
-		doc_group_wrap(d)
+		doc_group_selected(d)
+	case .Layer_Select_All:
+		layer_sel_all(d)
+		set_statusf("%d layers selected", len(layers_selected(d)))
+	case .Layer_Deselect:
+		layer_sel_clear(d)
 	case .Layer_Effects:
 		dialog_open(.Layer_Fx)
 	case .Layer_Fx_Apply:

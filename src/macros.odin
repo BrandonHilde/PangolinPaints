@@ -128,19 +128,21 @@ MACRO_CMDS := [?]Macro_Cmd {
 	{.Flatten, "Image", "Flatten"},
 	{.Auto_Contrast, "Image", "Auto Contrast"},
 	{.Layer_New, "Layer", "New Layer"},
-	{.Layer_Dup, "Layer", "Duplicate Layer"},
-	{.Layer_Del, "Layer", "Delete Layer"},
+	{.Layer_Dup, "Layer", "Duplicate Layers"},
+	{.Layer_Del, "Layer", "Delete Layers"},
 	{.Layer_Up, "Layer", "Move Layer Up"},
 	{.Layer_Down, "Layer", "Move Layer Down"},
-	{.Layer_Merge, "Layer", "Merge Down"},
+	{.Layer_Merge, "Layer", "Merge Selected Layers / Down"},
 	{.Layer_Group_New, "Layer", "New Group"},
-	{.Layer_Group, "Layer", "Group Layer"},
+	{.Layer_Group, "Layer", "Group Selected Layers"},
 	{.Layer_Ungroup, "Layer", "Ungroup"},
 	{.Layer_Text_To_Path, "Layer", "Text to Path"},
 	{.Layer_Rasterize, "Layer", "Rasterize Layer"},
 	{.Layer_Via_Copy, "Layer", "Layer via Copy"},
 	{.Layer_Via_Cut, "Layer", "Layer via Cut"},
 	{.Layer_Lock_Alpha, "Layer", "Lock Transparency"},
+	{.Layer_Select_All, "Layer", "Select All Layers"},
+	{.Layer_Deselect, "Layer", "Deselect All Layers"},
 	{.Layer_Channels, "Layer", "Expose Color Channels"},
 	{.Channels_Raw, "Layer", "Raw Channel View"},
 	{.Mask_Add, "Layer", "Add Layer Mask"},
@@ -197,8 +199,8 @@ MACRO_CMD_EXCLUDED := [?]Cmd {
 
 SEL_MODES := [4]string{"replace", "add", "subtract", "intersect"}
 SEL_UNITS := [2]string{"pixels", "percent"}
-LAYER_PICKS := [6]string{"name", "above", "below", "top", "bottom", "number"}
-EXPORT_WHAT := [2]string{"image", "active layer"}
+LAYER_PICKS := [7]string{"name", "above", "below", "top", "bottom", "number", "all named"}
+EXPORT_WHAT := [4]string{"image", "active layer", "selected layers", "each selected layer"}
 
 @(private = "file")
 cat: [dynamic]Macro_Def
@@ -336,14 +338,15 @@ macro_catalogue_build :: proc() {
 	node("image.Rotate", "Rotate by Angle", "Image", cmd_help(.Rotate_Any), num("angle", "Angle", -359, 359, 90, " deg", "How far to turn the painting, clockwise. Negative angles turn it counter-clockwise."))
 
 	// layers
-	pick_name := text_setting("name", "Name", "Layer 1", "The layer's name: pick it from the open painting's layers with the arrow, or type it. Capitals don't matter; if no layer has exactly this name, the first whose name contains it is picked.")
-	pick_name.only = "which=name"
+	pick_name := text_setting("name", "Name", "Layer 1", "The layer's name: pick it from the open painting's layers with the arrow, or type it. Capitals don't matter; if no layer has exactly this name, the first whose name contains it is picked. With \"all named\", every layer whose name contains it is picked.")
+	pick_name.only = "which=name|all named"
 	pick_name.suggest = "layers"
 	pick_number := num("number", "Number", 1, 10000, 1, "", "The layer's number: 1 is the bottom layer.")
 	pick_number.only = "which=number"
-	node("layer.Pick", "Pick Layer", "Layer", "Make another layer the active one, so the steps after this work on it: by its name, next to the active one, the top or bottom one, or by its number.",
-		choice("which", "Layer", LAYER_PICKS[:], 0, "How to find the layer: by its name, the one above or below the active layer, the top or bottom layer, or by its number."),
-		pick_name, pick_number)
+	node("layer.Pick", "Pick Layer", "Layer", "Make another layer the active one, so the steps after this work on it: by its name, next to the active one, the top or bottom one, or by its number. With Add to Selection on, the layers picked before stay selected too: effects, layer settings, Group, Merge and Export then work on all the selected layers.",
+		choice("which", "Layer", LAYER_PICKS[:], 0, "How to find the layer: by its name, the one above or below the active layer, the top or bottom layer, by its number, or every layer whose name contains the text (all named)."),
+		pick_name, pick_number,
+		flag("add", "Add to Selection", false, "Add the layer to the layers already selected, instead of selecting it alone. Deselect All Layers starts again from one."))
 	node("layer.Opacity", "Layer Opacity", "Layer", "Set how solid the active layer is.", num("opacity", "Opacity", 0, 100, 100, "%", "100 covers what is below, 0 hides it."))
 	node("layer.Blend", "Layer Blend Mode", "Layer", "Set how the active layer mixes with the layers below it.", choice("blend", "Blend mode", blends, 0, BLEND_TIP))
 	node("layer.Visible", "Show or Hide Layer", "Layer", "Show or hide the active layer.", flag("visible", "Visible", true, "Show the layer. A hidden layer can't be painted on and isn't exported."))
@@ -370,11 +373,11 @@ macro_catalogue_build :: proc() {
 
 	// file
 	node("file.Export", "Export", "File", "Save a flat copy of the visible layers, or of the active layer alone, without asking where.",
-		choice("what", "What", EXPORT_WHAT[:], 0, "The whole picture (all visible layers), or only the active layer: pick the layer first with Pick Layer."),
+		choice("what", "What", EXPORT_WHAT[:], 0, "The whole picture (all visible layers), only the active layer, the selected layers together, or each selected layer to its own file ({layer} in the file name is the layer's name; without it the name is added at the end). Pick layers first with Pick Layer."),
 		choice("format", "Format", formats, 0, "The file format. A PNG sequence and an animated GIF need more than one frame, and export the whole picture."),
 		num("quality", "Quality", 1, 100, 90, "", "JPEG quality: higher looks better and makes a bigger file."),
 		num("scale", "Scale", 10, 400, 100, "%", "The size of the exported image, as a percentage of the painting."),
-		text_setting("path", "File", "{dir}/{name}.{ext}", "Where to write it: type it, or pick it with the ... button. {dir} is the painting's folder, {name} its file name, {frame} the frame number and {ext} the format's extension.", true))
+		text_setting("path", "File", "{dir}/{name}.{ext}", "Where to write it: type it, or pick it with the ... button. {dir} is the painting's folder, {name} its file name, {layer} the layer's name, {frame} the frame number and {ext} the format's extension.", true))
 	node("file.Save", "Save", "File", "Save the painting with all its layers as a .ppnt project, without asking where.",
 		text_setting("path", "File", "", "Leave it empty to save to the painting's own file. Or set where to save it, typed or picked with the ... button: the painting then belongs to that file. {dir} is the painting's folder and {name} its file name.", true))
 }
@@ -460,7 +463,21 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 		if a % 360 != 0 do doc_rotate_any(d, f32(a))
 	case "layer.Pick":
 		i := d.active_layer
+		add := macro_bool(args, 3)
 		switch LAYER_PICKS[clamp(macro_int(args, 0), 0, len(LAYER_PICKS) - 1)] {
+		case "all named":
+			want := strings.to_lower(strings.trim_space(args[1].text), context.temp_allocator)
+			if want == "" do return false, "give the name of the layers to pick"
+			found := make([dynamic]int, context.temp_allocator)
+			for &l, k in d.layers do if strings.contains(strings.to_lower(name_str(&l.name), context.temp_allocator), want) do append(&found, k)
+			if len(found) == 0 do return false, fmt.tprintf("no layer's name has %s in it", strings.trim_space(args[1].text))
+			if !add {
+				d.active_layer = found[len(found) - 1]
+				layer_sel_clear(d)
+			}
+			for k in found do layer_sel_add(d, k)
+			d.edit_mask = false
+			return true, ""
 		case "name":
 			want := strings.trim_space(args[1].text)
 			if want == "" do return false, "give the name of the layer to pick"
@@ -478,11 +495,19 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 			i = macro_int(args, 2) - 1
 		}
 		if i < 0 || i >= len(d.layers) do return false, "there is no such layer"
-		d.active_layer = i
+		if add {
+			layer_sel_add(d, i)
+		} else {
+			d.active_layer = i
+			layer_sel_clear(d)
+		}
 		d.edit_mask = false
 	case "layer.Opacity", "layer.Blend", "layer.Visible", "layer.Lock", "layer.Rename":
 		history_push(d)
-		l := &d.layers[d.active_layer]
+		// every selected layer (the name only the active one: they would all be called the same)
+		for li in layers_selected(d) {
+		if def.id == "layer.Rename" && li != d.active_layer do continue
+		l := &d.layers[li]
 		switch def.id {
 		case "layer.Opacity":
 			l.opacity = u8(clamp(macro_int(args, 0), 0, 100) * 255 / 100)
@@ -495,6 +520,7 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 			l.locked = macro_bool(args, 0)
 		case "layer.Rename":
 			name_set(&l.name, strings.trim_space(args[0].text))
+		}
 		}
 		doc_touch_all(d)
 	case "frame.Go":
@@ -511,15 +537,52 @@ macro_exec :: proc(def: ^Macro_Def, args: []Macro_Value) -> (ok: bool, msg: stri
 			if !file_save(d, false) do return false, "it could not be saved"
 		}
 	case "file.Export":
-		layer_only := macro_int(args, 0) == 1
+		what := EXPORT_WHAT[clamp(macro_int(args, 0), 0, len(EXPORT_WHAT) - 1)]
 		f := Export_Format(macro_int(args, 1))
 		if int(f) >= EXPORT_STILL_FORMATS {
-			if layer_only do return false, "a layer exports as one picture: pick png, jpg, bmp, tga, qoi or tiff"
+			if what != "image" do return false, "layers export as one picture each: pick png, jpg, bmp, tga, qoi or tiff"
 			if len(d.frames) < 2 do return false, "this format needs more than one frame"
 		}
-		path, pok, pmsg := macro_export_path(d, args[4].text, EXPORT_EXT[f])
+		quality, scale := macro_int(args, 2), macro_int(args, 3)
+		switch what {
+		case "selected layers":
+			path, pok, pmsg := macro_export_path(d, args[4].text, EXPORT_EXT[f], name_str(&d.layers[d.active_layer].name))
+			if !pok do return false, pmsg
+			pix, w, h := export_scaled(selected_layers_pixels(d), d.w, d.h, scale)
+			defer delete(pix)
+			data := export_encode(pix, w, h, f, quality)
+			if data == nil || !write_file(path, data) do return false, fmt.tprintf("Failed to write %s", path_basename(path))
+			return true, fmt.tprintf("Exported %s", path_basename(path))
+		case "each selected layer":
+			n := 0
+			for li in layers_selected(d) {
+				lname := palette_clean_name(name_str(&d.layers[li].name))
+				if lname == "" do lname = fmt.tprintf("layer %d", li + 1)
+				tmpl := args[4].text
+				if !strings.contains(tmpl, "{layer}") {
+					// each layer needs its own file: its name goes after the file's
+					ext := path_ext(tmpl)
+					tmpl = fmt.tprintf("%s-{layer}%s", strings.trim_suffix(tmpl, ext), ext)
+				}
+				path, pok, pmsg := macro_export_path(d, tmpl, EXPORT_EXT[f], lname)
+				if !pok do return false, pmsg
+				pix: []Color
+				w, h: int
+				if d.layers[li].is_group {
+					pix, w, h = export_scaled(group_pixels(d, li, d.active_frame, context.allocator), d.w, d.h, scale)
+				} else {
+					pix, w, h = export_layer_pixels(d, li, scale)
+				}
+				data := export_encode(pix, w, h, f, quality)
+				delete(pix)
+				if data == nil || !write_file(path, data) do return false, fmt.tprintf("Failed to write %s", path_basename(path))
+				n += 1
+			}
+			return true, fmt.tprintf("Exported %d layers", n)
+		}
+		path, pok, pmsg := macro_export_path(d, args[4].text, EXPORT_EXT[f], name_str(&d.layers[d.active_layer].name))
 		if !pok do return false, pmsg
-		return export_to_path(d, path, f, macro_int(args, 2), macro_int(args, 3), layer_only ? d.active_layer : -1)
+		return export_to_path(d, path, f, quality, scale, what == "active layer" ? d.active_layer : -1)
 	case:
 		return false, "unknown node"
 	}
@@ -535,10 +598,16 @@ macro_exec_cmd :: proc(d: ^Doc, c: Cmd) -> (ok: bool, msg: string) {
 	case .Crop_Sel:
 		if d.sel == nil do return false, "there is no selection"
 	case .Layer_Del:
-		s := layer_span_start(d.layers[:], d.active_layer)
-		if d.active_layer - s + 1 >= len(d.layers) do return false, "it is the only layer"
+		if layer_sel_multi(d) {
+			n := 0
+			for r in layers_selected_roots(d) do n += r - layer_span_start(d.layers[:], r) + 1
+			if n >= len(d.layers) do return false, "they are all the layers there are"
+		} else {
+			s := layer_span_start(d.layers[:], d.active_layer)
+			if d.active_layer - s + 1 >= len(d.layers) do return false, "it is the only layer"
+		}
 	case .Layer_Merge:
-		if !l.is_group && layer_merge_target(d) < 0 do return false, "there is no layer below in its group to merge into"
+		if !layer_sel_multi(d) && !l.is_group && layer_merge_target(d) < 0 do return false, "there is no layer below in its group to merge into (select several layers to merge them)"
 	case .Layer_Ungroup:
 		if !l.is_group do return false, "the active layer is not a group"
 	case .Layer_Text_To_Path:
@@ -563,7 +632,39 @@ macro_exec_cmd :: proc(d: ^Doc, c: Cmd) -> (ok: bool, msg: string) {
 
 @(private = "file")
 macro_exec_fx :: proc(d: ^Doc, fx: Fx, args: []Macro_Value) -> (ok: bool, msg: string) {
+	if layer_sel_multi(d) {
+		// several layers selected: the effect goes on each of them that can take it (not groups, locked or hidden ones)
+		sel := layers_selected(d)
+		uids := make([]int, len(sel), context.temp_allocator)
+		for li, k in sel do uids[k] = d.layers[li].uid
+		active_uid := d.layers[d.active_layer].uid
+		done := 0
+		last_msg := ""
+		for uid in uids {
+			li := layer_find_uid(d.layers[:], uid)
+			if li < 0 do continue
+			d.active_layer = li
+			if p := layer_problem(d); p != "" {
+				last_msg = p
+				continue
+			}
+			if lok, lmsg := macro_exec_fx_one(d, fx, args); lok {
+				done += 1
+			} else {
+				last_msg = lmsg
+			}
+		}
+		layer_sel_uids(d, uids, active_uid)
+		if done == 0 do return false, fmt.tprintf("none of the selected layers could take it: %s", last_msg)
+		return true, ""
+	}
 	if p := layer_problem(d); p != "" do return false, p
+	return macro_exec_fx_one(d, fx, args)
+}
+
+// The effect on the active layer.
+@(private = "file")
+macro_exec_fx_one :: proc(d: ^Doc, fx: Fx, args: []Macro_Value) -> (ok: bool, msg: string) {
 	def := &FX_DEFS[fx]
 	st := Fx_State {
 		fx   = fx,
@@ -604,7 +705,7 @@ path_dir :: proc(p: string) -> string {
 
 // An export path from its template: {dir} the painting's folder, {name} its file name, {frame} the frame number,
 // {ext} the format's extension. Adds the extension if the result has none.
-macro_export_path :: proc(d: ^Doc, tmpl, ext: string) -> (path: string, ok: bool, msg: string) {
+macro_export_path :: proc(d: ^Doc, tmpl, ext: string, layer_name := "") -> (path: string, ok: bool, msg: string) {
 	dir := d.path != "" ? path_dir(d.path) : ""
 	name := d.path != "" ? path_stem(d.path) : name_str(&d.title)
 	if strings.contains(tmpl, "{dir}") && dir == "" {
@@ -614,6 +715,7 @@ macro_export_path :: proc(d: ^Doc, tmpl, ext: string) -> (path: string, ok: bool
 	p, _ = strings.replace_all(p, "{dir}", dir, context.temp_allocator)
 	p, _ = strings.replace_all(p, "{name}", name, context.temp_allocator)
 	p, _ = strings.replace_all(p, "{frame}", fmt.tprintf("%03d", d.active_frame + 1), context.temp_allocator)
+	p, _ = strings.replace_all(p, "{layer}", palette_clean_name(layer_name), context.temp_allocator)
 	p, _ = strings.replace_all(p, "{ext}", ext, context.temp_allocator)
 	p = strings.trim_space(p)
 	if p == "" || strings.has_suffix(p, "/") || strings.has_suffix(p, "\\") do return "", false, "the file name is empty"

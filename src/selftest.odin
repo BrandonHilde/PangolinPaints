@@ -1998,6 +1998,123 @@ selftest :: proc() -> int {
 
 	check(icons_ok(), "the app icon is there at every size")
 
+	// --- several layers selected ----------------------------------------------------
+	{
+		d := fresh(40, 30, white)
+		for nm in ([3]string{"A", "B", "C"}) {
+			doc_add_layer(d)
+			name_set(&d.layers[d.active_layer].name, nm)
+		}
+		lname :: proc(d: ^Doc, i: int) -> string {return name_str(&d.layers[i].name)}
+		tiles_set(&d.layers[1].pix, 1, 1, red, {})
+		tiles_set(&d.layers[3].pix, 2, 2, blue, {})
+		check(len(d.layers) == 4 && lname(d, 1) == "A" && lname(d, 3) == "C", "four layers to select from")
+		d.active_layer = 1
+		layer_sel_clear(d)
+		check(!layer_sel_multi(d), "one layer selected at first")
+		layer_sel_toggle(d, 3)
+		check(layer_sel_multi(d) && d.active_layer == 3 && len(layers_selected(d)) == 2, "Ctrl-click adds a layer, which becomes the active one")
+		layer_sel_toggle(d, 3)
+		check(!layer_sel_multi(d) && d.active_layer == 1, "Ctrl-click again takes it out")
+		layer_sel_toggle(d, 3)
+		d.active_layer = 2
+		check(!layer_sel_multi(d), "another layer made active some other way ends the selection")
+		d.active_layer = 3
+		layer_sel_range(d, layer_rows(d), 1)
+		check(len(layers_selected(d)) == 3 && d.active_layer == 1, "Shift-click selects the run of rows")
+
+		// Group: the selected layers, in their order, in one group where the top one was
+		run_cmd(.Layer_Group)
+		g := d.active_layer
+		check(len(d.layers) == 5 && d.layers[g].is_group && g == 4 && !layer_sel_multi(d), "Group makes one group of the selected layers")
+		check(d.layers[1].parent == d.layers[g].uid && d.layers[3].parent == d.layers[g].uid && lname(d, 1) == "A" && lname(d, 3) == "C", "they keep their order inside it")
+		history_undo(d)
+		check(len(d.layers) == 4 && d.layers[3].parent == 0, "one undo takes the group away")
+
+		// Merge: two layers that aren't next to each other become one, where the top one was
+		d.active_layer = 1
+		layer_sel_clear(d)
+		layer_sel_toggle(d, 3)
+		run_cmd(.Layer_Merge)
+		check(len(d.layers) == 3 && lname(d, 2) == "C" && lname(d, 1) == "B", fmt.tprintf("Merge makes one layer of the selected ones (%d layers)", len(d.layers)))
+		check(px(d, 2, 1, 1) == red && px(d, 2, 2, 2) == blue, "the merged layer has both layers' pixels")
+		history_undo(d)
+		check(len(d.layers) == 4 && px(d, 1, 1, 1) == red, "one undo brings both back")
+
+		// Duplicate and Delete
+		d.active_layer = 1
+		layer_sel_clear(d)
+		layer_sel_toggle(d, 2)
+		run_cmd(.Layer_Dup)
+		check(len(d.layers) == 6 && len(layers_selected(d)) == 2, "Duplicate copies each selected layer, and selects the copies")
+		run_cmd(.Layer_Del)
+		check(len(d.layers) == 4 && lname(d, 1) == "A" && lname(d, 2) == "B", "Delete removes the selected layers")
+		run_cmd(.Layer_Select_All)
+		check(len(layers_selected(d)) == 4, "Select All Layers")
+		run_cmd(.Layer_Del)
+		check(len(d.layers) == 4, "deleting every layer is refused")
+		run_cmd(.Layer_Deselect)
+		check(!layer_sel_multi(d), "Deselect Layers")
+
+		// a macro: pick layers by name, adding to the selection, then work on all of them
+		mm := macro_new("Sel")
+		n1 := macro_add_node(mm, "layer.Pick", 200, 0)
+		macro_set_arg(mm, n1, "name", "A")
+		n2 := macro_add_node(mm, "layer.Pick", 400, 0)
+		macro_set_arg(mm, n2, "name", "C")
+		macro_set_arg(mm, n2, "add", "1")
+		n3 := macro_add_node(mm, "layer.Opacity", 600, 0)
+		macro_set_arg(mm, n3, "opacity", "50")
+		macro_link(mm, macro_start(mm), n1.id)
+		macro_link(mm, n1.id, n2.id)
+		macro_link(mm, n2.id, n3.id)
+		mok, mmsg, _ := macro_run(mm)
+		check(mok && len(layers_selected(d)) == 2 && d.active_layer == 3, fmt.tprintf("Pick Layer with Add to Selection (%s)", mmsg))
+		check(d.layers[1].opacity == 127 && d.layers[3].opacity == 127 && d.layers[2].opacity == 255, "a layer setting goes on every selected layer")
+		macro_free(mm)
+		mm2 := macro_new("Named")
+		q1 := macro_add_node(mm2, "layer.Pick", 200, 0)
+		macro_set_arg(mm2, q1, "which", "all named")
+		macro_set_arg(mm2, q1, "name", "a") // "A", "Background"
+		macro_link(mm2, macro_start(mm2), q1.id)
+		qok, qmsg, _ := macro_run(mm2)
+		check(qok && len(layers_selected(d)) == 2 && layer_is_selected(d, 0) && layer_is_selected(d, 1), fmt.tprintf("Pick Layer: all named (%s)", qmsg))
+		macro_free(mm2)
+		sp := selected_layers_pixels(d)
+		// A (red, at half opacity since the macro above) over the white Background; C's blue is left out
+		check(sp[1 * d.w + 1].r > 200 && sp[1 * d.w + 1].g < 200 && sp[2 * d.w + 2] == white, "the selected layers export together, without the others")
+		delete(sp)
+	}
+
+	// --- colors written as text, tool kinds, group order ------------------------
+	{
+		c, ok := css_color_parse("#f80")
+		check(ok && c == Color{255, 136, 0, 255}, "#rgb")
+		c, ok = css_color_parse("  rgba(255, 0, 0, 50%) ")
+		check(ok && c == Color{255, 0, 0, 128}, "rgba() with a percentage")
+		c, ok = css_color_parse("hsl(120 100% 25%)")
+		check(ok && c == Color{0, 128, 0, 255}, "hsl() with spaces")
+		c, ok = css_color_parse("CornflowerBlue")
+		check(ok && c == Color{100, 149, 237, 255}, "a CSS color name, any capitals")
+		c, ok = css_color_parse("0x336699")
+		check(ok && c == Color{0x33, 0x66, 0x99, 255}, "0x hex")
+		_, ok = css_color_parse("bad")
+		check(!ok, "a short word is not a bare hex color")
+		list := css_color_list("--accent: #264653; [\"2a9d8f\", 'e9c46a'], rgb(244, 162, 97) and tomato; dark-red")
+		check(len(list) == 5 && list[0] == Color{0x26, 0x46, 0x53, 255} && list[3] == Color{244, 162, 97, 255} && list[4] == Color{255, 99, 71, 255}, fmt.tprintf("a pasted list of colors (%d)", len(list)))
+		check(len(gpl_parse(gpl_text("x", list))) == 5, "a palette survives its .gpl file")
+		check(palette_clean_name(" a/b:c? ") == "abc", "palette names are file names")
+
+		tools := make([dynamic]Tool, context.temp_allocator)
+		append(&tools, Tool.Select_Rect, Tool.Lasso, Tool.Move)
+		tool_list_insert(&tools, .Smart_Select)
+		tool_list_insert(&tools, .Select_Ellipse)
+		tool_list_insert(&tools, .Hand)
+		check(len(tools) == 6 && tools[0] == .Select_Rect && tools[1] == .Select_Ellipse && tools[2] == .Lasso && tools[3] == .Smart_Select && tools[4] == .Move && tools[5] == .Hand, fmt.tprintf("a tool added to a group goes beside its kind (%v)", tools[:]))
+		check(group_index_moved(0, 0, 2) == 2 && group_index_moved(1, 0, 2) == 0 && group_index_moved(2, 0, 2) == 1 && group_index_moved(3, 0, 2) == 3, "group indices follow a move down")
+		check(group_index_moved(2, 2, 0) == 0 && group_index_moved(0, 2, 0) == 1 && group_index_moved(-1, 2, 0) == -1, "group indices follow a move up")
+	}
+
 	if fails == 0 {
 		fmt.println("selftest: all passed")
 	} else {

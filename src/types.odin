@@ -195,6 +195,7 @@ Doc :: struct {
 	undo, redo:   [dynamic]State,
 	history_hold: int, // above 0 while a macro runs: its edits share the one snapshot taken before it
 	active_layer: int,
+	layer_sel:    [dynamic]int, // uids of the selected layers when there are several (layersel.odin)
 	edit_mask:    bool, // brushes paint on the active layer's mask
 	// color channels (channels.odin)
 	chan_exposed:    [dynamic]int, // uids of the layers whose channels are listed under the layers
@@ -264,6 +265,37 @@ Tool :: enum {
 	Seamless, // the view repeats the canvas and brush dabs wrap across its edges (user-visible name: Tiled Mode)
 	// tools added later go here, after the switches: tool groups and workspaces save tools by index
 	Smart_Select,
+}
+
+// Which tools belong together: the + menu of a tool group lists them kind by kind, and a tool added to a group goes
+// in beside its relatives (group_order.odin).
+TOOL_KIND := [Tool]int {
+	.Brush          = 0,
+	.Oil            = 0,
+	.Smudge         = 0,
+	.Eraser         = 0,
+	.Blur           = 0,
+	.Dodge          = 0,
+	.Clone          = 0,
+	.Bucket         = 1,
+	.Gradient       = 1,
+	.Picker         = 1,
+	.Text           = 1,
+	.Line           = 1,
+	.Select_Rect    = 2,
+	.Select_Ellipse = 2,
+	.Lasso          = 2,
+	.Wand           = 2,
+	.Smart_Select   = 2,
+	.Move           = 3,
+	.Transform      = 3,
+	.Crop           = 3,
+	.Hand           = 4,
+	.Zoom           = 4,
+	.Grid           = 5,
+	.Mirror         = 5,
+	.Perspective    = 5,
+	.Seamless       = 5,
 }
 
 TOOL_NAMES := [Tool]string {

@@ -167,6 +167,7 @@ doc_destroy :: proc(d: ^Doc) {
 	delete(d.redo)
 	delete(d.comp)
 	delete(d.sel_edges)
+	delete(d.layer_sel)
 	chan_free(d)
 	fx_cache_free(d)
 	if d.path != "" {
